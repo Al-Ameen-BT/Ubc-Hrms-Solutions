@@ -47,7 +47,9 @@ PUBLIC_HOST="" TLS_PORT="443" HTTP_PORT="80"
 SUBCMD="" SUBCMD_ARG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --stage|-s)        STAGE="$2"; shift 2 ;;
+    --stage|-s)
+      [[ $# -ge 2 ]] || { echo "usage: $0 --stage <0-9|all>" >&2; exit 1; }
+      STAGE="$2"; shift 2 ;;
     --recreate-network) RECREATE_NETWORK=1; shift ;;
     --force-restore)   FORCE_RESTORE=1; shift ;;
     --backup-now)      BACKUP_NOW=1; shift ;;
@@ -104,8 +106,10 @@ stage0_preflight() {
   free_gb="$(df -BG "$HOME" | awk 'NR==2{print $4}' | tr -d 'G')"
   (( ${free_gb%%G} >= 15 )) || stage_fail "need ≥15 GB free disk, found ${free_gb}G"
 
-  # Egress: docker registry reachable
-  curl -fsSL --max-time 10 -o /dev/null https://registry-1.docker.io/v2/ \
+  # Egress: docker registry reachable. Note: /v2/ answers 401 when
+  # unauthenticated — that is normal and PROVES reachability, so any HTTP
+  # response passes; only transport errors (DNS/refused/timeout) fail.
+  curl -sS --max-time 10 -o /dev/null https://registry-1.docker.io/v2/ \
     || stage_fail "no outbound internet (docker.io unreachable)"
 
   # Ports free? (match whatever the port-fallback logic may pick)
@@ -121,9 +125,22 @@ stage0_preflight() {
     stage_fail "old compose stack (ucb-hrms-app/mysql) is running — tear it down first: podman stop ucb-hrms-app ucb-hrms-mysql && podman rm ucb-hrms-app ucb-hrms-mysql"
   fi
 
-  # Half-finished previous run with the same container names
-  if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^hrms-(mysql|redis|backend|nginx)$'; then
-    stage_fail "stale hrms-* containers from a previous run — resolve (systemctl --user status hrms-*, or restart via stage 5) before re-deploying"
+  # Stale containers from a half-finished previous run — but only when
+  # their systemd unit is NOT running: a live stack is just a normal
+  # redeploy (stage 5 restarts the units).
+  if command -v systemctl &>/dev/null; then
+    local c
+    for c in hrms-mysql hrms-redis hrms-backend hrms-nginx; do
+      if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$c" \
+         && ! systemctl --user is-active --quiet "$c" 2>/dev/null; then
+        stage_fail "stale container $c exists but unit '$c' is inactive — resolve first (systemctl --user status $c, or ./deploy.sh --stage 5)"
+      fi
+    done
+  else
+    # no systemd session available — fall back to name-only detection
+    if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^hrms-(mysql|redis|backend|nginx)$'; then
+      stage_fail "hrms-* containers exist but no systemd session to manage them — remove manually if stale"
+    fi
   fi
 
   stage_pas
@@ -409,7 +426,10 @@ Restart=always
 WantedBy=default.target
 UNIT
 
-  # Backup oneshot + timer
+  # Backup oneshot + timer are PLAIN systemd units, not Quadlet files —
+  # podman 4.x ignores anything else under the Quadlet dir, so they live
+  # in ~/.config/systemd/user (created BEFORE the redirects below).
+  mkdir -p "$SYSTEMD_USER_DIR"
   cat > "$SYSTEMD_USER_DIR/hrms-backup.service" <<UNIT
 [Unit]
 Description=UCB HRMS nightly DB backup (throwaway mysql container)
@@ -433,7 +453,6 @@ UNIT
   # must live in ~/.config/systemd/user.
   # Ensure the plain-systemd dir exists (Backup units are not Quadlet files:
   # podman 4.x ignores anything other than .container/.network/.volume etc.)
-  mkdir -p "$SYSTEMD_USER_DIR"
   systemctl --user enable hrms-backup.timer 2>/dev/null || true
 }
 
