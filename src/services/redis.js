@@ -41,6 +41,12 @@ if (REDIS_URL) {
     redisClient = new Redis(REDIS_URL, {
       lazyConnect: false, // start connecting right away; 'ready' is the verdict
       connectTimeout: 2000,
+      maxRetriesPerRequest: 1,
+      // Fail FAST during an outage: passOnStoreError (on each limiter in
+      // server.js) can only turn a THROWN error into a pass-through — with
+      // the offline queue enabled, offline commands would hang forever
+      // behind a retrying reconnect instead.
+      enableOfflineQueue: false,
     });
     // Suppress hot-loop error spam while the client is unreachable.
     redisClient.on('error', () => {});
@@ -85,21 +91,45 @@ class AdaptiveStore {
     this._windowMs = 60000; // corrected by init() with the limiter's real window
   }
 
-  /* express-rate-limit v7 calls this once at middleware creation. */
+  /* express-rate-limit v7 calls this once at middleware creation —
+   * synchronously, BEFORE the Redis client has connected. We must NOT
+   * forward here: v5's init() eagerly SCRIPT LOADs and would throw under
+   * enableOfflineQueue:false (crashing the whole server at module load).
+   * Remember the options; the actual forward happens in _target() after
+   * the boot decision says Redis is up. */
   init(options) {
     if (options && Number(options.windowMs) > 0) this._windowMs = Number(options.windowMs);
+    this._delegateOptions = options;
   }
 
   async _target() {
-    if (this._mode === 'redis') return this._delegate;
+    if (this._mode === 'redis') return this._finalize('redis');
     if (this._mode === 'memory') return null;
     this._mode = await decisionPromise;
-    return this._mode === 'redis' ? this._delegate : null;
+    if (this._mode === 'memory') return null;
+    return this._finalize('redis');
+  }
+
+  /* After the boot decision: initialize the v5 delegate exactly once —
+   * windowMs + SCRIPT LOAD. Concurrent first requests share the promise;
+   * a failed init re-arms so a later request retries (e.g. Redis returns). */
+  async _finalize(mode) {
+    if (!this._initPromise) {
+      this._initPromise = this._delegate.init(this._delegateOptions)
+        .catch((e) => { this._initPromise = undefined; throw e; });
+    }
+    try {
+      await this._initPromise;
+    } catch (e) {
+      console.warn('[redis] store init failed ("%s") — delegating anyway', e.message);
+    }
+    return this._delegate;
   }
 
   async increment(key) {
     const t = await this._target();
     if (t) return t.increment(key);
+    this._prune();
     // local fixed-window fallback
     const now = Date.now();
     let entry = this._local.get(key);
@@ -114,6 +144,9 @@ class AdaptiveStore {
   async decrement(key) {
     const t = await this._target();
     if (t) return t.decrement(key);
+    // memory mode honors skipSuccessfulRequests: release one hit
+    const entry = this._local.get(key);
+    if (entry && entry.count > 0) entry.count -= 1;
   }
 
   async resetKey(key) {
@@ -124,8 +157,24 @@ class AdaptiveStore {
 
   async resetAll() {
     const t = await this._target();
-    if (t) await t.resetAll();
+    // rate-limit-redis v5 has no resetAll — ERL 7 never calls it either,
+    // but guard the exposed landmine instead of throwing.
+    if (t && typeof t.resetAll === 'function') await t.resetAll();
     else this._local.clear();
+  }
+
+  /**
+   * Memory mode only: the local map is keyed by req.ip — behind a public
+   * edge every bot IP would otherwise leave a permanent entry. Sweep
+   * expired entries every 100 inserts (O(n) amortized, tiny map).
+   */
+  _prune() {
+    this._inserts = (this._inserts || 0) + 1;
+    if (this._inserts % 100 !== 0) return;
+    const now = Date.now();
+    for (const [k, v] of this._local) {
+      if (now >= v.expiresAt) this._local.delete(k);
+    }
   }
 }
 
