@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# deploy.sh — UCB HRMS Podman UAT deployment script (rootless, Rocky Linux)
+# deploy.sh — UCB HRMS Podman UAT deployment script (rootless)
+#
+# The script autodetects the OS from /etc/os-release and adapts: the distro
+# decides the package manager used to install podman (dnf for Rocky/RHEL/
+# CentOS/Fedora, apt-get for Ubuntu/Debian, zypper/pacman/apk as mapped),
+# and stage 2 refuses podman builds without Quadlet support (< 4.4).
+# Primary target: Rocky Linux 9. Also fine on Ubuntu 24.04+ / Debian 12.
 #
 # Usage:
 #   ./deploy.sh                     # run all stages 0-9
@@ -68,6 +74,15 @@ done
 # collisions; secrets are read per-key via get_env when needed).
 load_config() {
   PUBLIC_HOST="${PUBLIC_HOST:-$(read_state PUBLIC_HOST)}"
+  OS_ID="${OS_ID:-$(read_state OS_ID)}"
+  OS_PKG_MGR="${OS_PKG_MGR:-$(read_state OS_PKG_MGR)}"
+  # Re-detect live OS if state is empty (or drifted) — keeps per-stage runs
+  # working even after someone deletes the state dir.
+  if [[ -z "$OS_ID" || -z "$OS_PKG_MGR" ]]; then
+    detect_os || true
+    update_state OS_ID "$OS_ID"
+    update_state OS_PKG_MGR "$OS_PKG_MGR"
+  fi
   # Port fallback: fixed constants when unprivileged low ports are available
   if sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null | grep -q '^80$'; then
     TLS_PORT="${TLS_PORT:-443}"; HTTP_PORT="${HTTP_PORT:-80}"
@@ -92,15 +107,19 @@ stage0_preflight() {
   stage_head 0 "preflight"
 
   [[ "$(id -u)" -ne 0 ]] || stage_fail "run as a regular user (rootless podman), not root"
-  # Spec: accept Rocky/RHEL-family, or any dnf-based Linux after a confirm
-  if [[ -f /etc/redhat-release ]]; then
-    echo "detected: $(< /etc/redhat-release)"
-  elif command -v dnf &>/dev/null; then
-    echo "no /etc/redhat-release, but dnf is present — treating as Rocky-like"
+
+  # Detect the OS and adapt: the distro decides the package manager and
+  # commands used in stages 1–4; anything unmanaged needs a confirm.
+  detect_os || true
+  if [[ "$OS_PKG_MGR" != "unknown" ]]; then
+    echo "detected OS: ${OS_NAME:-$OS_ID} (id: ${OS_ID}${OS_VERSION:+ $OS_VERSION}) → pkg manager: ${OS_PKG_MGR}"
   else
-    read -r -p "This is not a Rocky/dnf system — deploy anyway? [y/N] " yn
-    [[ "$yn" == "y" || "$yn" == "Y" ]] || stage_fail "aborted: not a Rocky/dnf system"
+    echo "WARNING: could not map '${OS_NAME:-$OS_ID}' to a known package manager."
+    read -r -p "This OS is not on the supported list (dnf/apt/zypper/pacman/apk) — deploy anyway? [y/N] " yn
+    [[ "$yn" == "y" || "$yn" == "Y" ]] || stage_fail "aborted: unsupported OS '$OS_ID'"
   fi
+  update_state OS_ID "$OS_ID"
+  update_state OS_PKG_MGR "$OS_PKG_MGR"
 
   local free_gb
   free_gb="$(df -BG "$HOME" | awk 'NR==2{print $4}' | tr -d 'G')"
@@ -152,9 +171,13 @@ stage0_preflight() {
 stage1_install() {
   stage_head 1 "install prerequisites"
 
+  # Podman (rootless) — installed with the package manager stage 0 detected
   if ! command -v podman &>/dev/null; then
-    sudo dnf install -y podman 2>/dev/null \
-      || { echo "MANUAL: sudo dnf install -y podman"; stage_fail "podman missing, dnf needs sudo"; }
+    if ! pkg_install_podman 2>/dev/null; then
+      # sudo failed (no TTY password, missing sudo, wrong pkg mgr): say how
+      echo "MANUAL: install podman (e.g. as root: pkg_install_podman equivalent for ${OS_PKG_MGR:-your distro})"
+      stage_fail "podman missing and automatic install failed"
+    fi
   fi
 
   # Allow rootless binding of low ports (needed for nginx 80/443)
@@ -193,6 +216,29 @@ stage2_verify_install() {
   info="$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" \
     || stage_fail "podman not usable"
   [[ "$info" == "true" ]] || stage_fail "podman is running rootful — must be rootless"
+
+  # podman version must support Quadlet (user-level systemd integration).
+  local ver
+  ver="$(podman --version 2>/dev/null | awk '{print $3}')"
+  if [[ -z "$ver" ]]; then
+    stage_fail "could not read the podman version"
+  elif ! version_ge "$ver" "$PODMAN_MIN"; then
+    stage_fail "podman $ver is too old for Quadlet units (need ≥ ${PODMAN_MIN}). On Ubuntu 22.04 LTS: upgrade to 24.04 or install a newer podman from its upstream repo, then re-run."
+  fi
+  echo "podman: $ver (Quadlet-capable) on $OS_ID"
+
+  # Rootless mapping readiness: the deploy user needs a subordinate-UID
+  # range. Fresh installs get one automatically; users created before the
+  # podman install often don't.
+  if ! grep -q "^${USER}:" /etc/subuid 2>/dev/null; then
+    if sudo -n usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$USER" 2>/dev/null; then
+      echo "added subordinate UID/GID range for $USER"
+    else
+      echo "MANUAL (as root, required for rootless containers):"
+      echo "  usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER"
+      stage_fail "$USER has no /etc/subuid entry — rootless podman cannot map UIDs"
+    fi
+  fi
 
   [[ "$TLS_PORT" == "443" ]] && echo "ports: 80/443 (unprivileged ports OK)" \
                              || echo "ports: ${HTTP_PORT}/${TLS_PORT} (fallback)"
@@ -736,6 +782,8 @@ REPORT
 # status subcommand
 # ════════════════════════════════════════════════════════════════════════════
 show_status() {
+  echo "── host ───────────────────────────────────────────"
+  printf '%-14s %s\n' "os" "${OS_NAME:-$OS_ID}${TLS_PORT:+ ($OS_PKG_MGR)}"
   echo "── units ──────────────────────────────────────────"
   for u in hrms-nginx hrms-backend hrms-redis hrms-mysql; do
     printf '%-14s %s\n' "$u" "$(systemctl --user is-active "$u" 2>/dev/null || echo 'not installed')"

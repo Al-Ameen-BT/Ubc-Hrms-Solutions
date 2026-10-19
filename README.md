@@ -310,9 +310,12 @@ What you get after a full run:
 ./deploy.sh status         # units, timer, network, last restore hash
 ```
 
-Requirements: Rocky Linux (or dnf-based), a regular (non-root) user with
-sudo for the two setup commands the script prints when it needs them, ~15 GB
-disk. Podman must run rootless (`podman info` reports Rootless=true).
+Requirements: a Linux server with systemd (tested intent: Rocky 9 primary;
+Ubuntu/Debian 24.04+, Fedora, openSUSE, Arch also work — the script reads
+`/etc/os-release` and uses that distro's package manager for the podman
+install). Podman ≥ 4.4 is mandatory (Quadlet); a regular (non-root) user
+with sudo for the few setup commands the script prints when it needs them,
+~15 GB disk. Podman must run rootless (`podman info` reports Rootless=true).
 
 ### Bootstrapping (no SSH/shell access needed)
 
