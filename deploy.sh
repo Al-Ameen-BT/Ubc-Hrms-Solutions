@@ -32,6 +32,7 @@ readonly IP_NGINX="10.89.0.40"
 readonly IMAGE_BACKEND="localhost/hrms-backend:latest"
 readonly DB_NAME="ucb_hrms"
 readonly QUADLET_DIR="$HOME/.config/containers/systemd"
+readonly SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
 # CLI-flag state
 STAGE="all"
@@ -42,15 +43,18 @@ BACKUP_NOW=0
 # Runtime config defaults (filled from .env / state)
 PUBLIC_HOST="" TLS_PORT="443" HTTP_PORT="80"
 
-# ── CLI parsing ────────────────────────────────────────────────────────────
+# ── CLI parsing (subcommands dispatched AFTER function definitions) ────────
+SUBCMD="" SUBCMD_ARG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --stage|-s)        STAGE="$2"; shift 2 ;;
     --recreate-network) RECREATE_NETWORK=1; shift ;;
     --force-restore)   FORCE_RESTORE=1; shift ;;
     --backup-now)      BACKUP_NOW=1; shift ;;
-    status)            load_config; show_status; exit 0 ;;
-    set-hostname)      load_config; set_hostname "$2"; exit 0 ;;
+    status)            SUBCMD="status"; shift ;;
+    set-hostname)
+      [[ $# -ge 2 ]] || { echo "usage: $0 set-hostname <host>" >&2; exit 1; }
+      SUBCMD="set-hostname"; SUBCMD_ARG="$2"; shift 2 ;;
     --help|-h)
       sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 1 ;;
@@ -86,7 +90,15 @@ stage0_preflight() {
   stage_head 0 "preflight"
 
   [[ "$(id -u)" -ne 0 ]] || stage_fail "run as a regular user (rootless podman), not root"
-  [[ -f /etc/redhat-release ]] || stage_fail "not a Rocky/RHEL system (/etc/redhat-release missing)"
+  # Spec: accept Rocky/RHEL-family, or any dnf-based Linux after a confirm
+  if [[ -f /etc/redhat-release ]]; then
+    echo "detected: $(< /etc/redhat-release)"
+  elif command -v dnf &>/dev/null; then
+    echo "no /etc/redhat-release, but dnf is present — treating as Rocky-like"
+  else
+    read -r -p "This is not a Rocky/dnf system — deploy anyway? [y/N] " yn
+    [[ "$yn" == "y" || "$yn" == "Y" ]] || stage_fail "aborted: not a Rocky/dnf system"
+  fi
 
   local free_gb
   free_gb="$(df -BG "$HOME" | awk 'NR==2{print $4}' | tr -d 'G')"
@@ -96,9 +108,22 @@ stage0_preflight() {
   curl -fsSL --max-time 10 -o /dev/null https://registry-1.docker.io/v2/ \
     || stage_fail "no outbound internet (docker.io unreachable)"
 
+  # Ports free? (match whatever the port-fallback logic may pick)
+  local p
+  for p in 80 443 8443 8080; do
+    if command -v lsof &>/dev/null && lsof -ti :"$p" &>/dev/null; then
+      stage_fail "port $p already in use — free it before deploying (nginx PublishPort)"
+    fi
+  done
+
   # Old docker-compose stack detection (aborts, never silently overlaps)
   if podman ps --format '{{.Names}}' 2>/dev/null | grep -qE '^ucb-hrms-(app|mysql)$'; then
     stage_fail "old compose stack (ucb-hrms-app/mysql) is running — tear it down first: podman stop ucb-hrms-app ucb-hrms-mysql && podman rm ucb-hrms-app ucb-hrms-mysql"
+  fi
+
+  # Half-finished previous run with the same container names
+  if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^hrms-(mysql|redis|backend|nginx)$'; then
+    stage_fail "stale hrms-* containers from a previous run — resolve (systemctl --user status hrms-*, or restart via stage 5) before re-deploying"
   fi
 
   stage_pas
@@ -215,24 +240,37 @@ stage4_build() {
     || stage_fail "image build failed"
 
   # Copy frontend/dist out of the image for nginx (static hosting at the edge)
+  local cp_err
+  podman rm -f hrms-dist-extract >/dev/null 2>&1 || true   # stale from an aborted run
+  if ! cp_err="$(podman create --name hrms-dist-extract "$IMAGE_BACKEND" true 2>&1)"; then
+    stage_fail "could not create the dist-extract container: $cp_err"
+  fi
   mkdir -p "$CONFIG_DIR/frontend-dist"
-  local cid
-  cid="$(podman create --rm "$IMAGE_BACKEND" true)"
-  podman cp "$cid:/app/frontend/dist/." "$CONFIG_DIR/frontend-dist/"
-  podman rm -f "$cid" >/dev/null 2>&1 || true
-  [[ -f "$CONFIG_DIR/frontend-dist/index.html" ]] || stage_fail "frontend/dist not found in built image"
+  if ! podman cp hrms-dist-extract:/app/frontend/dist/. "$CONFIG_DIR/frontend-dist/" 2>/dev/null; then
+    podman rm -f hrms-dist-extract >/dev/null 2>&1 || true
+    stage_fail "frontend/dist missing from the built image — did the frontend build run in the Containerfile?"
+  fi
+  podman rm -f hrms-dist-extract >/dev/null 2>&1 || true
+  [[ -f "$CONFIG_DIR/frontend-dist/index.html" ]] || stage_fail "frontend/dist not copied (index.html absent)"
 
-  # TLS cert (self-signed, SAN-matched to the public host)
+  # TLS cert (self-signed, SAN-matched to the public host). openssl rejects
+  # IP:<value> unless it's actually an IP — so emit the matching form only.
   local certdir="$CONFIG_DIR/tls"
   mkdir -p "$certdir"
   if [[ ! -f "$certdir/server.crt" || "$(read_state TLS_CERT_HOST 2>/dev/null)" != "$PUBLIC_HOST" ]]; then
     echo "generating self-signed cert for $PUBLIC_HOST"
+    local san
+    if [[ "$PUBLIC_HOST" =~ ^[0-9]+([.][0-9]+){3}$ ]]; then
+      san="IP:${PUBLIC_HOST}"
+    else
+      san="DNS:${PUBLIC_HOST}"
+    fi
     openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
       -keyout "$certdir/server.key" -out "$certdir/server.crt" \
       -subj "/CN=${PUBLIC_HOST}" \
-      -addext "subjectAltName=DNS:${PUBLIC_HOST},IP:${PUBLIC_HOST}" 2>/dev/null \
+      -addext "subjectAltName=${san}" 2>/dev/null \
       || stage_fail "openssl cert generation failed"
-    chmod 600 "$certdir/server.key"
+    chmod 600 "$certdir/server.key"; chmod 644 "$certdir/server.crt"
     update_state TLS_CERT_HOST "$PUBLIC_HOST"
   fi
 
@@ -248,14 +286,17 @@ stage5_deploy() {
   install_quadlets
   systemctl --user daemon-reload
 
-  # Start order: db, redis → backend → nginx
+  # Start order: db, redis → backend → nginx. Enable everything first so
+  # the stack comes back after reboot (linger already on from stage 1).
+  systemctl --user enable hrms-net hrms-mysql hrms-redis hrms-backend hrms-nginx
   for unit in hrms-mysql hrms-redis hrms-backend hrms-nginx; do
     systemctl --user start "$unit" || stage_fail "failed to start $unit"
   done
 
-  # Wait for mysql health before declaring success
+  # Wait for mysql health before declaring success (credential-free: ping
+  # is answered even on access-denied, so no password here)
   for i in {1..30}; do
-    podman exec hrms-mysql mysqladmin ping -uroot -p"$(get_env MYSQL_ROOT_PASSWORD)" --silent 2>/dev/null && break
+    podman exec hrms-mysql mysqladmin ping -h localhost --silent 2>/dev/null && break
     (( i == 30 )) && stage_fail "mysql not healthy after 30 tries"
     sleep 2
   done
@@ -268,12 +309,16 @@ stage5_deploy() {
 install_quadlets() {
   mkdir -p "$QUADLET_DIR"
 
-  # Network: Quadlet owns hrms-net with fixed IPAM — recreated at boot if absent.
+  # Network: Quadlet owns hrms-net with fixed IPAM — created/wired at boot.
   cat > "$QUADLET_DIR/hrms-net.network" <<UNIT
+[Unit]
+Description=UCB HRMS static network
 [Network]
 NetworkName=${NET_NAME}
 Subnet=${NET_SUBNET}
 Gateway=${NET_GATEWAY}
+[Install]
+WantedBy=default.target
 UNIT
 
   # MySQL
@@ -285,14 +330,16 @@ UNIT
 Description=UCB HRMS MySQL 8
 [Container]
 Image=docker.io/library/mysql:8.0
-Network=hrms-net
+Network=hrms-net.network
 PodmanArgs=--ip=${IP_MYSQL} --network-alias=db
 Volume=hrms-db-data:/var/lib/mysql:Z
+# mysqladmin ping exits 0 while the server responds, even unauthenticated —
+# no password embedded in the unit (W4/W7)
 Environment=MYSQL_ROOT_PASSWORD=${root_pw}
 Environment=MYSQL_DATABASE=${DB_NAME}
 Environment=MYSQL_USER=$(get_env DB_USER)
 Environment=MYSQL_PASSWORD=${app_pw}
-HealthCmd=mysqladmin ping -h localhost -uroot -p"${root_pw}" --silent
+HealthCmd=mysqladmin ping -h localhost --silent
 HealthInterval=10s
 HealthRetries=6
 [Service]
@@ -307,7 +354,7 @@ UNIT
 Description=UCB HRMS Redis 7
 [Container]
 Image=docker.io/library/redis:7-alpine
-Network=hrms-net
+Network=hrms-net.network
 PodmanArgs=--ip=${IP_REDIS} --network-alias=redis
 HealthCmd=redis-cli ping
 HealthInterval=10s
@@ -324,7 +371,7 @@ UNIT
 Description=UCB HRMS backend (Node/Express)
 [Container]
 Image=${IMAGE_BACKEND}
-Network=hrms-net
+Network=hrms-net.network
 PodmanArgs=--ip=${IP_BACKEND} --network-alias=backend
 EnvironmentFile=%h/.config/ucb-hrms/.env
 Environment=DB_HOST=${IP_MYSQL}
@@ -338,22 +385,22 @@ Restart=always
 WantedBy=default.target
 UNIT
 
-  # Nginx (edge: TLS + static console + /api proxy)
+  # nginx (edge: TLS + static console + /api proxy); dist comes from the
+  # hrms-page volume built in install_nginx_assets
   install_nginx_assets
   cat > "$QUADLET_DIR/hrms-nginx.container" <<UNIT
 [Unit]
 Description=UCB HRMS nginx edge (TLS)
 [Container]
 Image=docker.io/library/nginx:1.27-alpine
-Network=hrms-net
+Network=hrms-net.network
 PodmanArgs=--ip=${IP_NGINX} --network-alias=nginx
 PublishPort=${HTTP_PORT}:80
 PublishPort=${TLS_PORT}:443
 Volume=hrms-page:/usr/share/nginx/html:ro
 Volume=%h/.config/ucb-hrms/nginx:/etc/nginx/conf.d:Z
 Volume=%h/.config/ucb-hrms/tls:/etc/nginx/tls:Z
-Volume=%h/.config/ucb-hrms/frontend-dist:/var/www/html:Z
-HealthCmd=wget -qO- http://localhost/ >/dev/null || exit 1
+HealthCmd=wget -qO- http://localhost/health || exit 1
 HealthInterval=10s
 HealthRetries=6
 [Service]
@@ -363,14 +410,14 @@ WantedBy=default.target
 UNIT
 
   # Backup oneshot + timer
-  cat > "$QUADLET_DIR/hrms-backup.service" <<UNIT
+  cat > "$SYSTEMD_USER_DIR/hrms-backup.service" <<UNIT
 [Unit]
 Description=UCB HRMS nightly DB backup (throwaway mysql container)
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/podman run --rm --network ${NET_NAME} -v hrms-backups:/backups:Z --env-file %h/.config/ucb-hrms/.env ${MYSQL_IMAGE_FALLBACK:-docker.io/library/mysql:8.0} /bin/sh -c 'mysqldump -h ${IP_MYSQL} -uroot -p"$$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers ${DB_NAME} | gzip > /backups/ucb_hrms-$$(date -u +%%Y%%m%%d-%%H%%M%%S).sql.gz && ls /backups/*.sql.gz | sort -r | tail -n +15 | xargs -r rm'
 UNIT
-  cat > "$QUADLET_DIR/hrms-backup.timer" <<UNIT
+  cat > "$SYSTEMD_USER_DIR/hrms-backup.timer" <<UNIT
 [Unit]
 Description=UCB HRMS nightly DB backup schedule
 [Timer]
@@ -379,6 +426,14 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 UNIT
+  # mysql/backend units embed real secrets → owner-only
+  chmod 600 "$QUADLET_DIR/hrms-mysql.container" "$QUADLET_DIR/hrms-backend.container"
+  # (W2/W3 fix) Backup oneshot + timer are PLAIN systemd units, not Quadlet
+  # files — podman 4.x ignores anything else under the Quadlet dir, so they
+  # must live in ~/.config/systemd/user.
+  # Ensure the plain-systemd dir exists (Backup units are not Quadlet files:
+  # podman 4.x ignores anything other than .container/.network/.volume etc.)
+  mkdir -p "$SYSTEMD_USER_DIR"
   systemctl --user enable hrms-backup.timer 2>/dev/null || true
 }
 
@@ -396,7 +451,10 @@ install_nginx_assets() {
 server {
   listen 80;
   server_name ${PUBLIC_HOST};
-  return 301 https://\$host:${TLS_PORT}\$request_uri;
+  # For the container healthcheck only (the redirect server must answer
+  # 200 somewhere or the unit reports permanently unhealthy).
+  location = /health { access_log off; return 200 'ok'; }
+  location / { return 301 https://\$host:${TLS_PORT}\$request_uri; }
 }
 server {
   listen 443 ssl;
@@ -411,6 +469,11 @@ server {
     proxy_pass http://${IP_BACKEND}:3000;
     proxy_set_header Host \$host;
     proxy_set_header X-Forwarded-Proto https;
+    # Keep per-client source IPs: the backend has `trust proxy 1` set and
+    # all rate limiters key on req.ip — without this every user shares
+    # nginx's own IP as one giant bucket.
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$remote_addr;
   }
 }
 NGINX
@@ -433,8 +496,11 @@ stage6_drift_check() {
       systemctl --user stop "$unit" 2>/dev/null || true
     done
     podman network rm "$NET_NAME" 2>/dev/null || true
-    systemctl --user restart hrms-mysql hrms-redis hrms-backend hrms-nginx
-    # fall through to the normal verification below
+    # best-effort start; a unit that truly fails is caught by the drift
+    # checks below (missing container ⇒ IP "gone" ⇒ loud abort)
+    systemctl --user start hrms-mysql hrms-redis hrms-backend hrms-nginx 2>/dev/null || true
+    # fall through to the normal verification below — and re-baseline (the
+    # new Network ID is the intended state, not drift)
   fi
 
   if ! podman network inspect "$NET_NAME" &>/dev/null; then
@@ -456,6 +522,10 @@ stage6_drift_check() {
   load_baseline 2>/dev/null || true
   local base_id
   base_id="$(read_state NETWORK_ID 2>/dev/null || true)"
+  if [[ -n "$base_id" && "$RECREATE_NETWORK" == 1 ]]; then
+    echo "re-baselining after intentional network recreation"
+    base_id="$nid"
+  fi
   if [[ -z "$base_id" ]]; then
     echo "first run: establishing network baseline"
   elif [[ "$base_id" != "$nid" ]]; then
@@ -516,7 +586,7 @@ stage7_restore() {
   sed -E -e "s/DEFINER[[:space:]]*=[[:space:]]*\`[^\`]+\`@\`[^\`]+\`//g" \
          -e "s/^(CREATE DATABASE|USE)[[:space:]]/-- [deploy.sh] /I" \
       "$dump" > "$impdir/import.sql"
-  chmod a+r "$impdir/import.sql"; chmod a+rx "$impdir"
+  chmod 600 "$impdir/import.sql"; chmod 700 "$impdir"
 
   # The container-side script (quoting stays sane because it's a file).
   # DB_USER/DB_PASSWORD expand inside the container from --env-file vars,
@@ -533,7 +603,7 @@ mysql -h ${IP_MYSQL} -uroot -p"\${MYSQL_ROOT_PASSWORD}" \\
       FLUSH PRIVILEGES;"
 echo "IMPORT_OK"
 EOS
-  chmod a+rx "$impdir/run.sh"
+  chmod 700 "$impdir/run.sh"
 
   # Table-count verification script (also avoids nested-quote parsing)
   cat > "$impdir/verify.sh" <<EOS
@@ -541,7 +611,7 @@ EOS
 mysql -h ${IP_MYSQL} -uroot -p"\${MYSQL_ROOT_PASSWORD}" -N \\
   -e "SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA='${DB_NAME}';"
 EOS
-  chmod a+rx "$impdir/verify.sh"
+  chmod 700 "$impdir/verify.sh"
 
   # Run the import inside a throwaway mysql container
   local import_out
@@ -560,7 +630,8 @@ EOS
 
   # Verify table count ≥ 10 (a real schema restored, not an empty DB)
   local n
-  n="$(podman run --rm --network "$NET_NAME" --env-file "$CONFIG_DIR/.env" \
+  n="$(podman run --rm --network "$NET_NAME" \
+       -v "$impdir":/import:Z --env-file "$CONFIG_DIR/.env" \
        docker.io/library/mysql:8.0 /bin/sh /import/verify.sh | tail -1 | tr -d '[:space:]')"
   rm -rf "$impdir"
   [[ "$n" =~ ^[0-9]+$ ]] || stage_fail "could not verify table count after restore"
@@ -581,19 +652,22 @@ stage8_health() {
   stage_head 8 "health & endpoint verification"
 
   local base="https://${PUBLIC_HOST}:${TLS_PORT}"
+  # --resolve pins the hostname to loopback so checks work even behind
+  # hairpin-less NAT where the public DNS name doesn't resolve on-box.
+  local R=(--resolve "${PUBLIC_HOST}:${TLS_PORT}:127.0.0.1")
 
-  curl -kfsS --max-time 10 -o /dev/null "$base/healthz" \
+  curl -kfsS --max-time 10 "${R[@]}" -o /dev/null "$base/healthz" \
     || stage_fail "GET $base/healthz failed (nginx or backend down?)"
 
-  ready="$(curl -kfsS --max-time 10 "$base/ready")" \
+  ready="$(curl -kfsS --max-time 10 "${R[@]}" "$base/ready")" \
     || stage_fail "GET $base/ready failed"
   echo "$ready" | grep -q '"status":"ok"' || stage_fail "/ready did not report ok"
-  echo "/ready: $(echo "$ready" | sed 's/redis/redis[:/]&/')"
+  echo "/ready: $ready"
 
-  curl -kfsS --max-time 10 -o /dev/null "$base/" \
+  curl -kfsS --max-time 10 "${R[@]}" -o /dev/null "$base/" \
     || stage_fail "console UI did not load over HTTPS"
 
-  code="$(curl -k --max-time 10 -s -o /dev/null -w '%{http_code}' "$base/api")"
+  code="$(curl -k --max-time 10 "${R[@]}" -s -o /dev/null -w '%{http_code}' "$base/api")"
   [[ "$code" == "200" ]] || stage_fail "/api returned HTTP $code"
 
   stage_pas "all endpoints verified over https://${PUBLIC_HOST}:${TLS_PORT}"
@@ -620,15 +694,20 @@ stage9_report() {
  BACKUP
    Schedule:           nightly 01:05 UTC (systemd user timer)
    Manual:             ./deploy.sh --backup-now
-   Files:              ~/.local/share/containers/storage/volumes/hrms-backups (keep 14)
+   Retention:          last 14 dumps in the hrms-backups volume
 
- BOOTSTRAP ESCAPE HATCH (one-time, then remove SETUP_TOKEN!)
-   If the restored dump has no usable super-admin login, run:
-     curl -k -X POST "$base/admin/setup/bootstrap-super-admin?token=\$(grep SETUP_TOKEN $CONFIG_DIR/.env | cut -d= -f2)" \\
-          -H 'Content-Type: application/json' \\
-          -d '{"email":"<you@banihal.in>","password":"<new-password>"}'
-   (ALLOW_PROD_SETUP=true in $CONFIG_DIR/.env unlocks it; remove that var
-    and SETUP_TOKEN after the first login.)
+ BOOTSTRAP ESCAPE HATCH — ONLY if the restored dump has no usable
+   super-admin login. The endpoint is GET and reads the initial
+   credentials from the runtime .env (not from a request body):
+     1. Append to $CONFIG_DIR/.env:
+          SUPER_ADMIN_EMAIL=<you@banihal.in>
+          SUPER_ADMIN_PASSWORD=<new-password>
+     2. ./deploy.sh --stage 5        (restart backend with the new vars)
+     3. Visit (one-time):
+        $base/admin/setup/bootstrap-super-admin?token=<SETUP_TOKEN>
+        (token: grep SETUP_TOKEN $CONFIG_DIR/.env | cut -d= -f2)
+     4. After the first sign-in: remove SETUP_TOKEN and ALLOW_PROD_SETUP
+        (and the creds you appended) from the .env, ./deploy.sh --stage 5
 ────────────────────────────────────────────────────────────
 REPORT
   stage_pas
@@ -678,6 +757,14 @@ run_stage() {
     *) echo "unknown stage $1"; exit 1 ;;
   esac
 }
+
+# Subcommands (dispatched here, after all definitions exist)
+if [[ "$SUBCMD" == "status" ]]; then
+  load_config; show_status; exit 0
+fi
+if [[ "$SUBCMD" == "set-hostname" ]]; then
+  load_config; set_hostname "$SUBCMD_ARG"; exit 0
+fi
 
 if [[ "$BACKUP_NOW" == 1 ]]; then
   load_config

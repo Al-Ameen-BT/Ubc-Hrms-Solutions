@@ -76,7 +76,8 @@ app.use(express.json({ limit: '1mb' }));
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.LOGIN_MAX_FAILURES) || 20,
-  store: redis.getRateStore() || undefined,
+  store: redis.getRateStore('login') || undefined,
+  passOnStoreError: true,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
@@ -89,7 +90,8 @@ app.use('/api/v1/auth/login', loginLimiter);
 const mfaLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.MFA_MAX_FAILURES) || 10,
-  store: redis.getRateStore() || undefined,
+  store: redis.getRateStore('mfa') || undefined,
+  passOnStoreError: true,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
@@ -106,14 +108,15 @@ const resetLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { status: 'error', message: 'Too many password reset requests. Please try again in an hour.' },
-  store: redis.getRateStore() || undefined,
+  store: redis.getRateStore('reset') || undefined,
+  passOnStoreError: true,
 });
 app.use('/api/v1/auth/forgot-password', resetLimiter);
 app.use('/api/v1/auth/reset-password', mfaLimiter);
 
 // Wider limiter for the one-time setup endpoints — they're token-gated, but
 // a limiter means the token itself can't be brute-forced either.
-const setupLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore() || undefined });
+const setupLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('setup') || undefined, passOnStoreError: true });
 app.use('/admin/setup', (req, res, next) => {
   if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_PROD_SETUP) {
     return res.status(403).json({ status: 'error', message: 'Setup endpoints are disabled in production mode.' });
@@ -128,7 +131,8 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { status: 'error', message: 'API rate limit exceeded. Please retry shortly.' },
-  store: redis.getRateStore() || undefined,
+  store: redis.getRateStore('api') || undefined,
+  passOnStoreError: true,
 });
 app.use('/api/v1', apiLimiter);
 

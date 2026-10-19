@@ -47,20 +47,20 @@
   - `probeRedis()` → `{ configured, ok, status }` for `/ready`
   - On connect failure: one-time `console.warn('[redis] unreachable — falling back to in-memory rate stores')`, then lazy client; retry on next timer tick (enableOfflineQueue false, maxRetriesPerRequest 1, lazyConnect).
 
-- [ ] **Step 1: Write failing boot/behavior check** (script `scripts/verify-redis-fallback.sh` or inline): start `NODE_ENV=development PORT=3101 REDIS_URL=redis://127.0.0.1:6399 node src/server.js`, assert stderr contains the fallback warning and `curl http://127.0.0.1:3101/ready` returns 200.
-- [ ] **Step 2: Run it, expect FAIL** (warn text/`/ready` redis block not present yet).
-- [ ] **Step 3: Implement** `src/services/redis.js` (spec above) and wire in `src/server.js`: all **five** limiters (`loginLimiter`, `mfaLimiter`, `resetLimiter`, `setupLimiter`, `apiLimiter`) use `store: getRateStore() || undefined`; `/ready` JSON gains `redis: probeRedis().status` — redis degradation must NOT flip the overall 200.
-- [ ] **Step 4: Run the check again: PASS**; also boot **with** a reachable local mock (skip gracefully if no redis binary: keep the no-redis PASS as the required gate).
-- [ ] **Step 5: `node --check src/server.js src/services/redis.js`; commit** `feat: redis-backed rate limiting with memory fallback`.
+- [x] **Step 1: Write failing boot/behavior check** (script `scripts/verify-redis-fallback.sh` or inline): start `NODE_ENV=development PORT=3101 REDIS_URL=redis://127.0.0.1:6399 node src/server.js`, assert stderr contains the fallback warning and `curl http://127.0.0.1:3101/ready` returns 200.
+- [x] **Step 2: Run it, expect FAIL** (warn text/`/ready` redis block not present yet).
+- [x] **Step 3: Implement** `src/services/redis.js` (spec above) and wire in `src/server.js`: all **five** limiters (`loginLimiter`, `mfaLimiter`, `resetLimiter`, `setupLimiter`, `apiLimiter`) use `store: getRateStore() || undefined`; `/ready` JSON gains `redis: probeRedis().status` — redis degradation must NOT flip the overall 200.
+- [x] **Step 4: Run the check again: PASS**; also boot **with** a reachable local mock (skip gracefully if no redis binary: keep the no-redis PASS as the required gate).
+- [x] **Step 5: `node --check src/server.js src/services/redis.js`; commit** `feat: redis-backed rate limiting with memory fallback`.
 
 ### Task 2: Hostinger purge (whole repo)
 
 **Files:** Delete `.env.hostinger.example`, `DEPLOY_HOSTINGER.md`, `OldBuild/.env.hostinger.example`, `OldBuild/DEPLOY_HOSTINGER.md`; Modify: `README.md`, `PRODUCT.md`, `.env.example`, `src/server.js`, `src/config/db.js`, `src/scripts/dbInit.js`, `src/scripts/dbSync.js`, `src/models/employeeDocument.js`, `src/models/brandAsset.js`, `src/services/settings.js`, `src/sql/schema.sql`, `public/js/core.js`, `public/js/views-platform.js`, `public/js/components.js`, `.gitignore` (only where matched by grep).
 
-- [ ] **Step 1: Enumerate** every occurrence: `grep -rniE "hostinger|hpanel|passenger" . --exclude-dir=node_modules --exclude-dir=dist --exclude=package-lock.json` (record list).
-- [ ] **Step 2: Rewrite each hit**: doc sections → replaced by a short pointer to the UAT deployment section (README gets real content later in Task 7 — leave a placeholder line `<!-- deployment: see UAT Podman section -->`); code comments/strings → neutral wording ("Linux server"); `.env.example` Hostinger header → generic MySQL/Linux wording.
-- [ ] **Step 3: Verify zero**: same grep command returns no matches anywhere (including OldBuild, excluding node_modules/dist/package-lock).
-- [ ] **Step 4: Commit** `chore: remove all Hostinger deployment references`.
+- [x] **Step 1: Enumerate** every occurrence: `grep -rniE "hostinger|hpanel|passenger" . --exclude-dir=node_modules --exclude-dir=dist --exclude=package-lock.json` (record list).
+- [x] **Step 2: Rewrite each hit**: doc sections → replaced by a short pointer to the UAT deployment section (README gets real content later in Task 7 — leave a placeholder line `<!-- deployment: see UAT Podman section -->`); code comments/strings → neutral wording ("Linux server"); `.env.example` Hostinger header → generic MySQL/Linux wording.
+- [x] **Step 3: Verify zero**: same grep command returns no matches anywhere (including OldBuild, excluding node_modules/dist/package-lock).
+- [x] **Step 4: Commit** `chore: remove all Hostinger deployment references`.
 
 ### Task 3: deploy.sh skeleton — common lib + Stages 0–3 (preflight, install, verify-install, secrets)
 
@@ -73,10 +73,10 @@
 - Produces for later tasks: `.env` at `~/.config/ucb-hrms/.env`; baseline/state helpers; `PUBLIC_HOST` state var; `PORT_PREFIX=(443 80)` or `(8443 8080)` exported as `TLS_PORT`/`HTTP_PORT`.
 - Consumes: repo-local `docker-compose.yml` may still exist (Task 7 deletes it) — stage 0 only *detects and aborts* on a running old stack.
 
-- [ ] **Step 1: Write `deploy/lib/common.sh` + `deploy.sh` scaffold** with the four stage functions and the strict-mode dispatcher (each stage: `stage_head N name; f; pas`).
-- [ ] **Step 2: Static verification**: `bash -n deploy.sh deploy/lib/common.sh`; `shellcheck` if available.
-- [ ] **Step 3: Secrets-idempotence check** (Clip): run `bash -c 'source deploy/lib/common.sh; stage3_secrets'` twice locally (no podman needed at this stage); `md5sum` of `.env` identical both times.
-- [ ] **Step 4: Commit** `feat: deploy.sh stages 0-3 (preflight, install, secrets)`.
+- [x] **Step 1: Write `deploy/lib/common.sh` + `deploy.sh` scaffold** with the four stage functions and the strict-mode dispatcher (each stage: `stage_head N name; f; pas`).
+- [x] **Step 2: Static verification**: `bash -n deploy.sh deploy/lib/common.sh`; `shellcheck` if available.
+- [x] **Step 3: Secrets-idempotence check** (Clip): run `bash -c 'source deploy/lib/common.sh; stage3_secrets'` twice locally (no podman needed at this stage); `md5sum` of `.env` identical both times.
+- [x] **Step 4: Commit** `feat: deploy.sh stages 0-3 (preflight, install, secrets)`.
 
 ### Task 4: Quadlet units, nginx assets, stages 4–6 (build, deploy, drift verify)
 
@@ -94,10 +94,10 @@
 - Consumes: Task 3 helpers; backend image name `localhost/hrms-backend:latest` consumed by Task 4 units only.
 - Produces: baseline file `~/.local/state/ucb-hrms/baseline.env` (`NETWORK_ID`, `SUBNET`, `GATEWAY`, `IP_MYSQL/…`).
 
-- [ ] **Step 1: Write all unit/nginx files + stage functions.** Quadlet notes: `.container` units take `EnvironmentFile=%h/.config/ucb-hrms/.env`; static IPs/aliases go through `PodmanArgs=` lines, so any line that embeds a secret-valued variable must be generated with its final value at unit-install time by `stage5_deploy` (never interpolated inside the unit file itself).
-- [ ] **Step 2: `bash -n`; `shellcheck`; structural check:** `grep -c "10.89.0." deploy/quadlet/*` and assert each unit pins its exact IP; assert `Network=hrms-net` appears in all `.container` units.
-- [ ] **Step 3: Drift-logic unit check (no podman needed):** source `stage6` helpers with canned `podman network inspect` fixture via a `PODMAN_DRYRUN_DIR` test hook; mutate baseline (wrong NetworkID) and expect the abort message.
-- [ ] **Step 4: Commit** `feat: quadlet stack, nginx edge, stages 4-6 with drift verification`.
+- [x] **Step 1: Write all unit/nginx files + stage functions.** Quadlet notes: `.container` units take `EnvironmentFile=%h/.config/ucb-hrms/.env`; static IPs/aliases go through `PodmanArgs=` lines, so any line that embeds a secret-valued variable must be generated with its final value at unit-install time by `stage5_deploy` (never interpolated inside the unit file itself).
+- [x] **Step 2: `bash -n`; `shellcheck`; structural check:** `grep -c "10.89.0." deploy/quadlet/*` and assert each unit pins its exact IP; assert `Network=hrms-net` appears in all `.container` units.
+- [x] **Step 3: Drift-logic unit check (no podman needed):** source `stage6` helpers with canned `podman network inspect` fixture via a `PODMAN_DRYRUN_DIR` test hook; mutate baseline (wrong NetworkID) and expect the abort message.
+- [x] **Step 4: Commit** `feat: quadlet stack, nginx edge, stages 4-6 with drift verification`.
 
 ### Task 5: Stage 7 restore + Stage 8 backup assets
 
@@ -113,20 +113,20 @@
 - Post-restore **grants**: `CREATE USER IF NOT EXISTS 'hrms_uat'@'%' IDENTIFIED BY '$DB_PASSWORD'; GRANT ALL ON ucb_hrms.* TO 'hrms_uat'@'%' FLUSH PRIVILEGES;`
 - Verify: `SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA='ucb_hrms';` ≥ 1 else FAIL stage.
 - **Ban check** pinned here:
-- [ ] **Step 1: implement stage7 + stage8(units+timer).**
-- [ ] **Step 2: `bash -n`.**
-- [ ] **Step 3: hash-skip check with a fake 3-line dump + stubbed import** (local function defined via `PODMAN="echo"` mode): first run executes import cmd; second run (same hash) prints "dump already restored" and respects skip; `--force-restore` re-executes.
-- [ ] **Step 4: seeding ban check:** the grep must return **0 lines** in deploy.sh + deploy/lib + deploy/quadlet (.Repositories: npm run seed|seed:demo|demo) — expected zero matches **is the pass**.
-- [ ] **Step 5: Commit** `feat: .sql restore stage (no seeding, DEFINER-safe, grant-fixing) + systemd backup timer`.
+- [x] **Step 1: implement stage7 + stage8(units+timer).**
+- [x] **Step 2: `bash -n`.**
+- [x] **Step 3: hash-skip check with a fake 3-line dump + stubbed import** (local function defined via `PODMAN="echo"` mode): first run executes import cmd; second run (same hash) prints "dump already restored" and respects skip; `--force-restore` re-executes.
+- [x] **Step 4: seeding ban check:** the grep must return **0 lines** in deploy.sh + deploy/lib + deploy/quadlet (.Repositories: npm run seed|seed:demo|demo) — expected zero matches **is the pass**.
+- [x] **Step 5: Commit** `feat: .sql restore stage (no seeding, DEFINER-safe, grant-fixing) + systemd backup timer`.
 
 ### Task 6: Stage 8 health verification, Stage 9 report, `status` subcommand
 
 **Files:**
 - Modify: `deploy.sh` — `stage8_health` (with base `https://$PUBLIC_HOST:$TLS_PORT`, `curl -kfsS` checks: `/healthz` → 200; `/ready` → 200 + JSON contains `redis` key; `/` → 200 contains expected app title string; `/api` returns callable JSON — assert 200 only), `stage9_report` (STATE table from stages; **main links** block: console URL, API URL, health/readiness URLs; **bootstrap escape hatch**: printed `SETUP_TOKEN`-based `curl` for `/admin/setup/bootstrap-super-admin` with ⚠ remove-token warning), `status` (idle view: units' `systemctl --user is-active`, container states, latest backup file), `--backup-now` (invokes the same oneshot command the timer unit uses).
-- [ ] **Step 1: implement.**
-- [ ] **Step 2: `bash -n`; shellcheck (if present); flag-parsing check:** `bash deploy.sh status --help` prints usage without starting anything in a dry environment (stubs).
-- [ ] **Step 3: hardcoded-secrets check (Review Focus):** the `grep` for literal password/jwt assignments must only match generation lines (`$(openssl rand -hex …)`) — no fixed values.
-- [ ] **Step 4: Commit** `feat: health verification, deploy report with links, status subcommand`.
+- [x] **Step 1: implement.**
+- [x] **Step 2: `bash -n`; shellcheck (if present); flag-parsing check:** `bash deploy.sh status --help` prints usage without starting anything in a dry environment (stubs).
+- [x] **Step 3: hardcoded-secrets check (Review Focus):** the `grep` for literal password/jwt assignments must only match generation lines (`$(openssl rand -hex …)`) — no fixed values.
+- [x] **Step 4: Commit** `feat: health verification, deploy report with links, status subcommand`.
 
 ### Task 7: Repo wrap-up — README UAT section, remove docker-compose.yml, commit & push
 
@@ -134,9 +134,9 @@
 - Modify: `README.md` (UAT Podman section: requirements Rocky 9, scp/rsync checkout to server, `./deploy.sh` first run (prompts), redeploys, links list meaning, backup (`--backup-now`, timer cadence, restore-from-backup command), drift/`--recreate-network`, secret rotation manual procedure, `status`).
 - Delete: `docker-compose.yml` (superseded by Quadlets).
 - Modify: `.env.example` — add `REDIS_URL`, remove staging-only leftovers, note that UAT secrets are script-generated (never copy-paste).
-- [ ] **Step 1: write section (concise, matches script's real flags).**
-- [ ] **Step 2: `grep -ri hostinger` still zero; `grep -rn "docker compose" README.md` zero.**
-- [ ] **Step 3: Commit** `docs: UAT Podman deployment guide; drop compose file`, **push** `git push origin main`.
+- [x] **Step 1: write section (concise, matches script's real flags).**
+- [x] **Step 2: `grep -ri hostinger` still zero; `grep -rn "docker compose" README.md` zero.**
+- [x] **Step 3: Commit** `docs: UAT Podman deployment guide; drop compose file`, **push** `git push origin main`.
 
 ---
 

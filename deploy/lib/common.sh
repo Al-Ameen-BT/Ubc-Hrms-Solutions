@@ -34,8 +34,8 @@ mkdir -p "$STATE_DIR" "$CONFIG_DIR"
    local tmp
    tmp="$(mktemp "${STATE_DIR}/state.env.XXXXXX")"
    if [[ -f "$STATE_DIR/state.env" ]]; then
-     # preserve existing entries, override this key
-     grep -vE "^${key}=" "$STATE_DIR/state.env" > "$tmp"
+     # keep the other entries; grep's exit 1 ("no lines survive") is fine
+     { grep -vE "^${key}=" "$STATE_DIR/state.env" > "$tmp" || true; }
    fi
    echo "${key}=${value}" >> "$tmp"
    mv "$tmp" "$STATE_DIR/state.env"

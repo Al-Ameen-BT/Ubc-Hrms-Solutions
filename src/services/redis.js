@@ -3,114 +3,115 @@
  *
  * Responsibilities:
  * 1. Detect whether REDIS_URL is set at process start (isRedisConfigured()).
- * 2. Attempt to create a RedisStore for express-rate-limit via rate-limit-redis,
- *    returning null on any error so the limiters silently fall back to the
- *    built-in memory store.  This keeps the app from crashing if the package
- *    versions are incompatible in the current environment.
- * 3. Probe Redis once for the /ready endpoint (ping), never throwing.
+ * 2. Build the rate-limit store with rate-limit-redis v5, whose constructor
+ *    accepts ONLY sendCommand (a raw command passthrough) and `prefix`.
+ *    There is a DISTINCT prefix per limiter (login/mfa/reset/setup/api):
+ *    sharing one bucket would merge every limiter's counts and expiry into
+ *    one key per IP.
+ * 3. Health-based fallback: one boot-time ping decides whether the store is
+ *    wired at all; when Redis is down at boot (or REDIS_URL missing), every
+ *    limiter silently uses express-rate-limit's memory store. At runtime a
+ *    fresh outage is contained by `passOnStoreError: true` on each limiter
+ *    (the caller in src/server.js sets it) so UAT never 500s on a cache outage.
+ * 4. probeRedis() pings for the /ready enrichment; never throws.
  *
  * Exported API (used by src/server.js):
- *   isRedisConfigured()    → bool   (true when REDIS_URL is set in env)
- *   getRateStore()       → RedisStore|null  (never throws; null = use memory)
- *   probeRedis()         → { configured, ok, status }   for /ready enrichment
+ *   isRedisConfigured()          → bool
+ *   getRateStore(name)           → RedisStore|null  (never throws)
+ *   probeRedis()                 → Promise<{ configured, ok, status }>
  */
 
 const Redis = require('ioredis');
 
-// REDIS_URL is normally set in the container env, e.g.
-//   redis://10.89.0.30:6379
 const REDIS_URL = process.env.REDIS_URL;
 
 let redisClient = null;
 let configured = false;
+let healthyAtBoot = false;
+let bootProbe = null; // promise resolving to boolean
 
-// ---------------------------------------------------
-// 1. Initialise the client if a URL was given
-// ---------------------------------------------------
+function isRedisConfigured() {
+  return Boolean(REDIS_URL);
+}
+
+/**
+ * One-time ping at boot. Resolves true only if Redis answered PONG.
+ */
+function startBootProbe() {
+  if (!configured) return;
+  bootProbe = new Promise(resolve => {
+    const t = setTimeout(() => {
+      console.warn('[redis] unreachable — falling back to in-memory rate stores');
+      resolve(false);
+    }, 1500);
+    redisClient.ping()
+      .then(() => { clearTimeout(t); healthyAtBoot = true; resolve(true); })
+      .catch(() => {
+        clearTimeout(t);
+        console.warn('[redis] unreachable — falling back to in-memory rate stores');
+        resolve(false);
+      });
+  });
+}
+
 if (REDIS_URL) {
   try {
     redisClient = new Redis(REDIS_URL, {
-      lazyConnect: true,          // connect on first use, not at import time
+      lazyConnect: false,
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
+      // Don't let connection churn at boot; we only need one decisive probe.
+      connectTimeout: 1500,
     });
-    // Silence unhandled-error spam when the URL points at nothing.
+    // Suppress hot-loop error spam when nothing is listening yet.
     redisClient.on('error', () => {});
     configured = true;
+    startBootProbe();
   } catch (e) {
-    // ioredis or rate-limit-redis incompatible – keep client null
-    console.error('[redis] init error:', e.message);
-    redisClient = null;
+    console.warn('[redis] init failed ("%s") — falling back to in-memory rate stores', e.message);
     configured = false;
+    healthyAtBoot = false;
   }
-} else {
-  configured = false;
 }
 
 /**
- * Returns true when a REDIS_URL was supplied at process-startup.
- * The actual store creation is best-effort; if it fails the caller should
- * pass `undefined` to express-rate-limit's `store` option and the limiter
- * will use its built-in memory store.
+ * Creates (and caches) a RedisStore for one specific limiter.
+ *      getRateStore('login') / ('mfa'|'reset'|'setup'|'api')
+ * Returns null whenever Redis is not usable right now — callers treat that
+ * as "use the memory store". Safe to call repeatedly; one store per name.
  */
-function isRedisConfigured() {
-  return configured;
-}
-
-/**
- * Best-effort factory for a rate-limit-redis RedisStore.
- * Returns a store instance when Redis is reachable, or null on any error.
- * Calling code must pass the result as `store: getRateStore() || undefined`
- * in the rate-limit options.
- */
-function getRateStore() {
-  if (!redisClient) {
-    return null;
-  }
-  // Attempt to create a RedisStore; any error (version mismatch, etc.)
-  // results in null so the limiter falls back to memory store.
+function getRateStore(name) {
+  if (!healthyAtBoot) return null;
+  if (stores.get(name)) return stores.get(name);
   try {
-    // rate-limit-redis may not be installed or may be incompatible;
-    // guard against ReferenceError / TypeError gracefully.
-    let RedisStore;
-    try {
-      RedisStore = require('rate-limit-redis').RedisStore;
-    } catch (_) {
-      return null;
-    }
-    if (typeof RedisStore !== 'function') {
-      return null;
-    }
-    return new RedisStore({
-      client: redisClient,
-      keyPrefix: 'hrms:rl:',
+    const { RedisStore } = require('rate-limit-redis');
+    const store = new RedisStore({
+      // ioredis exposes .call(command, ...args) — exactly what v5 wants.
+      sendCommand: (...args) => redisClient.call(...args),
+      prefix: `hrms:rl:${name}:`,
     });
+    stores.set(name, store);
+    return store;
   } catch (e) {
-    console.error('[redis] store creation error:', e.message);
+    console.warn('[redis] store creation failed ("%s") — memory store for %s', e.message, name);
     return null;
   }
 }
+const stores = new Map();
 
 /**
- * Probe Redis once and return status info for the /ready endpoint.
- * Returns a Promise that resolves to an object with `configured`, `ok`, and `status`.
- * If Redis is not configured, the promise resolves to `{configured: false, ok: false, status: 'unconfigured'}`.
- * If Redis is configured but unreachable, the promise resolves to `{configured: true, ok: false, status: 'degraded'}`.
- * If Redis is reachable, the promise resolves to `{configured: true, ok: true, status: 'ok'}`.
+ * Ping-on-demand for /ready. Always resolves (never rejects) with a status:
+ *   'ok'            reachable
+ *   'degraded'      configured but unreachable
+ *   'unconfigured'  no REDIS_URL at all
  */
 function probeRedis() {
   if (!redisClient) {
-    return { configured: false, ok: false, status: 'unconfigured' };
+    return Promise.resolve({ configured: false, ok: false, status: 'unconfigured' });
   }
-  return new Promise(resolve => {
-    redisClient.ping((err, res) => {
-      if (err || res !== 'PONG') {
-        resolve({ configured: true, ok: false, status: 'degraded' });
-      } else {
-        resolve({ configured: true, ok: true, status: 'ok' });
-      }
-    });
-  });
+  return redisClient.ping()
+    .then(() => ({ configured: true, ok: true, status: 'ok' }))
+    .catch(() => ({ configured: true, ok: false, status: 'degraded' }));
 }
 
 module.exports = {
