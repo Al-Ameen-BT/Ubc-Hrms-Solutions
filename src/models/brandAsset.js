@@ -4,15 +4,17 @@ const sequelize = require('../config/sequelize');
 
 /**
  * Uploaded logos, stored in the database rather than on disk on purpose:
- * Hostinger's managed deploy pipeline rebuilds the app directory on every
- * deploy, so files written next to the code would silently disappear. The
- * DB survives deploys and moves with it to the production server.
+ * Managed deploy pipelines may rebuild the app directory on every deploy,
+ * so files written next to the code would silently disappear. The DB
+ * survives deploys and moves with it to the production server.
  *
  * organizationId NULL = platform (Banihal) asset: kind LOGO or FAVICON.
  * organizationId set   = that bank's LOGO.
  * At most one row per (organizationId, kind) — enforced in
  * services/brandAssets.js (a unique index can't do it in MySQL because
  * NULLs don't collide).
+ *
+ * Note: The DB always survives deploys regardless of the deployment target.
  */
 const BrandAsset = sequelize.define('BrandAsset', {
   id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },

@@ -11,7 +11,7 @@
 --            -> Increment Policy / Pay Fixation Policy -> Calculation Engine
 --            -> Transaction (employee_pay_history / employee_increment_status)
 --
--- Target: MySQL 8.x (Hostinger-hosted initially, then own Linux server).
+-- Target: MySQL 8.x (own Linux server).
 -- ============================================================================
 
 SET NAMES utf8mb4;
@@ -483,7 +483,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (         -- exactly one row, id = 
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- Logos live in the DB, not on disk: Hostinger's deploy pipeline replaces the
+-- Logos live in the DB, not on disk: managed deploy pipelines replace the
 -- app directory on every deploy. organization_id NULL = platform asset.
 CREATE TABLE IF NOT EXISTS brand_asset (
   id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

@@ -7,8 +7,8 @@ const sequelize = require('../config/sequelize');
  * educational certificate, a photo, or anything else under OTHER — an
  * employee may have several documents, including several OTHER ones).
  * Stored as bytes in the DB (see services/documents.js and
- * models/brandAsset.js for why: disk files don't survive Hostinger's
- * deploy pipeline, the DB does), never on disk.
+ * models/brandAsset.js for why: disk files don't survive managed deploy
+ * pipelines, the DB does), never on disk.
  */
 const EmployeeDocument = sequelize.define('EmployeeDocument', {
   id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },

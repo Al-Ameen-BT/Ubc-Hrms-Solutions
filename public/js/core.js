@@ -1,9 +1,7 @@
 /* UCB HRMS & Payroll — console core.
  *
  * Plain ES5-style JavaScript, no framework, no build step: files are served
- * as-is, so a Hostinger deploy is just a file copy. Everything renders into
- * #root via a small hash router; views live in the views-*.js files and
- * register themselves with H.route().
+ * as-is. Two entry points share this one page:
  *
  * Two entry points share this one page:
  *   /            platform sign-in (Super Admins), Banihal branding

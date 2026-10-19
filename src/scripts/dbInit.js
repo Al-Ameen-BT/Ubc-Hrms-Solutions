@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Non-destructive DB setup — safe to run against a real (Hostinger or own-server)
- * MySQL database. Creates any tables that don't exist yet; never drops or alters
- * existing ones (unlike db:reset / dbSync.js, which is for local demo use only
- * and drops everything first).
+ * Non-destructive DB setup — safe to run against a real MySQL database.
+ * Creates any tables that don't exist yet; never drops or alters existing ones
+ * (unlike db:reset / dbSync.js, which is for local demo use only and drops
+ * everything first).
  *
  * Run once after the app is deployed and DB_* env vars point at the real
  * database: `npm run db:init`.

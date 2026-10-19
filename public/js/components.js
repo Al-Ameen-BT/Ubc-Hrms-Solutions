@@ -212,7 +212,7 @@
           '<form id="smtp-form" autocomplete="off">' +
             H.checkbox('smtp-enabled', 'Send email through this server', d.enabled) +
             '<div class="grid-2">' +
-              H.field('smtp-host', 'SMTP server', H.input('smtp-host', 'text', d.host, 'placeholder="smtp.hostinger.com"')) +
+              H.field('smtp-host', 'SMTP server', H.input('smtp-host', 'text', d.host, 'placeholder="smtp.example.com"')) +
               H.field('smtp-port', 'Port', H.input('smtp-port', 'number', d.port, 'min="1" max="65535"')) +
               H.field('smtp-security', 'Security', H.select('smtp-security', [['STARTTLS', 'STARTTLS (usually port 587)'], ['SSL', 'SSL/TLS (usually port 465)'], ['NONE', 'None — test servers only']], d.security)) +
               H.field('smtp-user', 'Username', H.input('smtp-user', 'text', d.username, 'autocomplete="off"')) +

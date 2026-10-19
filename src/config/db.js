@@ -3,7 +3,7 @@
 /**
  * DB connection config.
  *
- * Production target: MySQL (Hostinger MySQL DB in phase 1, own Linux MySQL server in phase 2).
+ * Production target: MySQL (own Linux MySQL server).
  * Local dev/demo: set DB_DIALECT=sqlite in .env for a zero-setup run (used by `npm run demo`
  * when no .env is present at all).
  */

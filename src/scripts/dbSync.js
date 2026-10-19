@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * DESTRUCTIVE — drops and recreates every table. Used by `npm run demo` and
- * local development only. Never run this against the Hostinger test DB or
- * any environment holding real/sample data you want to keep — use
- * `npm run db:init` (non-destructive) instead.
+ * DESTRUCTIVE — drops and recreates every table. Used by `npm run seed` and
+ * local development only. Never run this against any environment holding
+ * real/sample data you want to keep — use `npm run db:init` (non-destructive)
+ * instead.
  *
  * Requires CONFIRM_DROP=yes to actually run, as a guard against running it
  * by muscle memory in the wrong environment.

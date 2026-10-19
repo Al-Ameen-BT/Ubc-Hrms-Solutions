@@ -251,16 +251,14 @@ anything. `--reset` deletes only rows this seeder itself created (recognised by
 a marker it writes) — hand-entered employees are left untouched. All of it is
 invented sample data for testing only; never point it at a real bank's database.
 
-## Running against real MySQL (Hostinger test env, or your own server)
+## Running against real MySQL
 
-**For Hostinger, see `DEPLOY_HOSTINGER.md`** for the full step-by-step
-(hPanel MySQL setup, Node.js App setup, SSH deploy steps). Summary:
+Summary:
 
-1. Copy `.env.hostinger.example` (Hostinger) or `.env.example` (own server)
-   to `.env` and fill in real MySQL credentials (`DB_DIALECT=mysql`), a real
-   `JWT_SECRET` (generate one — see the comment in the `.env.example` file),
-   and — only while you run the two setup calls below — `SETUP_TOKEN` plus
-   `SUPER_ADMIN_EMAIL`/`SUPER_ADMIN_PASSWORD`.
+1. Copy `.env.example` to `.env` and fill in real MySQL credentials
+   (`DB_DIALECT=mysql`), a real `JWT_SECRET` (generate one — see the comment
+   in the `.env.example` file), and — only while you run the setup calls
+   below — `SETUP_TOKEN` plus `SUPER_ADMIN_EMAIL`/`SUPER_ADMIN_PASSWORD`.
 2. Create the tables, non-destructively: `npm run db:init` (safe to re-run;
    only creates tables that don't exist yet, never drops or alters).
    `npm run db:reset` also exists but **drops every table first** — local
@@ -276,17 +274,53 @@ invented sample data for testing only; never point it at a real bank's database.
 5. Replace `src/seed/index.js` with real organization/scale/policy data once
    verified, or build the admin screens to enter it (next slice).
 
-Hostinger is for **testing only** — production is planned for your own
-Linux server once modules are verified here.
+## UAT deployment (rootless Podman on Rocky Linux)
+
+`deploy.sh` automates the whole UAT stack: nginx TLS edge (self-signed),
+backend container, MySQL 8, Redis 7, nightly DB backups, systemd user units
+(Quadlet) so everything restarts on reboot — all rootless, on a stable named
+network `hrms-net` with a fixed subnet and static per-container IPs.
+
+```bash
+# one-time: get the checkout on the server
+rsync -a --exclude node_modules --exclude '.env*' --exclude '*.sqlite' \
+      ./ server:/srv/ucb-hrms/
+
+# every deploy (from the checkout on the server)
+./deploy.sh
+```
+
+What you get after a full run:
+
+- **Main links** — `https://<host>/` (console), `https://<host>/api`,
+  health at `https://<host>/healthz` and `/ready`.
+- **Secrets** — generated once into `~/.config/ucb-hrms/.env` (0600) and
+  reused on every re-deploy. Never copied from `.env.example`.
+- **Data** — a mysqldump-style `.sql` (schema + data) import prompted at
+  stage 7. **No seeding ever runs.** `AUTO_MIGRATE=false`.
+- **Network drift verification** (stage 6) — stores the network ID baseline;
+  if the network is recreated or a container lands off its static IP between
+  deploys, the deploy aborts loudly. Deliberate rebuild requires
+  `./deploy.sh --recreate-network` (then re-restore).
+- **Backups** — nightly at 01:05 UTC (`systemd --user` timer spawning a
+  throwaway mysqldump container), 14 dumps kept in `hrms-backups`:
+
+```bash
+./deploy.sh --backup-now   # manual dump
+./deploy.sh status         # units, timer, network, last restore hash
+```
+
+Requirements: Rocky Linux (or dnf-based), a regular (non-root) user with
+sudo for the two setup commands the script prints when it needs them, ~15 GB
+disk. Podman must run rootless (`podman info` reports Rootless=true).
 
 ### Bootstrapping (no SSH/shell access needed)
 
 Same pattern as the DB-setup endpoint: a token-gated URL you hit once from a
 browser, then lock back down.
 
-1. In hPanel → Environment variables, set `SETUP_TOKEN` (any random string),
-   `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and `JWT_SECRET` (a real
-   random secret — this one stays set permanently). Redeploy.
+1. Set `SETUP_TOKEN`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and `JWT_SECRET`
+   (a real random secret — this one stays set permanently). Redeploy.
 2. Visit `https://yourapp/admin/setup/init-db?token=YOUR_SETUP_TOKEN` once
    (creates the `users` table along with everything else, if not already
    run for this slice).

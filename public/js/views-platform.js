@@ -467,7 +467,7 @@
         return H.smtpForm({
           el: H.$('#st'), basePath: '/admin/settings/smtp', data: d.smtp,
           intro: 'Used for Super Admin mail, and for any bank that has not set up its own email server — welcome emails with temporary passwords, and password-reset links. ' +
-            'On Hostinger, use <code class="inline">smtp.hostinger.com</code>, port 465 (SSL) with a mailbox created in hPanel; outgoing SMTP to other providers may be blocked on shared hosting.'
+            'For SMTP via a third-party provider see the provider-specific docs; otherwise use the host:port provided in the settings UI.'
         });
       }
       return drawGeneral(d.settings);

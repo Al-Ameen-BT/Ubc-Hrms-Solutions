@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Frontend is being rebuilt from the incumbent vanilla JS/CSS SPA (no build step) to **React + Vite** (user decision, Oct 2026). Backend is Node.js/Express (SQLite for demo, MySQL for production) and is **preserved unchanged** — the UI rebuild talks to the same `/api/v1` REST API. Deploy target is a **dedicated hosting server** (own Linux server per README); the incumbent Hostinger file-copy deploy story is no longer a constraint, but a simple static-build-served-by-Express flow is still the default [INFERRED from README "production is planned for your own Linux server"].
+Frontend is being rebuilt from the incumbent vanilla JS/CSS SPA (no build step) to **React + Vite** (user decision, Oct 2026). Backend is Node.js/Express (SQLite for demo, MySQL for production) and is **preserved unchanged** — the UI rebuild talks to the same `/api/v1` REST API. Deploy target is a **dedicated hosting server** (own Linux server per README); a simple static-build-served-by-Express flow is still the default [INFERRED from README "production is planned for your own Linux server"].
 
 ## Users
 

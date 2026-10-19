@@ -5,8 +5,7 @@
  *
  * Serves both the JSON API (/api/v1/*) and the web console UI. The console
  * is served from frontend/dist when that build is present, otherwise from the
- * incumbent public/ bundle. Hostinger's deploy pipeline sets PORT itself —
- * always bind to process.env.PORT.
+ * incumbent public/ bundle. Always bind to process.env.PORT.
  */
 
 require('dotenv').config();
@@ -18,12 +17,13 @@ const rateLimit = require('express-rate-limit');
 const { sequelize, User } = require('./models');
 const { hashPassword } = require('./services/authService');
 const { migrate } = require('./scripts/migrate');
+const redis = require('./services/redis');
 const apiRoutes = require('./routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Behind reverse proxy (Nginx / Cloudflare / Hostinger), so req.ip reflects
+// Behind reverse proxy (Nginx / Cloudflare), so req.ip reflects
 // the real client rather than the proxy.
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -76,6 +76,7 @@ app.use(express.json({ limit: '1mb' }));
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.LOGIN_MAX_FAILURES) || 20,
+  store: redis.getRateStore() || undefined,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
@@ -88,6 +89,7 @@ app.use('/api/v1/auth/login', loginLimiter);
 const mfaLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.MFA_MAX_FAILURES) || 10,
+  store: redis.getRateStore() || undefined,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
@@ -104,13 +106,14 @@ const resetLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { status: 'error', message: 'Too many password reset requests. Please try again in an hour.' },
+  store: redis.getRateStore() || undefined,
 });
 app.use('/api/v1/auth/forgot-password', resetLimiter);
 app.use('/api/v1/auth/reset-password', mfaLimiter);
 
 // Wider limiter for the one-time setup endpoints — they're token-gated, but
 // a limiter means the token itself can't be brute-forced either.
-const setupLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+const setupLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore() || undefined });
 app.use('/admin/setup', (req, res, next) => {
   if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_PROD_SETUP) {
     return res.status(403).json({ status: 'error', message: 'Setup endpoints are disabled in production mode.' });
@@ -125,6 +128,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { status: 'error', message: 'API rate limit exceeded. Please retry shortly.' },
+  store: redis.getRateStore() || undefined,
 });
 app.use('/api/v1', apiLimiter);
 
@@ -227,18 +231,24 @@ app.get(['/health', '/healthz'], (req, res) => {
 app.get(['/health/db', '/ready'], async (req, res) => {
   try {
     await sequelize.authenticate();
-    res.json({ status: 'ok', dialect: sequelize.getDialect() });
+    const redisStatus = await redis.probeRedis();
+    const body = {
+      status: 'ok',
+      dialect: sequelize.getDialect(),
+      redis: redisStatus.status,
+    };
+    res.json(body);
   } catch (err) {
     res.status(503).json({ status: 'error', message: err.message });
   }
 });
 
 /**
- * One-time, token-protected table setup — for hosting setups (like
- * Hostinger's managed deploy pipeline) where there's no shell access into
- * the same environment the app actually runs in, so `npm run db:init`
- * can't be run directly. Non-destructive: only creates tables that don't
- * exist yet, never drops or alters existing ones (same as db:init).
+ * One-time, token-protected table setup — for hosting setups where there's
+ * no shell access into the same environment the app actually runs in, so
+ * `npm run db:init` can't be run directly. Non-destructive: only creates
+ * tables that don't exist yet, never drops or alters existing ones (same as
+ * db:init).
  *
  * Requires a SETUP_TOKEN environment variable to be set to a random value
  * before this will do anything. Remove the SETUP_TOKEN env var (and

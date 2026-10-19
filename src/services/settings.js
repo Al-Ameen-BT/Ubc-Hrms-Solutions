@@ -10,8 +10,7 @@ async function getPlatformSettings() {
 
 /**
  * Base URL for links in emails. Order: platform setting, APP_BASE_URL env
- * var, then the scheme+host this request arrived on (trust proxy is set,
- * so behind Hostinger's proxy that's the public https host).
+ * var, then the scheme+host this request arrived on (trust proxy is set).
  */
 async function appBaseUrl(req) {
   const s = await getPlatformSettings();
