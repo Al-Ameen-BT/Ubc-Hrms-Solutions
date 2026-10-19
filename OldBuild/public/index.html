@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>UCB HRMS &amp; Payroll</title>
+  <link rel="icon" id="favicon" href="/assets/platform/favicon">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div id="root">
+    <div class="boot">Loading&hellip;</div>
+  </div>
+  <!-- Order matters: core defines window.HRMS, the view files register
+       routes on it, boot.js starts the router. No build step, no CDN. -->
+  <script src="/js/core.js"></script>
+  <script src="/js/components.js"></script>
+  <script src="/js/views-auth.js"></script>
+  <script src="/js/views-platform.js"></script>
+  <script src="/js/views-org.js"></script>
+  <script src="/js/views-master.js"></script>
+  <script src="/js/views-payroll.js"></script>
+  <script src="/js/views-arrears.js"></script>
+  <script src="/js/views-allowances.js"></script>
+  <script src="/js/views-leave.js"></script>
+  <script src="/js/boot.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+.git
+.github
+.gemini
+node_modules
+frontend/node_modules
+*.sqlite
+dev.sqlite
+*.log
+.env
+.env.*
+!*.example
+dist
+frontend/dist
+tmp
+coverage

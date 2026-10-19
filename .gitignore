@@ -1,0 +1,45 @@
+# --- Secrets / environment (never commit real values) --------------------
+.env
+.env.*
+!.env.example
+!.env.hostinger.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- Databases (contain real HR data, not just schema) -------------------
+*.sqlite
+*.sqlite3
+*.db
+*.sql.bak
+src/backup_*
+
+# --- Dependencies --------------------------------------------------------
+node_modules/
+**/node_modules/
+
+# --- Build output --------------------------------------------------------
+dist/
+frontend/dist/
+*.tsbuildinfo
+
+# --- Logs ----------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# --- Legacy build reference snapshot (contains its own stray .env) -------
+OldBuild/.env
+OldBuild/dev.sqlite
+OldBuild/*.sqlite
+
+# --- OS / editor junk -----------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json

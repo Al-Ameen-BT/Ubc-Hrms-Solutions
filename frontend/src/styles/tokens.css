@@ -1,0 +1,125 @@
+/* ============================================================
+   Glassmorphism — Design Tokens
+   Professional, minimal, frosted glass surfaces.
+   Auto theme (prefers-color-scheme) + manual toggle.
+   ============================================================ */
+
+:root {
+  /* Light theme — default */
+  --bg-primary: #e9eef6;
+  --bg-secondary: #dde5f0;
+  --bg-glass: rgba(255, 255, 255, 0.55);
+  --bg-glass-strong: rgba(255, 255, 255, 0.78);
+  --bg-glass-subtle: rgba(255, 255, 255, 0.42);
+  --bg-glass-hover: rgba(255, 255, 255, 0.72);
+
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-raised: rgba(255, 255, 255, 0.88);
+  --surface-sunken: rgba(226, 234, 245, 0.55);
+
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-inverse: #f7fafc;
+
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.12);
+  --accent-strong: #2563eb;
+
+  --success: #10b981;
+  --success-soft: rgba(16, 185, 129, 0.12);
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.12);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.12);
+
+  --border: rgba(255, 255, 255, 0.6);
+  --border-strong: rgba(255, 255, 255, 0.85);
+  --border-subtle: rgba(15, 23, 42, 0.07);
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 6px 16px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.12), 0 6px 12px rgba(15, 23, 42, 0.06);
+  --shadow-glass: 0 10px 34px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+
+  --blur: blur(16px) saturate(160%);
+  --blur-strong: blur(24px) saturate(180%);
+  --blur-subtle: blur(8px) saturate(140%);
+
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --duration-fast: 150ms;
+  --duration: 250ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 64px;
+  --topbar-height: 60px;
+}
+
+/* Dark theme */
+[data-theme='dark'] {
+  --bg-primary: #0a1120;
+  --bg-secondary: #16213a;
+  --bg-glass: rgba(30, 41, 59, 0.5);
+  --bg-glass-strong: rgba(24, 34, 54, 0.78);
+  --bg-glass-subtle: rgba(30, 41, 59, 0.38);
+  --bg-glass-hover: rgba(51, 65, 85, 0.6);
+
+  --surface: rgba(30, 41, 59, 0.55);
+  --surface-raised: rgba(30, 41, 59, 0.9);
+  --surface-sunken: rgba(10, 17, 32, 0.6);
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-inverse: #1e293b;
+
+  --accent: #60a5fa;
+  --accent-soft: rgba(96, 165, 250, 0.15);
+  --accent-strong: #3b82f6;
+
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.15);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.15);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.15);
+
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.45), 0 6px 12px rgba(0, 0, 0, 0.3);
+  --shadow-glass: 0 10px 34px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration: 0ms;
+  }
+}
