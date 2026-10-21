@@ -6,21 +6,16 @@
  * employeeOverdraft.js, employeeRecurringDeposit.js). Each is a single
  * record (amount + start date + repayment period); how much is still owed
  * "as of" any given date is computed here rather than posted month by
- * month, matching how services/payslip.js computes everything else live.
+ * month, matching how services/payslip.js computes everything live.
+ *
+ * All monetary calculations use integer paise to avoid floating-point
+ * precision issues.
  */
 
-const DEFAULT_RETIREMENT_AGE_YEARS = 58; // fallback only, when no org settings row is available; see OrgPayrollSetting.retirementAge
+const DEFAULT_RETIREMENT_AGE_YEARS = 58;
 
-function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+const { toPaise, toRupees, add, percentOf, round } = require('../utils/money');
 
-/**
- * Employee's retirement date. Uses employee.dateOfRetirement if an admin has
- * set one explicitly (e.g. a negotiated/extended retirement date); otherwise
- * date of birth + the organisation's configured retirement age (see
- * OrgPayrollSetting.retirementAge — org-specific, not a fixed constant).
- * `settings` is optional; omit it only where an org's settings row genuinely
- * isn't available, in which case the fallback default above is used.
- */
 function retirementDate(employee, settings) {
   if (!employee) return null;
   if (employee.dateOfRetirement) {
@@ -60,49 +55,51 @@ function monthsUntilRetirement(employee, asOf, settings) {
  * for it this is unchanged (principal only).
  */
 function scheduleStatus(record, asOf) {
-  const amount = Number(record.amount) || 0;
+  const amountPaise = toPaise(record.amount);
   const repayMonths = Math.max(1, Number(record.repayMonths) || 1);
   const ratePercent = Number(record.interestRatePercent) || 0;
-  const interest = ratePercent ? round2(amount * (ratePercent / 100) * (repayMonths / 12)) : 0;
-  const totalRepayable = round2(amount + interest);
-  const monthlyInstallment = round2(totalRepayable / repayMonths);
+  const interestPaise = ratePercent ? round(percentOf(amountPaise, ratePercent) * repayMonths / 12) : 0;
+  const totalRepayablePaise = add(amountPaise, interestPaise);
+  const monthlyInstallmentPaise = round(totalRepayablePaise / repayMonths);
   const availed = new Date(String(record.availedDate) + 'T00:00:00Z');
   const monthsElapsed = Math.min(repayMonths, monthsBetween(availed, asOf));
   // The instalment due THIS month (0 once fully elapsed/repaid).
-  const dueThisMonth = monthsElapsed >= repayMonths ? 0 : monthlyInstallment;
-  const repaidSoFar = round2(Math.min(totalRepayable, monthlyInstallment * monthsElapsed));
-  const balanceRemaining = round2(Math.max(0, totalRepayable - repaidSoFar));
+  const dueThisMonthPaise = monthsElapsed >= repayMonths ? 0 : monthlyInstallmentPaise;
+  const repaidSoFarPaise = min(totalRepayablePaise, multiply(monthlyInstallmentPaise, monthsElapsed));
+  const balanceRemainingPaise = max(0, subtract(totalRepayablePaise, repaidSoFarPaise));
   return {
-    monthlyInstallment, monthsElapsed, dueThisMonth, repaidSoFar, balanceRemaining,
-    fullyRepaid: balanceRemaining <= 0, interestRatePercent: ratePercent, interest, totalRepayable,
+    monthlyInstallment: toRupees(monthlyInstallmentPaise),
+    monthsElapsed,
+    dueThisMonth: toRupees(dueThisMonthPaise),
+    repaidSoFar: toRupees(repaidSoFarPaise),
+    balanceRemaining: toRupees(balanceRemainingPaise),
+    fullyRepaid: balanceRemainingPaise <= 0,
+    interestRatePercent: ratePercent,
+    interest: toRupees(interestPaise),
+    totalRepayable: toRupees(totalRepayablePaise),
   };
 }
 
 /** Employee Overdraft eligibility ceiling = min(org max, (Basic+DA) x multiplier). */
 function overdraftEligibility(employee, settings) {
-  const basic = Number(employee.currentBasicPay) || 0;
-  const da = round2(basic * (Number(settings.daPercent) || 0) / 100);
-  const ceiling = round2(Math.min(Number(settings.odMaxAmount) || 0, (basic + da) * (Number(settings.odMultiplier) || 0)));
-  return { basic, da, ceiling };
+  const basicPaise = toPaise(employee.currentBasicPay);
+  const daPaise = percentOf(basicPaise, settings.daPercent);
+  const ceilingPaise = min(
+    toPaise(settings.odMaxAmount),
+    percentOf(add(basicPaise, daPaise), settings.odMultiplier)
+  );
+  return { basic: toRupees(basicPaise), da: toRupees(daPaise), ceiling: toRupees(ceilingPaise) };
 }
 
-/**
- * Maximum allowed Overdraft repayment period: the org's standard (default
- * 84 months), shortened to whatever's left until retirement if that's sooner.
- */
+/** Maximum allowed Overdraft repayment period: the org's standard (default 84 months), shortened to whatever's left until retirement if that's sooner. */
 function overdraftMaxRepayMonths(employee, settings, asOf) {
   const orgMax = Number(settings.odMaxRepayMonths) || 84;
   const untilRetirement = monthsUntilRetirement(employee, asOf || new Date(), settings);
-  if (untilRetirement === null) return orgMax; // DOB unknown — can't shorten for retirement, fall back to the org standard
+  if (untilRetirement === null) return orgMax;
   return Math.max(1, Math.min(orgMax, untilRetirement));
 }
 
-/** The 1st of `month` (1-12) in the current calendar year — the reference
- * date a payslip preview for that month is computed "as of". Keeping this
- * in one place means the payslip's own DA/PT timing and the loan-schedule
- * "is this still active" check always agree on what date they mean by
- * "this month", including when previewing a month other than the real
- * current one (?month= on the payslip route). */
+/** The 1st of `month` (1-12) in the current calendar year — the reference date a payslip preview for that month is computed "as of". */
 function asOfForMonth(month) {
   const d = new Date();
   d.setUTCFullYear(d.getUTCFullYear(), (month || d.getUTCMonth() + 1) - 1, 1);
@@ -121,14 +118,9 @@ function asOfForMonth(month) {
  * `monthGranular` (used only by the payslip's own month-level `asOf`, which
  * is always the 1st of the target month — see payslip.js): when true,
  * `fromDate` is compared by calendar month rather than the exact day, so a
- * LIC/loan started on ANY day of the payslip's month (not just the 1st)
- * still counts as active for that month. Without this, something started
- * on, say, the 26th would be invisible from that same month's payslip even
- * though the "list" endpoints (which check against the real `today`, not a
- * 1st-of-month reference) already show it as Active. Only `fromDate` needs
- * this — `toDate`/`closureDate` already work correctly against a 1st-of-
- * month `asOf` (an end/closure anywhere in the target month still leaves
- * the record active for that whole month).
+ * LIC/loan started on any OTHER day of that same month would otherwise look
+ * like it hadn't started yet — see isActiveRange's own doc comment in
+ * services/loans.js for why this flag exists.
  */
 function isActiveRange(fromDate, toDate, closureDate, asOf, monthGranular) {
   if (!fromDate) return false;
@@ -149,7 +141,7 @@ function isActiveRange(fromDate, toDate, closureDate, asOf, monthGranular) {
 /** An LIC policy's status as of `asOf` — active flag + its flat deductionAmount. */
 function licStatus(record, asOf, monthGranular) {
   const active = isActiveRange(record.startedDate, null, record.closureDate, asOf, monthGranular);
-  return { active, deductionAmount: active ? (Number(record.deductionAmount) || 0) : 0 };
+  return { active, deductionAmount: active ? toRupees(toPaise(record.deductionAmount)) : 0 };
 }
 
 /**
@@ -160,13 +152,14 @@ function licStatus(record, asOf, monthGranular) {
  * approximation used for Overdraft elsewhere in this file.
  */
 function reducingBalanceEmi(principal, annualRatePercent, periodMonths) {
-  const p = Number(principal) || 0;
+  const pPaise = toPaise(principal);
   const n = Math.max(1, Number(periodMonths) || 1);
   const annualRate = Number(annualRatePercent) || 0;
-  if (!annualRate) return round2(p / n);
+  if (!annualRate) return toRupees(round(pPaise / n));
   const r = annualRate / 12 / 100;
   const factor = Math.pow(1 + r, n);
-  return round2((p * r * factor) / (factor - 1));
+  const emiPaise = Math.round((pPaise * r * factor) / (factor - 1));
+  return toRupees(emiPaise);
 }
 
 /** Housing Loan EMI — always rate-driven (see reducingBalanceEmi above). */
@@ -184,9 +177,15 @@ function housingLoanStatus(record, asOf, monthGranular) {
   const active = isActiveRange(record.emiStartDate, record.emiEndDate, record.closureDate, asOf, monthGranular);
   const emiAmount = housingLoanEmi(record);
   const periodMonths = Math.max(1, Number(record.periodMonths) || 1);
-  const totalRepayable = round2(emiAmount * periodMonths);
-  const interest = round2(totalRepayable - (Number(record.totalLoanAmount) || 0));
-  return { active, emiAmount, dueThisMonth: active ? emiAmount : 0, interest, totalRepayable };
+  const totalRepayablePaise = multiply(toPaise(emiAmount), periodMonths);
+  const interestPaise = subtract(totalRepayablePaise, toPaise(record.totalLoanAmount));
+  return {
+    active,
+    emiAmount,
+    dueThisMonth: active ? emiAmount : 0,
+    interest: toRupees(interestPaise),
+    totalRepayable: toRupees(totalRepayablePaise),
+  };
 }
 
 /**
@@ -202,11 +201,17 @@ function vehicleLoanStatus(record, asOf, monthGranular) {
   const active = isActiveRange(record.startDate, record.endDate, record.closureDate, asOf, monthGranular);
   const emiAmount = record.interestRatePercent != null
     ? reducingBalanceEmi(record.totalAmount, record.interestRatePercent, record.periodMonths)
-    : round2(record.emiAmount);
+    : toRupees(toPaise(record.emiAmount));
   const periodMonths = Math.max(1, Number(record.periodMonths) || 1);
-  const totalRepayable = round2(emiAmount * periodMonths);
-  const interest = round2(totalRepayable - (Number(record.totalAmount) || 0));
-  return { active, emiAmount, dueThisMonth: active ? emiAmount : 0, interest, totalRepayable };
+  const totalRepayablePaise = multiply(toPaise(emiAmount), periodMonths);
+  const interestPaise = subtract(totalRepayablePaise, toPaise(record.totalAmount));
+  return {
+    active,
+    emiAmount,
+    dueThisMonth: active ? emiAmount : 0,
+    interest: toRupees(interestPaise),
+    totalRepayable: toRupees(totalRepayablePaise),
+  };
 }
 
 /**
@@ -256,5 +261,5 @@ module.exports = {
   housingLoanEmi,
   housingLoanStatus,
   vehicleLoanStatus,
-  round2,
+  round2: (n) => toRupees(toPaise(n)), // backward compatibility
 };

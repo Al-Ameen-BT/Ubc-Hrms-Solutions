@@ -10,7 +10,7 @@
  *
  *   1. CALCULATE — calculateForRevision() walks every eligible employee,
  *      month by month from the revision's Effective From to Effective To
- *      (or the current month if still open), pricing each month's
+ *      (or the current month if still open-ended), pricing each month's
  *      difference against that employee's ACTUAL applicable Basic Pay for
  *      that specific month (basicPayAsOfMonth — never a flat
  *      Total Months x Current Basic x %). Produces one ArrearsCase per
@@ -32,18 +32,21 @@
  * arrear shows up in their permanent record the same as an increment or
  * promotion would), and makes a receipt PDF available for that payment
  * (services/arrearsReceiptPdf.js).
+ *
+ * All monetary calculations use integer paise to avoid floating-point
+ * precision issues.
  */
 
-const { sequelize, Employee, PayScale, PayrollRun, PayrollRunLine, EmployeePayHistory, EmployeeServiceHistory, DaRevision, ArrearsCase, ArrearsMonthDetail, ArrearsInstallment } = require('../models');
+const { sequelize, Employee, PayScale, PayrollRun, PayrollRunLine, EmployeePayHistory, DaRevision, ArrearsCase, ArrearsMonthDetail, ArrearsInstallment } = require('../models');
 const { Op } = require('sequelize');
+const { toPaise, toRupees, add, percentOf, round, sum, min } = require('../utils/money');
 
 class ArrearsError extends Error {
   constructor(message, status) { super(message); this.status = status || 400; }
 }
 
-function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 function monthKey(year, month) { return `${year}-${String(month).padStart(2, '0')}`; }
-function endOfMonth(year, month) { return new Date(Date.UTC(year, month, 0)); } // month is 1-12; day 0 of next month = last day of this one
+function endOfMonth(year, month) { return new Date(Date.UTC(year, month, 0)); }
 function toDateOnly(d) { return d.toISOString().slice(0, 10); }
 
 /**
@@ -93,7 +96,7 @@ async function basicPayAsOfMonth(organizationId, employeeId, year, month) {
     if (line) {
       const p = JSON.parse(line.payslipJson);
       const amt = p.earnings && (p.earnings.actualBasic != null ? p.earnings.actualBasic : p.earnings.basic);
-      if (amt != null) return { amount: round2(amt), source: 'PAYROLL_RUN' };
+      if (amt != null) return { amount: toRupees(toPaise(amt)), source: 'PAYROLL_RUN' };
     }
   }
 
@@ -102,10 +105,10 @@ async function basicPayAsOfMonth(organizationId, employeeId, year, month) {
     where: { employeeId, eventDate: { [Op.lte]: cutoff } },
     order: [['eventDate', 'DESC'], ['id', 'DESC']],
   });
-  if (event) return { amount: round2(event.newBasicPay), source: 'PAY_HISTORY' };
+  if (event) return { amount: toRupees(toPaise(event.newBasicPay)), source: 'PAY_HISTORY' };
 
   const employee = await Employee.findByPk(employeeId);
-  return { amount: round2(employee ? employee.currentBasicPay : 0), source: 'CURRENT_ESTIMATE' };
+  return { amount: toRupees(toPaise(employee ? employee.currentBasicPay : 0)), source: 'CURRENT_ESTIMATE' };
 }
 
 /**
@@ -137,7 +140,7 @@ async function eligibleEmployees(organizationId, daRevision) {
 }
 
 /** Sums an ArrearsCase's month-detail rows into its total; does not persist. */
-function sumMonths(monthRows) { return round2(monthRows.reduce((s, r) => s + Number(r.arrearsAmount), 0)); }
+function sumMonths(monthRows) { return toRupees(sum(monthRows.map(r => toPaise(r.arrearsAmount)))); }
 
 /**
  * (Re)calculates one employee's arrears case for one revision. If a case
@@ -158,11 +161,11 @@ async function calculateCase(daRevision, employee, userId, transaction) {
   for (const { year, month } of months) {
     // eslint-disable-next-line no-await-in-loop
     const { amount: basicPayApplicable, source } = await basicPayAsOfMonth(daRevision.organizationId, employee.id, year, month);
-    const arrearsAmount = round2(basicPayApplicable * Number(daRevision.increasePercent) / 100);
+    const arrearsAmountPaise = percentOf(toPaise(basicPayApplicable), daRevision.increasePercent);
     rows.push({
       year, month, basicPayApplicable, basicPaySource: source,
       previousDaPercent: daRevision.previousDaPercent, revisedDaPercent: daRevision.revisedDaPercent,
-      daDifferencePercent: daRevision.increasePercent, arrearsAmount,
+      daDifferencePercent: daRevision.increasePercent, arrearsAmount: toRupees(arrearsAmountPaise),
     });
   }
   const totalCalculatedAmount = sumMonths(rows);
@@ -179,10 +182,6 @@ async function calculateCase(daRevision, employee, userId, transaction) {
       calculatedAt: new Date(), calculatedBy: userId || null,
     }, { transaction });
     arrearsCase = existing;
-    // Clearing to NONE above already implied the pending installments (if
-    // any survived the paid-check above, they're by definition all
-    // PENDING) should go — a stale plan against an old total is worse than
-    // no plan.
     await ArrearsInstallment.destroy({ where: { arrearsCaseId: existing.id, status: 'PENDING' }, transaction });
   } else {
     arrearsCase = await ArrearsCase.create({
@@ -223,7 +222,7 @@ async function calculateForRevision(daRevision, userId) {
     for (const staleCase of staleCases) {
       // eslint-disable-next-line no-await-in-loop
       const paidCount = await ArrearsInstallment.count({ where: { arrearsCaseId: staleCase.id, status: 'PAID' }, transaction: t });
-      if (paidCount > 0) continue; // already paid something — keep the record, just don't touch it further
+      if (paidCount > 0) continue;
       // eslint-disable-next-line no-await-in-loop
       await ArrearsInstallment.destroy({ where: { arrearsCaseId: staleCase.id }, transaction: t });
       // eslint-disable-next-line no-await-in-loop
@@ -267,17 +266,17 @@ async function loadCaseOr404(id, organizationId) {
 
 /** Manual Adjustment (spec #4) — mandatory reason, replaces the effective total and clears any pending (unpaid) plan, since it no longer sums to the right amount. */
 async function adjustAmount(arrearsCase, { approvedAmount, reason, userId }) {
-  const amt = Number(approvedAmount);
-  if (!Number.isFinite(amt) || amt < 0) throw new ArrearsError('Approved amount must be a non-negative number.');
+  const amtPaise = toPaise(approvedAmount);
+  if (!Number.isFinite(amtPaise) || amtPaise < 0) throw new ArrearsError('Approved amount must be a non-negative number.');
   if (!reason || !String(reason).trim()) throw new ArrearsError('An adjustment reason is required.');
   const paidCount = await ArrearsInstallment.count({ where: { arrearsCaseId: arrearsCase.id, status: 'PAID' } });
   assertNoPaidInstallments(arrearsCase, paidCount);
   return sequelize.transaction(async (t) => {
     await ArrearsInstallment.destroy({ where: { arrearsCaseId: arrearsCase.id, status: 'PENDING' }, transaction: t });
     await arrearsCase.update({
-      totalAdjustedAmount: round2(amt), adjustmentReason: String(reason).trim().slice(0, 2000),
+      totalAdjustedAmount: toRupees(amtPaise), adjustmentReason: String(reason).trim().slice(0, 2000),
       adjustedBy: userId || null, adjustedAt: new Date(),
-      effectiveTotalAmount: round2(amt), paymentMode: 'NONE',
+      effectiveTotalAmount: toRupees(amtPaise), paymentMode: 'NONE',
     }, { transaction: t });
     await refreshCaseStatus(arrearsCase.id, t);
     return arrearsCase;
@@ -298,7 +297,11 @@ async function replacePendingInstallments(arrearsCase, rows, paymentMode, userId
   const paidCount = await ArrearsInstallment.count({ where: { arrearsCaseId: arrearsCase.id, status: 'PAID' }, transaction });
   assertNoPaidInstallments(arrearsCase, paidCount);
   await ArrearsInstallment.destroy({ where: { arrearsCaseId: arrearsCase.id, status: 'PENDING' }, transaction });
-  await ArrearsInstallment.bulkCreate(rows.map((r) => ({ ...r, arrearsCaseId: arrearsCase.id, status: 'PENDING', createdBy: userId || null })), { transaction });
+  await ArrearsInstallment.bulkCreate(rows.map((r) => ({
+    ...r, arrearsCaseId: arrearsCase.id, status: 'PENDING',
+    amount: toRupees(toPaise(r.amount)),
+    createdBy: userId || null
+  })), { transaction });
   await arrearsCase.update({ paymentMode }, { transaction });
   await refreshCaseStatus(arrearsCase.id, transaction);
 }
@@ -307,9 +310,9 @@ async function replacePendingInstallments(arrearsCase, rows, paymentMode, userId
 async function setSingleShot(arrearsCase, { year, month, userId }) {
   year = Number(year); month = Number(month);
   if (!(year >= 2000 && year <= 2100) || !(month >= 1 && month <= 12)) throw new ArrearsError('A valid target year and month are required.');
-  const amount = Number(arrearsCase.effectiveTotalAmount);
-  if (!(amount > 0)) throw new ArrearsError('This case has no arrears amount to pay.');
-  return sequelize.transaction((t) => replacePendingInstallments(arrearsCase, [{ year, month, amount: round2(amount) }], 'SINGLE_SHOT', userId, t));
+  const amountPaise = toPaise(arrearsCase.effectiveTotalAmount);
+  if (!(amountPaise > 0)) throw new ArrearsError('This case has no arrears amount to pay.');
+  return sequelize.transaction((t) => replacePendingInstallments(arrearsCase, [{ year, month, amount: toRupees(amountPaise) }], 'SINGLE_SHOT', userId, t));
 }
 
 /** Payment mode 2: Installment — equal split across N consecutive months starting at startYear/startMonth; the last installment absorbs the rounding remainder so the rows always sum exactly to the total. */
@@ -318,15 +321,15 @@ async function setInstallments(arrearsCase, { numberOfInstallments, startYear, s
   startYear = Number(startYear); startMonth = Number(startMonth);
   if (!(n >= 1 && n <= 60)) throw new ArrearsError('Number of installments must be between 1 and 60.');
   if (!(startYear >= 2000 && startYear <= 2100) || !(startMonth >= 1 && startMonth <= 12)) throw new ArrearsError('A valid starting year and month are required.');
-  const total = Number(arrearsCase.effectiveTotalAmount);
-  if (!(total > 0)) throw new ArrearsError('This case has no arrears amount to pay.');
-  const per = Math.floor((total / n) * 100) / 100;
+  const totalPaise = toPaise(arrearsCase.effectiveTotalAmount);
+  if (!(totalPaise > 0)) throw new ArrearsError('This case has no arrears amount to pay.');
+  const perPaise = Math.floor(totalPaise / n);
   const rows = [];
   let y = startYear; let m = startMonth; let running = 0;
   for (let i = 0; i < n; i += 1) {
-    const amount = i === n - 1 ? round2(total - running) : per;
-    running = round2(running + amount);
-    rows.push({ year: y, month: m, amount });
+    const amountPaise = i === n - 1 ? totalPaise - running : perPaise;
+    running += amountPaise;
+    rows.push({ year: y, month: m, amount: toRupees(amountPaise) });
     m += 1; if (m > 12) { m = 1; y += 1; }
   }
   return sequelize.transaction((t) => replacePendingInstallments(arrearsCase, rows, 'INSTALLMENT', userId, t));
@@ -336,10 +339,10 @@ async function setInstallments(arrearsCase, { numberOfInstallments, startYear, s
 async function setCustomInstallments(arrearsCase, { installments, userId }) {
   if (!Array.isArray(installments) || !installments.length) throw new ArrearsError('At least one installment is required.');
   const rows = installments.map((r) => {
-    const year = Number(r.year); const month = Number(r.month); const amount = Number(r.amount);
+    const year = Number(r.year); const month = Number(r.month); const amountPaise = toPaise(r.amount);
     if (!(year >= 2000 && year <= 2100) || !(month >= 1 && month <= 12)) throw new ArrearsError('Each installment needs a valid year and month.');
-    if (!(amount > 0)) throw new ArrearsError('Each installment amount must be greater than zero.');
-    return { year, month, amount: round2(amount) };
+    if (!(amountPaise > 0)) throw new ArrearsError('Each installment amount must be greater than zero.');
+    return { year, month, amount: toRupees(amountPaise) };
   });
   const seen = new Set();
   rows.forEach((r) => {
@@ -347,9 +350,9 @@ async function setCustomInstallments(arrearsCase, { installments, userId }) {
     if (seen.has(k)) throw new ArrearsError(`Two installments were given for ${k} — combine them into one.`);
     seen.add(k);
   });
-  const sum = round2(rows.reduce((s, r) => s + r.amount, 0));
-  const total = round2(Number(arrearsCase.effectiveTotalAmount));
-  if (Math.abs(sum - total) > 0.01) throw new ArrearsError(`Installments total ${sum} but must total the calculated arrears of ${total}.`);
+  const sumPaise = sum(rows.map(r => toPaise(r.amount)));
+  const totalPaise = toPaise(arrearsCase.effectiveTotalAmount);
+  if (Math.abs(sumPaise - totalPaise) > 1) throw new ArrearsError(`Installments total ${toRupees(sumPaise)} but must total the calculated arrears of ${toRupees(totalPaise)}.`);
   return sequelize.transaction((t) => replacePendingInstallments(arrearsCase, rows, 'CUSTOM_INSTALLMENT', userId, t));
 }
 
@@ -411,7 +414,7 @@ async function receiptData(arrearsCase, installmentId) {
 
 module.exports = {
   ArrearsError,
-  round2,
+  round2: (n) => toRupees(toPaise(n)),
   monthKey,
   monthsInRange,
   basicPayAsOfMonth,
