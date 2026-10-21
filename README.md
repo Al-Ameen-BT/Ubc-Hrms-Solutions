@@ -297,7 +297,9 @@ What you get after a full run:
 - **Secrets** — generated once into `~/.config/ucb-hrms/.env` (0600) and
   reused on every re-deploy. Never copied from `.env.example`.
 - **Data** — a mysqldump-style `.sql` (schema + data) import prompted at
-  stage 7. **No seeding ever runs.** `AUTO_MIGRATE=false`.
+  stage 7. **No seeding ever runs.** On boot the app applies its additive
+  schema upgrade (`AUTO_MIGRATE=true` — missing tables/columns only; a
+  restored dump that predates later slices is brought up to code level).
 - **Network drift verification** (stage 6) — stores the network ID baseline;
   if the network is recreated or a container lands off its static IP between
   deploys, the deploy aborts loudly. Deliberate rebuild requires
