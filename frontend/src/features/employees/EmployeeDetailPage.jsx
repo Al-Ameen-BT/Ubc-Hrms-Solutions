@@ -121,7 +121,7 @@ export function EmployeeDetailPage() {
             <div className="employee-identity">
               <div className="employee-title-row">
                 <h1 className="employee-name">{employee.name}</h1>
-                <Badge variant={employee.status === 'ACTIVE' ? 'success' : 'default'} stamp>
+                <Badge variant={employee.status === 'ACTIVE' ? 'success' : 'default'}>
                   {employee.status}
                 </Badge>
                 <span className="employee-code-badge mono">ID: {employee.empCode}</span>
