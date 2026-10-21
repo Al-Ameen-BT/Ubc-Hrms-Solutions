@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Table } from '../../components/ui/Table';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const BANK_CLASSES = ['SPECIAL_GRADE', 'CLASS_I', 'CLASS_II', 'CLASS_III', 'CLASS_IV', 'CLASS_V'];
 const PLANS = ['TRIAL', 'STANDARD', 'PROFESSIONAL', 'ENTERPRISE', 'CUSTOM'];
@@ -19,6 +20,8 @@ export function OrganisationDetailPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const { data: org, isLoading } = useQuery({
     queryKey: ['organization', id],
@@ -65,8 +68,12 @@ export function OrganisationDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['organization', id] });
       queryClient.invalidateQueries({ queryKey: ['organization-domain', id] });
       toast.add('Organisation updated.', 'success');
+      setConfirmOpen(false);
     },
-    onError: (err) => toast.add(err.message || 'Update failed.', 'error'),
+    onError: (err) => {
+      setActionError(err.message || 'Update failed.');
+      toast.add(err.message || 'Update failed.', 'error');
+    },
   });
 
   const verifyDomain = useMutation({
@@ -102,7 +109,14 @@ export function OrganisationDetailPage() {
           </div>
           <div className="page-header-actions">
             <Badge variant={org.status === 'ACTIVE' ? 'success' : 'danger'}>{org.status}</Badge>
-            <Button variant={org.status === 'ACTIVE' ? 'danger' : 'primary'} loading={updateMutation.isPending} onClick={toggleSuspend}>
+            <Button
+              variant={org.status === 'ACTIVE' ? 'danger' : 'primary'}
+              loading={updateMutation.isPending}
+              onClick={() => {
+                setActionError('');
+                setConfirmOpen(true);
+              }}
+            >
               {org.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'}
             </Button>
           </div>
@@ -201,6 +215,30 @@ export function OrganisationDetailPage() {
           emptyMessage="No Organisation Admins yet."
         />
       </Card>
+
+      <ConfirmationModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => toggleSuspend()}
+        title={org.status === 'ACTIVE' ? 'Suspend Organisation' : 'Reactivate Organisation'}
+        itemName={org.name}
+        details={{
+          'Org Code': org.code,
+          'Bank Class': org.bankClassLabel || org.bankClass?.replace(/_/g, ' '),
+          'Active Users': usage.users || 0,
+          'Active Employees': usage.employees || 0,
+          'Licence Plan': license.plan || '—',
+        }}
+        warningMessage={
+          org.status === 'ACTIVE'
+            ? 'Suspending this organisation will immediately block all staff, HR administrators, and users from signing into this tenant.'
+            : 'Reactivating this organisation will restore access for all staff and administrators immediately.'
+        }
+        confirmLabel={org.status === 'ACTIVE' ? 'Confirm Suspension' : 'Confirm Reactivation'}
+        confirmVariant={org.status === 'ACTIVE' ? 'danger' : 'primary'}
+        loading={updateMutation.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

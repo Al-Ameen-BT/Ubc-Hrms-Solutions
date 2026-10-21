@@ -43,28 +43,99 @@ const { parseCsv, toCsv } = require('../services/csv');
 // database id), since that's what an admin preparing a spreadsheet outside
 // the app can actually know.
 // ---------------------------------------------------------------------
-const BULK_HEADERS = [
-  'empCode', 'name', 'dob', 'doj', 'doa', 'employmentType', 'postCode', 'payScaleCode',
-  'currentBasicPay', 'employmentStatus', 'riskAllowance', 'otherAllowance', 'vpfPercent',
-  'welfareFundOptIn', 'welfareFundAmount', 'gsliOptIn', 'gsliAmount', 'ptAmount',
-  'taxRegime', 'taxOtherDeductions',
+const BULK_COLUMNS = [
+  { key: 'empCode', label: 'Employee Code *' },
+  { key: 'name', label: 'Full Name *' },
+  { key: 'dob', label: 'Date of Birth (YYYY-MM-DD)' },
+  { key: 'doj', label: 'Date of Joining * (YYYY-MM-DD)' },
+  { key: 'doa', label: 'Date of Appointment (YYYY-MM-DD)' },
+  { key: 'employmentType', label: 'Employment Type (REGULAR/PART_TIME_CONTINGENT)' },
+  { key: 'postCode', label: 'Post Code *' },
+  { key: 'payScaleCode', label: 'Pay Scale Code' },
+  { key: 'currentBasicPay', label: 'Current Basic Pay (₹)' },
+  { key: 'employmentStatus', label: 'Employment Status (ACTIVE/INACTIVE)' },
+  { key: 'riskAllowance', label: 'Risk Allowance (₹)' },
+  { key: 'otherAllowance', label: 'Other Allowance (₹)' },
+  { key: 'vpfPercent', label: 'VPF Percent (%)' },
+  { key: 'welfareFundOptIn', label: 'Welfare Fund Opt-In (TRUE/FALSE)' },
+  { key: 'welfareFundAmount', label: 'Welfare Fund Amount (₹)' },
+  { key: 'gsliOptIn', label: 'GSLI Opt-In (TRUE/FALSE)' },
+  { key: 'gsliAmount', label: 'GSLI Amount (₹)' },
+  { key: 'ptAmount', label: 'Professional Tax PT (₹)' },
+  { key: 'taxRegime', label: 'Tax Regime (NEW/OLD)' },
+  { key: 'taxOtherDeductions', label: 'Tax Other Deductions 80C/80D (₹)' },
 ];
-const BULK_EXAMPLE = {
-  empCode: 'E101', name: 'Jane Doe', dob: '1990-04-12', doj: '2015-06-01', doa: '2015-06-01',
-  employmentType: 'REGULAR', postCode: 'SG_JR_CLERK', payScaleCode: 'SG_JR_CLERK-REV', currentBasicPay: '20000',
-  employmentStatus: 'ACTIVE', riskAllowance: '', otherAllowance: '', vpfPercent: '', welfareFundOptIn: 'false',
-  welfareFundAmount: '', gsliOptIn: '', gsliAmount: '', ptAmount: '200', taxRegime: 'NEW', taxOtherDeductions: '',
-};
+
+const BULK_EXAMPLES = [
+  {
+    empCode: 'E101',
+    name: 'Jane Doe',
+    dob: '1990-04-12',
+    doj: '2015-06-01',
+    doa: '2015-06-01',
+    employmentType: 'REGULAR',
+    postCode: 'SG_JR_CLERK',
+    payScaleCode: 'SG_JR_CLERK-REV',
+    currentBasicPay: '20000',
+    employmentStatus: 'ACTIVE',
+    riskAllowance: '0',
+    otherAllowance: '0',
+    vpfPercent: '0',
+    welfareFundOptIn: 'FALSE',
+    welfareFundAmount: '0',
+    gsliOptIn: 'TRUE',
+    gsliAmount: '150',
+    ptAmount: '200',
+    taxRegime: 'NEW',
+    taxOtherDeductions: '0',
+  },
+  {
+    empCode: 'E102',
+    name: 'K. Ramanathan',
+    dob: '1985-11-25',
+    doj: '2012-08-10',
+    doa: '2012-08-10',
+    employmentType: 'REGULAR',
+    postCode: 'BRANCH_MGR',
+    payScaleCode: 'BRANCH_MGR-REV',
+    currentBasicPay: '38500',
+    employmentStatus: 'ACTIVE',
+    riskAllowance: '500',
+    otherAllowance: '250',
+    vpfPercent: '5',
+    welfareFundOptIn: 'TRUE',
+    welfareFundAmount: '100',
+    gsliOptIn: 'TRUE',
+    gsliAmount: '200',
+    ptAmount: '200',
+    taxRegime: 'NEW',
+    taxOtherDeductions: '0',
+  },
+];
 const BULK_READERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD'];
 const BULK_WRITERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
 const BOOL_TRUE = ['true', '1', 'yes', 'y'];
 const BOOL_FALSE = ['false', '0', 'no', 'n', ''];
 
-router.get('/bulk-template.csv', authenticate, (req, res) => {
+router.get('/bulk-template.csv', authenticate, async (req, res) => {
   if (!BULK_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot download this.' });
+  const org = req.user.organizationId ? await Organization.findByPk(req.user.organizationId, { attributes: ['id', 'name', 'code'] }) : null;
+  const csvContent = toCsv(BULK_EXAMPLES, BULK_COLUMNS, {
+    title: (org && org.name) || 'Urban Co-operative Bank Ltd.',
+    subtitle: 'EMPLOYEE MASTER BULK ONBOARDING CSV TEMPLATE',
+    instructions: [
+      'Fill one row per employee below the column headers. Mandatory columns are marked with an asterisk (*).',
+      'Date format must be strictly YYYY-MM-DD (e.g. 1990-04-12).',
+      'Employment Type must be REGULAR or PART_TIME_CONTINGENT. Tax Regime must be NEW or OLD.',
+      'Post Code and Pay Scale Code must match existing codes already defined in your organisation.',
+      'Lines starting with "#" are informational and will be automatically ignored during upload.',
+      'Delete the sample rows above and replace with your bank\'s actual employee data before uploading.',
+    ],
+    includeBom: true,
+  });
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="employee-bulk-upload-template.csv"');
-  res.send(toCsv([BULK_EXAMPLE], BULK_HEADERS));
+  res.send(csvContent);
 });
 
 function parseBoolCell(v, fieldName, rowErrors) {

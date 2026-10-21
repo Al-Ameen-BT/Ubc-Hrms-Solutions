@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { EmptyState } from '../../components/ui/EmptyState';
 
 export function LeavePage() {
@@ -22,6 +23,8 @@ export function LeavePage() {
   const [applyForm, setApplyForm] = useState({ leaveTypeId: '', fromDate: '', toDate: '', reason: '' });
   const [accrualForm, setAccrualForm] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
   const [error, setError] = useState('');
+  const [statusTarget, setStatusTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const { data: types, isLoading: typesLoading } = useQuery({ queryKey: ['leave-types'], queryFn: () => leaveApi.types() });
   const { data: employees } = useQuery({ queryKey: ['employees-lite'], queryFn: () => masterDataApi.employees({ limit: 500 }) });
@@ -58,8 +61,12 @@ export function LeavePage() {
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }) => leaveApi.setTypeStatus(id, status),
-    onSuccess: () => { invalidate(); toast.add('Leave type updated.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not change status.', 'error'),
+    onSuccess: (_, vars) => {
+      invalidate();
+      toast.add(`Leave type ${vars.status === 'ACTIVE' ? 'activated' : 'deactivated'}.`, 'success');
+      setStatusTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not change status.'),
   });
 
   const accrueMutation = useMutation({
@@ -96,7 +103,10 @@ export function LeavePage() {
           <Button variant="secondary" size="sm" onClick={() => setAccrualType(r)}>Accrue</Button>
           <Button
             variant="secondary" size="sm"
-            onClick={() => statusMutation.mutate({ id: r.id, status: r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })}
+            onClick={() => {
+              setActionError('');
+              setStatusTarget(r);
+            }}
           >
             {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
           </Button>
@@ -248,6 +258,32 @@ export function LeavePage() {
           <Input id="alv-reason" label="Reason" value={applyForm.reason} onChange={(e) => setApplyForm({ ...applyForm, reason: e.target.value })} />
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={statusTarget != null}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={() => statusMutation.mutate({
+          id: statusTarget.id,
+          status: statusTarget.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        })}
+        title={statusTarget?.status === 'ACTIVE' ? 'Deactivate Leave Type' : 'Activate Leave Type'}
+        itemName={statusTarget?.name}
+        details={{
+          'Code': statusTarget?.code,
+          'Accrual Method': statusTarget?.accrualMethod?.replace(/_/g, ' '),
+          'Days Per Year': statusTarget?.annualDays,
+          'Paid Percentage': `${statusTarget?.paidPercent ?? 100}%`,
+        }}
+        warningMessage={
+          statusTarget?.status === 'ACTIVE'
+            ? 'Deactivating this leave type will prevent employees and HR officers from filing new leave applications under this category.'
+            : 'Activating this leave type will make it available for new leave applications and balance accruals.'
+        }
+        confirmLabel={statusTarget?.status === 'ACTIVE' ? 'Confirm Deactivation' : 'Confirm Activation'}
+        confirmVariant={statusTarget?.status === 'ACTIVE' ? 'danger' : 'primary'}
+        loading={statusMutation.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

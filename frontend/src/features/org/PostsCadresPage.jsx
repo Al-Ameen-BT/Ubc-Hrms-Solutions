@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 export function PostsCadresPage() {
   const queryClient = useQueryClient();
@@ -16,6 +17,9 @@ export function PostsCadresPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ code: '', name: '', cadre: '', cadreLevel: '', status: 'ACTIVE' });
   const [error, setError] = useState('');
+  const [deactivateTarget, setDeactivateTarget] = useState(null);
+  const [activateTarget, setActivateTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['post-cadres'],
@@ -26,6 +30,16 @@ export function PostsCadresPage() {
     queryKey: ['pay-scales-lite'],
     queryFn: () => masterDataApi.payScales(),
   });
+
+  const { data: employeesData } = useQuery({
+    queryKey: ['employees-count'],
+    queryFn: () => masterDataApi.employees(),
+  });
+
+  const getAssignedEmployeeCount = (postId) => {
+    const list = employeesData?.rows || [];
+    return list.filter((emp) => String(emp.postCadreId) === String(postId)).length;
+  };
 
   const scaleName = (id) => (scales?.rows || []).find((s) => String(s.id) === String(id))?.name || '—';
 
@@ -47,12 +61,24 @@ export function PostsCadresPage() {
     onError: (err) => setError(err.message || 'Could not create post.'),
   });
 
-  const deactivate = useMutation({
+  const deactivateMutation = useMutation({
     mutationFn: (id) => masterDataApi.deletePostCadre(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['post-cadres'] });
       toast.add('Post deactivated.', 'success');
+      setDeactivateTarget(null);
     },
+    onError: (err) => setActionError(err.message || 'Could not deactivate post.'),
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: (id) => masterDataApi.updatePostCadre(id, { status: 'ACTIVE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['post-cadres'] });
+      toast.add('Post activated.', 'success');
+      setActivateTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not activate post.'),
   });
 
   const columns = [
@@ -71,9 +97,33 @@ export function PostsCadresPage() {
       label: '',
       sortable: false,
       render: (row) => (
-        row.status === 'ACTIVE'
-          ? <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); deactivate.mutate(row.id); }}>Deactivate</Button>
-          : null
+        <div className="row-actions">
+          {row.status === 'ACTIVE' ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActionError('');
+                setDeactivateTarget(row);
+              }}
+            >
+              Deactivate
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActionError('');
+                setActivateTarget(row);
+              }}
+            >
+              Activate
+            </Button>
+          )}
+        </div>
       ),
     },
   ];
@@ -112,6 +162,45 @@ export function PostsCadresPage() {
           <Input id="pc-level" label="Cadre Level" type="number" value={form.cadreLevel} onChange={(e) => setForm({ ...form, cadreLevel: e.target.value })} mono />
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={deactivateTarget != null}
+        onClose={() => setDeactivateTarget(null)}
+        onConfirm={() => deactivateMutation.mutate(deactivateTarget.id)}
+        title="Deactivate Post Cadre"
+        itemName={deactivateTarget?.name}
+        details={{
+          'Post Code': deactivateTarget?.code,
+          'Cadre': deactivateTarget?.cadre || '—',
+          'Cadre Level': deactivateTarget?.cadreLevel != null ? `Level ${deactivateTarget.cadreLevel}` : '—',
+          'Default Scale': scaleName(deactivateTarget?.defaultPayScaleId),
+          'Assigned Employees': `${getAssignedEmployeeCount(deactivateTarget?.id)} active employee(s)`,
+        }}
+        warningMessage="Deactivating this post cadre will disable it for new employee appointments and pay fixations. Existing employee records associated with this post remain intact."
+        confirmLabel="Confirm Deactivation"
+        confirmVariant="danger"
+        loading={deactivateMutation.isPending}
+        error={actionError}
+      />
+
+      <ConfirmationModal
+        open={activateTarget != null}
+        onClose={() => setActivateTarget(null)}
+        onConfirm={() => activateMutation.mutate(activateTarget.id)}
+        title="Activate Post Cadre"
+        itemName={activateTarget?.name}
+        details={{
+          'Post Code': activateTarget?.code,
+          'Cadre': activateTarget?.cadre || '—',
+          'Cadre Level': activateTarget?.cadreLevel != null ? `Level ${activateTarget.cadreLevel}` : '—',
+          'Default Scale': scaleName(activateTarget?.defaultPayScaleId),
+        }}
+        warningMessage="Activating this post cadre will make it immediately available for new employee appointments, promotions, and payroll fixations."
+        confirmLabel="Confirm Activation"
+        confirmVariant="primary"
+        loading={activateMutation.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

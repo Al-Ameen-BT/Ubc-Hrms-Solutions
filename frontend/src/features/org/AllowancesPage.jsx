@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 export function AllowancesPage() {
   const queryClient = useQueryClient();
@@ -16,6 +17,8 @@ export function AllowancesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ name: '', frequency: 'MONTHLY', amount: '', month: '', year: '', remarks: '' });
   const [error, setError] = useState('');
+  const [statusTarget, setStatusTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({ queryKey: ['allowances'], queryFn: () => allowanceApi.list() });
 
@@ -32,8 +35,12 @@ export function AllowancesPage() {
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }) => allowanceApi.setStatus(id, status),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['allowances'] }); toast.add('Allowance updated.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not change status.', 'error'),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['allowances'] });
+      toast.add(`Allowance ${vars.status === 'ACTIVE' ? 'activated' : 'deactivated'}.`, 'success');
+      setStatusTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not change status.'),
   });
 
   const columns = [
@@ -47,7 +54,10 @@ export function AllowancesPage() {
       render: (r) => (
         <Button
           variant="secondary" size="sm"
-          onClick={() => statusMutation.mutate({ id: r.id, status: r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })}
+          onClick={() => {
+            setActionError('');
+            setStatusTarget(r);
+          }}
         >
           {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
         </Button>
@@ -106,6 +116,31 @@ export function AllowancesPage() {
           <Input id="al-remarks" label="Remarks" value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={statusTarget != null}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={() => statusMutation.mutate({
+          id: statusTarget.id,
+          status: statusTarget.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        })}
+        title={statusTarget?.status === 'ACTIVE' ? 'Deactivate Allowance' : 'Activate Allowance'}
+        itemName={statusTarget?.name}
+        details={{
+          'Frequency': statusTarget?.frequency?.replace(/_/g, ' '),
+          'Amount': fmt.money(statusTarget?.amount),
+          'Scheduled Period': statusTarget?.month ? `Month ${statusTarget.month}${statusTarget.year ? ` / ${statusTarget.year}` : ''}` : 'All Months',
+        }}
+        warningMessage={
+          statusTarget?.status === 'ACTIVE'
+            ? 'Deactivating this allowance will exclude it from upcoming monthly payroll runs and live payslip calculations across the bank.'
+            : 'Activating this allowance will make it eligible for inclusion in upcoming payroll runs and live payslips.'
+        }
+        confirmLabel={statusTarget?.status === 'ACTIVE' ? 'Confirm Deactivation' : 'Confirm Activation'}
+        confirmVariant={statusTarget?.status === 'ACTIVE' ? 'danger' : 'primary'}
+        loading={statusMutation.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

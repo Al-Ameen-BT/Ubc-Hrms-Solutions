@@ -231,32 +231,117 @@ router.delete('/:id', async (req, res) => {
 });
 
 // ------------------------------------------------------------- exports
-const REGISTER_HEADERS = [
-  'empCode', 'employeeName', 'postName', 'actualBasic', 'basic', 'da', 'hra', 'riskAllowance', 'otherAllowance',
-  'cca', 'conveyance', 'medicalAllowance', 'bonus', 'grossEarnings',
-  'pfEmployee', 'vpf', 'welfareFund', 'gsli', 'professionalTax', 'incomeTax',
-  'festivalAdvance', 'recurringDeposit', 'lic', 'housingLoan', 'vehicleLoan', 'totalDeductions',
-  'lopDays', 'netPay',
+const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function fmtAmount(v) {
+  if (v === null || v === undefined || v === '') return '0';
+  const num = Math.round(Number(v));
+  return isNaN(num) ? '0' : String(num);
+}
+
+const REGISTER_COLUMNS = [
+  { key: '__slNo', label: 'Sl No.' },
+  { key: 'empCode', label: 'Employee ID' },
+  { key: 'employeeName', label: 'Employee Name' },
+  { key: 'postName', label: 'Designation / Cadre' },
+  { key: 'lopDays', label: 'LOP Days', format: (v) => v != null && v !== '' ? String(v) : '0' },
+  { key: 'actualBasic', label: 'Actual Basic (₹)', format: fmtAmount },
+  { key: 'basic', label: 'Earned Basic (₹)', format: fmtAmount },
+  { key: 'da', label: 'DA (₹)', format: fmtAmount },
+  { key: 'hra', label: 'HRA (₹)', format: fmtAmount },
+  { key: 'riskAllowance', label: 'Risk Allowance (₹)', format: fmtAmount },
+  { key: 'otherAllowance', label: 'Other Allowance (₹)', format: fmtAmount },
+  { key: 'cca', label: 'CCA (₹)', format: fmtAmount },
+  { key: 'conveyance', label: 'Conveyance (₹)', format: fmtAmount },
+  { key: 'medicalAllowance', label: 'Medical Allowance (₹)', format: fmtAmount },
+  { key: 'bonus', label: 'Bonus / Ex-Gratia (₹)', format: fmtAmount },
+  { key: 'grossEarnings', label: 'GROSS EARNINGS (₹)', format: fmtAmount },
+  { key: 'pfEmployee', label: 'PF Employee (₹)', format: fmtAmount },
+  { key: 'vpf', label: 'VPF (₹)', format: fmtAmount },
+  { key: 'welfareFund', label: 'Welfare Fund (₹)', format: fmtAmount },
+  { key: 'gsli', label: 'GSLI (₹)', format: fmtAmount },
+  { key: 'professionalTax', label: 'Professional Tax (₹)', format: fmtAmount },
+  { key: 'incomeTax', label: 'Income Tax TDS (₹)', format: fmtAmount },
+  { key: 'festivalAdvance', label: 'Festival Advance (₹)', format: fmtAmount },
+  { key: 'recurringDeposit', label: 'Recurring Deposit (₹)', format: fmtAmount },
+  { key: 'lic', label: 'LIC Premium (₹)', format: fmtAmount },
+  { key: 'housingLoan', label: 'Housing Loan (₹)', format: fmtAmount },
+  { key: 'vehicleLoan', label: 'Vehicle Loan (₹)', format: fmtAmount },
+  { key: 'totalDeductions', label: 'TOTAL DEDUCTIONS (₹)', format: fmtAmount },
+  { key: 'netPay', label: 'NET PAYABLE (₹)', format: fmtAmount },
 ];
 
 router.get('/:id/register.csv', async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
+    const org = await Organization.findByPk(run.organizationId, { attributes: ['id', 'name', 'shortName', 'code'] });
     const lines = await PayrollRunLine.findAll({ where: { payrollRunId: run.id }, order: [['empCode', 'ASC']] });
+
     const rows = lines.map((l) => {
       const p = JSON.parse(l.payslipJson);
       return {
-        empCode: l.empCode, employeeName: l.employeeName, postName: l.postName || '',
-        ...p.earnings, ...p.deductions, lopDays: l.lopDays, netPay: l.netPay,
+        empCode: l.empCode,
+        employeeName: l.employeeName,
+        postName: l.postName || '',
+        ...p.earnings,
+        ...p.deductions,
+        lopDays: l.lopDays,
+        netPay: l.netPay,
       };
     });
+
+    const moneyKeys = [
+      'actualBasic', 'basic', 'da', 'hra', 'riskAllowance', 'otherAllowance',
+      'cca', 'conveyance', 'medicalAllowance', 'bonus', 'grossEarnings',
+      'pfEmployee', 'vpf', 'welfareFund', 'gsli', 'professionalTax', 'incomeTax',
+      'festivalAdvance', 'recurringDeposit', 'lic', 'housingLoan', 'vehicleLoan',
+      'totalDeductions', 'netPay',
+    ];
+
+    const totals = {
+      __slNo: 'TOTAL',
+      empCode: `[${rows.length} Employees]`,
+      employeeName: 'GRAND TOTAL',
+      postName: '—',
+      lopDays: rows.reduce((s, r) => s + (Number(r.lopDays) || 0), 0),
+    };
+    moneyKeys.forEach((k) => {
+      totals[k] = Math.round(rows.reduce((sum, r) => sum + (Number(r[k]) || 0), 0));
+    });
+
+    const monthLabel = `${MONTH_NAMES[run.month] || run.month} ${run.year}`;
+    const csvContent = toCsv(rows, REGISTER_COLUMNS, {
+      title: (org && org.name) || 'Urban Co-operative Bank Ltd.',
+      subtitle: 'MONTHLY PAYROLL REGISTER & SALARY DISBURSEMENT LEDGER',
+      meta: [
+        `Period: ${monthLabel}`,
+        `Payroll Run ID: #${run.id}`,
+        `Status: ${run.status}`,
+        `Currency: INR (₹)`,
+        `Total Employees: ${rows.length}`,
+        `Total Gross: ₹${fmtAmount(totals.grossEarnings)}`,
+        `Total Net Payable: ₹${fmtAmount(totals.netPay)}`,
+      ],
+      totals,
+      includeBom: true,
+    });
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="payroll-register-${run.organizationId}-${engine.monthKey(run.year, run.month)}.csv"`);
-    res.send(toCsv(rows, REGISTER_HEADERS));
+    res.send(csvContent);
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-const BANK_HEADERS = ['empCode', 'employeeName', 'bankName', 'bankAccountNumber', 'bankIfsc', 'netPay'];
+const BANK_COLUMNS = [
+  { key: '__slNo', label: 'Sl No.' },
+  { key: 'empCode', label: 'Employee ID' },
+  { key: 'employeeName', label: 'Beneficiary Name' },
+  { key: 'bankName', label: 'Credit Bank Name' },
+  { key: 'bankAccountNumber', label: 'Account Number', format: (v) => v ? `="${v}"` : '—' },
+  { key: 'bankIfsc', label: 'IFSC Code' },
+  { key: 'netPay', label: 'Net Payable Amount (₹)', format: fmtAmount },
+  { key: 'paymentMode', label: 'Payment Mode' },
+];
 
 router.get('/:id/bank-transfer.csv', async (req, res) => {
   try {
@@ -264,13 +349,48 @@ router.get('/:id/bank-transfer.csv', async (req, res) => {
     if (!['APPROVED', 'PAID'].includes(run.status)) {
       return res.status(409).json({ status: 'error', message: 'A bank transfer file can only be generated for an approved payroll run.' });
     }
+    const org = await Organization.findByPk(run.organizationId, { attributes: ['id', 'name', 'shortName', 'code'] });
     const lines = await PayrollRunLine.findAll({
       where: { payrollRunId: run.id, hasBankDetails: true },
       order: [['empCode', 'ASC']],
     });
+
+    const rows = lines.map((l) => ({
+      ...l.toJSON(),
+      paymentMode: 'Direct Credit / NEFT',
+    }));
+
+    const totalDisbursement = Math.round(rows.reduce((sum, l) => sum + (Number(l.netPay) || 0), 0));
+    const totals = {
+      __slNo: 'TOTAL',
+      empCode: `[${rows.length} Beneficiaries]`,
+      employeeName: 'TOTAL DISBURSEMENT',
+      bankName: '—',
+      bankAccountNumber: '—',
+      bankIfsc: '—',
+      netPay: totalDisbursement,
+      paymentMode: '—',
+    };
+
+    const monthLabel = `${MONTH_NAMES[run.month] || run.month} ${run.year}`;
+    const csvContent = toCsv(rows, BANK_COLUMNS, {
+      title: (org && org.name) || 'Urban Co-operative Bank Ltd.',
+      subtitle: 'SALARY DISBURSEMENT & DIRECT BANK TRANSFER SCHEDULE',
+      meta: [
+        `Period: ${monthLabel}`,
+        `Payroll Run ID: #${run.id}`,
+        `Status: ${run.status}`,
+        `Currency: INR (₹)`,
+        `Total Beneficiaries: ${rows.length}`,
+        `Total Amount: ₹${fmtAmount(totalDisbursement)}`,
+      ],
+      totals,
+      includeBom: true,
+    });
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="bank-transfer-${run.organizationId}-${engine.monthKey(run.year, run.month)}.csv"`);
-    res.send(toCsv(lines.map((l) => l.toJSON()), BANK_HEADERS));
+    res.send(csvContent);
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 

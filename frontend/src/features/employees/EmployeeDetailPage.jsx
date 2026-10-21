@@ -54,6 +54,24 @@ export function EmployeeDetailPage() {
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payForm, setPayForm] = useState({ hraType: 'PERCENT', fixedHraAmount: '', riskAllowance: '', otherAllowance: '' });
 
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    designation: '',
+    department: '',
+    branchName: '',
+    branchCode: '',
+  });
+
+  const updateProfile = useMutation({
+    mutationFn: (payload) => masterDataApi.updateEmployee(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['service-book', id] });
+      toast.add('Employee details updated.', 'success');
+      setProfileModalOpen(false);
+    },
+    onError: (err) => setError(err.message || 'Could not update details.'),
+  });
+
   const updatePay = useMutation({
     mutationFn: (payload) => masterDataApi.updateEmployee(id, payload),
     onSuccess: () => {
@@ -71,6 +89,17 @@ export function EmployeeDetailPage() {
 
   const timeline = book?.timeline || [];
   const payEntries = timeline.filter((t) => t.PayHistoryEntry);
+
+  const openProfileModal = () => {
+    setError('');
+    setProfileForm({
+      designation: employee.designation || '',
+      department: employee.department || '',
+      branchName: employee.branchName || '',
+      branchCode: employee.branchCode || '',
+    });
+    setProfileModalOpen(true);
+  };
 
   const openPayModal = () => {
     setError('');
@@ -127,22 +156,43 @@ export function EmployeeDetailPage() {
                 <span className="employee-code-badge mono">ID: {employee.empCode}</span>
               </div>
               <p className="employee-designation">
-                {employee.designation || employee.PostCadre?.name || 'Employee'}
+                <span>{employee.designation || employee.PostCadre?.name || 'Employee'}</span>
                 {employee.PostCadre?.name && employee.designation && employee.PostCadre.name !== employee.designation && (
-                  <span className="employee-cadre-tag"> · {employee.PostCadre.name}</span>
+                  <span className="employee-cadre-tag"> ({employee.PostCadre.name})</span>
+                )}
+                {employee.department ? (
+                  <span className="employee-dept-tag"> · Dept: <strong>{employee.department}</strong></span>
+                ) : (
+                  <span className="employee-dept-tag" style={{ opacity: 0.65 }}> · Dept: Not Assigned</span>
+                )}
+                {employee.branchName && (
+                  <span className="employee-branch-tag"> · {employee.branchName}</span>
                 )}
               </p>
             </div>
           </div>
           <div className="employee-profile-actions">
+            <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>
             <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>
             <Button variant="secondary" onClick={() => navigate('/employees')}>Back</Button>
           </div>
         </div>
       </div>
 
-      {/* Employment Details Ribbon (Clean horizontal metadata replacing oversized card) */}
+      {/* Employment Details Ribbon (Clean horizontal metadata) */}
       <div className="employee-meta-strip">
+        <div className="meta-strip-item">
+          <span className="meta-strip-label">Department</span>
+          <span className="meta-strip-val" title={employee.department || 'Not Assigned'}>
+            {employee.department || <span style={{ opacity: 0.5, fontWeight: 400 }}>Not Assigned</span>}
+          </span>
+        </div>
+        <div className="meta-strip-item">
+          <span className="meta-strip-label">Branch / Office</span>
+          <span className="meta-strip-val" title={employee.branchName || employee.branchCode || 'Main Office'}>
+            {employee.branchName || employee.branchCode || 'Main Office'}
+          </span>
+        </div>
         <div className="meta-strip-item">
           <span className="meta-strip-label">Pay Scale & Grade</span>
           <span className="meta-strip-val" title={employee.CurrentPayScale?.name || '—'}>
@@ -159,7 +209,7 @@ export function EmployeeDetailPage() {
           <span className="meta-strip-label">Date of Joining</span>
           <span className="meta-strip-val mono">
             {fmt.date(employee.doj)}
-            {serviceYears && <span className="meta-strip-sub">({serviceYears} service)</span>}
+            {serviceYears && <span className="meta-strip-sub">({serviceYears})</span>}
           </span>
         </div>
         <div className="meta-strip-item">
@@ -409,6 +459,58 @@ export function EmployeeDetailPage() {
           <Input id="ev-date" label="Event Date" type="date" value={eventForm.eventDate} onChange={(e) => setEventForm({ ...eventForm, eventDate: e.target.value })} required />
           <Input id="ev-remarks" label="Remarks" value={eventForm.remarks} onChange={(e) => setEventForm({ ...eventForm, remarks: e.target.value })} />
           <p className="form-note">Increments, promotions, higher grade and pay revisions are posted by the pay engines, not entered here.</p>
+        </form>
+      </Modal>
+
+      <Modal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        title="Edit Employee Details"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setProfileModalOpen(false)}>Cancel</Button>
+            <Button loading={updateProfile.isPending} onClick={() => { setError(''); updateProfile.mutate(profileForm); }}>Save Details</Button>
+          </>
+        }
+      >
+        <form noValidate>
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <div className="field">
+            <Input
+              id="profile-department"
+              label="Department"
+              value={profileForm.department}
+              placeholder="e.g. Accounts & Audit, Operations, IT"
+              onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <Input
+              id="profile-designation"
+              label="Designation"
+              value={profileForm.designation}
+              placeholder="e.g. Branch Manager, Senior Accountant"
+              onChange={(e) => setProfileForm({ ...profileForm, designation: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <Input
+              id="profile-branch"
+              label="Branch / Office Name"
+              value={profileForm.branchName}
+              placeholder="e.g. Manjeri Main Branch"
+              onChange={(e) => setProfileForm({ ...profileForm, branchName: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <Input
+              id="profile-branch-code"
+              label="Branch Code"
+              value={profileForm.branchCode}
+              placeholder="e.g. BR-001"
+              onChange={(e) => setProfileForm({ ...profileForm, branchCode: e.target.value })}
+            />
+          </div>
         </form>
       </Modal>
     </div>

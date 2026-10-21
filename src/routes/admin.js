@@ -142,16 +142,41 @@ router.get('/bank-classes', (req, res) => {
 // -------------------------------------------------- pay scale revisions
 // A Super Admin applying a Government pay-scale revision to one
 // organisation at a time: download a CSV pre-filled with that org's
-// current posts/scales, edit the changed rows' newScaleExpression, upload
-// it back. See services/payScaleRevision.js.
+const PAY_SCALE_COLUMNS = [
+  { key: 'postCode', label: 'Post Code *' },
+  { key: 'postName', label: 'Post Name / Cadre' },
+  { key: 'currentScaleCode', label: 'Current Scale Code' },
+  { key: 'currentScaleExpression', label: 'Current Scale Expression' },
+  { key: 'payableDays', label: 'Payable Days' },
+  { key: 'monthDays', label: 'Month Days' },
+  { key: 'newScaleExpression', label: 'New Scale Expression *' },
+];
+
 router.get('/organizations/:id/pay-scale-template.csv', async (req, res) => {
   try {
     const org = await Organization.findByPk(req.params.id);
     if (!org) return res.status(404).json({ status: 'error', message: 'Not found' });
     const rows = await payScaleRevision.templateRows(org.id);
+    const csvContent = toCsv(rows, PAY_SCALE_COLUMNS, {
+      title: (org && org.name) || 'Urban Co-operative Bank Ltd.',
+      subtitle: 'PAY SCALE REVISION & BULK CADRE FIXATION TEMPLATE',
+      meta: [
+        `Organisation: ${org.name} (${org.code})`,
+        `Active Posts: ${rows.length}`,
+        `Exported On: ${new Date().toISOString().slice(0, 10)}`,
+      ],
+      instructions: [
+        'Post Code and Post Name are reference columns — do NOT alter Post Code.',
+        'Enter the new pay scale expression in \'New Scale Expression *\' (format: START-INC/COUNT-STAGE-INC/COUNT-...-END).',
+        'Payable Days and Month Days can be left blank to retain existing organisation defaults (e.g. 30).',
+        'Leave \'New Scale Expression\' blank for any post cadre whose pay scale is NOT changing.',
+        'Lines starting with "#" are informational comments and are automatically ignored during upload.',
+      ],
+      includeBom: true,
+    });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="pay-scale-template-${org.code}.csv"`);
-    res.send(toCsv(rows, payScaleRevision.TEMPLATE_HEADERS));
+    res.send(csvContent);
   } catch (err) { sendError(res, err); }
 });
 

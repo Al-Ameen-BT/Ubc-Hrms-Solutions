@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const ROLES = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'EMPLOYEE'];
 
@@ -22,6 +23,8 @@ export function UsersPage() {
   const [form, setForm] = useState({ name: '', email: '', role: 'HR_OFFICER' });
   const [error, setError] = useState('');
   const [tempPassword, setTempPassword] = useState(null);
+  const [statusTarget, setStatusTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['users', orgId],
@@ -42,8 +45,12 @@ export function UsersPage() {
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }) => usersApi.update(orgId, id, { status }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users', orgId] }); toast.add('User updated.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not update user.', 'error'),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['users', orgId] });
+      toast.add(`User ${vars.status === 'ACTIVE' ? 'activated' : 'deactivated'}.`, 'success');
+      setStatusTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not update user status.'),
   });
 
   const resetMutation = useMutation({
@@ -74,7 +81,10 @@ export function UsersPage() {
           {row.id !== user?.id && (
             <Button
               variant="secondary" size="sm"
-              onClick={() => statusMutation.mutate({ id: row.id, status: row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })}
+              onClick={() => {
+                setActionError('');
+                setStatusTarget(row);
+              }}
             >
               {row.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'}
             </Button>
@@ -131,6 +141,31 @@ export function UsersPage() {
           </form>
         )}
       </Modal>
+
+      <ConfirmationModal
+        open={statusTarget != null}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={() => statusMutation.mutate({
+          id: statusTarget.id,
+          status: statusTarget.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        })}
+        title={statusTarget?.status === 'ACTIVE' ? 'Deactivate User' : 'Reactivate User'}
+        itemName={statusTarget?.name}
+        details={{
+          'Email': statusTarget?.email,
+          'Role': statusTarget?.role?.replace(/_/g, ' '),
+          '2FA': statusTarget?.mfaEnabled ? 'Enabled' : 'Disabled',
+        }}
+        warningMessage={
+          statusTarget?.status === 'ACTIVE'
+            ? 'Deactivating this user will revoke their session and prevent them from logging into the portal immediately.'
+            : 'Reactivating this user will restore their access to the bank portal with their assigned permissions.'
+        }
+        confirmLabel={statusTarget?.status === 'ACTIVE' ? 'Confirm Deactivation' : 'Confirm Reactivation'}
+        confirmVariant={statusTarget?.status === 'ACTIVE' ? 'danger' : 'primary'}
+        loading={statusMutation.isPending}
+        error={actionError}
+      />
     </div>
   );
 }
