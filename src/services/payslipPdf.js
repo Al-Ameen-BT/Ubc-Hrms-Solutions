@@ -18,8 +18,8 @@ const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
 // which renders as a stray superscript "1" in front of every amount. "Rs."
 // is plain ASCII and renders correctly with no embedded font needed.
 function money(v) {
-  const n = Number(v) || 0;
-  return 'Rs. ' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const n = Math.round(Number(v) || 0);
+  return 'Rs. ' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
 /**

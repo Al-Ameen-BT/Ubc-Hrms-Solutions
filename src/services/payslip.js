@@ -168,7 +168,39 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
     pfEmployeePaise, vpfPaise, welfarePaise, gsliPaise, ptPaise, monthlyTaxPaise,
     festivalAdvancePaise, recurringDepositPaise, licPaise, housingLoanPaise, vehicleLoanPaise
   );
-  const netPayPaise = subtract(grossEarningsPaise, totalDeductionsPaise);
+  // ---- Line item rupee conversions (integer-rounded) ----
+  const basicRupees = toRupees(basicPaise);
+  const daRupees = toRupees(daPaise);
+  const hraRupees = toRupees(hraPaise);
+  const riskRupees = toRupees(riskPaise);
+  const otherRupees = toRupees(otherPaise);
+  const ccaRupees = toRupees(ccaPaise);
+  const conveyanceRupees = toRupees(conveyancePaise);
+  const medicalAllowanceRupees = toRupees(medicalAllowancePaise);
+  const bonusRupees = toRupees(bonusPaise);
+  const customAllowancesTotalRupees = toRupees(customAllowancesTotalPaise);
+
+  const grossEarningsRupees = basicRupees + daRupees + hraRupees + riskRupees + otherRupees
+    + ccaRupees + conveyanceRupees + medicalAllowanceRupees + bonusRupees + customAllowancesTotalRupees;
+
+  const pfEmployeeRupees = toRupees(pfEmployeePaise);
+  const pfEmployerRupees = toRupees(pfEmployerPaise);
+  const vpfRupees = toRupees(vpfPaise);
+  const welfareRupees = toRupees(welfarePaise);
+  const gsliRupees = toRupees(gsliPaise);
+  const ptRupees = toRupees(ptPaise);
+  const monthlyTaxRupees = toRupees(monthlyTaxPaise);
+  const festivalAdvanceRupees = toRupees(festivalAdvancePaise);
+  const overdraftRupees = toRupees(overdraftPaise);
+  const recurringDepositRupees = toRupees(recurringDepositPaise);
+  const licRupees = toRupees(licPaise);
+  const housingLoanRupees = toRupees(housingLoanPaise);
+  const vehicleLoanRupees = toRupees(vehicleLoanPaise);
+
+  const totalDeductionsRupees = pfEmployeeRupees + vpfRupees + welfareRupees + gsliRupees + ptRupees
+    + monthlyTaxRupees + festivalAdvanceRupees + recurringDepositRupees + licRupees + housingLoanRupees + vehicleLoanRupees;
+
+  const netPayRupees = grossEarningsRupees - totalDeductionsRupees;
 
   // ---- Grade Details ----
   const grade = payScale ? {
@@ -176,45 +208,45 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
     payableDays: payScale.payableDays, monthDays: payScale.monthDays,
   } : null;
 
-  // Convert all paise values to rupees for API response
+  // Convert all values to clean whole rupees for API response
   return {
     forMonth: month,
     grade,
     attendance: { payableDays, lopDays, paidDays: payableDays - lopDays },
     earnings: {
       actualBasic: toRupees(actualBasicPaise),
-      basic: toRupees(basicPaise),
-      da: toRupees(daPaise),
+      basic: basicRupees,
+      da: daRupees,
       daType: employee.daType || 'VARIABLE',
       daVariable: toRupees(daVariablePaise),
       daFixed: toRupees(daFixedPaise),
-      hra: toRupees(hraPaise),
-      riskAllowance: toRupees(riskPaise),
-      otherAllowance: toRupees(otherPaise),
-      cca: toRupees(ccaPaise),
-      conveyance: toRupees(conveyancePaise),
-      medicalAllowance: toRupees(medicalAllowancePaise),
-      bonus: toRupees(bonusPaise),
+      hra: hraRupees,
+      riskAllowance: riskRupees,
+      otherAllowance: otherRupees,
+      cca: ccaRupees,
+      conveyance: conveyanceRupees,
+      medicalAllowance: medicalAllowanceRupees,
+      bonus: bonusRupees,
       customAllowances: customAllowanceRows,
-      customAllowancesTotal: toRupees(customAllowancesTotalPaise),
-      grossEarnings: toRupees(grossEarningsPaise),
+      customAllowancesTotal: customAllowancesTotalRupees,
+      grossEarnings: grossEarningsRupees,
     },
     deductions: {
-      pfEmployee: toRupees(pfEmployeePaise),
-      pfEmployer: toRupees(pfEmployerPaise),
+      pfEmployee: pfEmployeeRupees,
+      pfEmployer: pfEmployerRupees,
       pfCalculationBase: settings.pfCalculationBase || 'BASIC',
-      vpf: toRupees(vpfPaise),
-      welfareFund: toRupees(welfarePaise),
-      gsli: toRupees(gsliPaise),
-      professionalTax: toRupees(ptPaise),
-      incomeTax: toRupees(monthlyTaxPaise),
-      festivalAdvance: toRupees(festivalAdvancePaise),
-      overdraft: toRupees(overdraftPaise),
-      recurringDeposit: toRupees(recurringDepositPaise),
-      lic: toRupees(licPaise),
-      housingLoan: toRupees(housingLoanPaise),
-      vehicleLoan: toRupees(vehicleLoanPaise),
-      totalDeductions: toRupees(totalDeductionsPaise),
+      vpf: vpfRupees,
+      welfareFund: welfareRupees,
+      gsli: gsliRupees,
+      professionalTax: ptRupees,
+      incomeTax: monthlyTaxRupees,
+      festivalAdvance: festivalAdvanceRupees,
+      overdraft: overdraftRupees,
+      recurringDeposit: recurringDepositRupees,
+      lic: licRupees,
+      housingLoan: housingLoanRupees,
+      vehicleLoan: vehicleLoanRupees,
+      totalDeductions: totalDeductionsRupees,
     },
     loanStatus: {
       festivalAdvance: faStatus ? { ...faStatus, amount: toRupees(toPaise(loans.festivalAdvance.amount)) } : null,
@@ -224,7 +256,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
       vehicleLoans: vehicleLoanRows,
     },
     incomeTaxDetail: tax,
-    netPay: toRupees(netPayPaise),
+    netPay: netPayRupees,
     note: [
       'Estimate for payroll purposes.',
       'Overdraft interest is flat/simple over the full repayment period at the rate in force on the day it was availed (later rate changes only affect new Overdrafts) — Rule verification required against the bank\'s actual OD product, since reducing-balance was not specified. Festival Advance and Recurring Deposit carry no interest.',

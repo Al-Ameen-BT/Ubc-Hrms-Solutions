@@ -16,10 +16,10 @@ function toPaise(n) {
   return Math.round(num * SCALE);
 }
 
-/** Convert paise (integer) to rupees (number with 2 decimals). */
+/** Convert paise (integer) to rupees (integer, rounded to nearest whole rupee). */
 function toRupees(paise) {
   if (paise === null || paise === undefined) return 0;
-  return paise / SCALE;
+  return Math.round(paise / SCALE);
 }
 
 /** Add paise values (inputs must already be paise). */
@@ -75,13 +75,12 @@ function sum(arr) {
   return arr.reduce((s, v) => s + (Number(v) || 0), 0);
 }
 
-/** Format paise as rupee string with 2 decimals. */
+/** Format paise as rupee string with no decimals. */
 function format(paise) {
   const sign = paise < 0 ? '-' : '';
   const abs = Math.abs(Number(paise) || 0);
-  const rupees = Math.floor(abs / SCALE);
-  const paisePart = String(abs % SCALE).padStart(2, '0');
-  return `${sign}${rupees}.${paisePart}`;
+  const rupees = Math.round(abs / SCALE);
+  return `${sign}${rupees}`;
 }
 
 /** Safe getter: returns paise from either rupee or paise input (detects by magnitude). */

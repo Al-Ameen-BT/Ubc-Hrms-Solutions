@@ -317,7 +317,8 @@ export const fmt = {
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
-    }).format(Number(amount));
+      maximumFractionDigits: 0,
+    }).format(Math.round(Number(amount)));
   },
   date(dateStr) {
     if (!dateStr) return '—';
