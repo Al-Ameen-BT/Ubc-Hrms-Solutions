@@ -83,39 +83,141 @@ export function EmployeeDetailPage() {
     setPayModalOpen(true);
   };
 
+  const calculateYears = (fromDate, toDate) => {
+    if (!fromDate) return null;
+    const from = new Date(fromDate);
+    const to = toDate ? new Date(toDate) : new Date();
+    const diff = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+    return diff > 0 ? `${Math.floor(diff)} yrs` : null;
+  };
+
+  const serviceYears = calculateYears(employee.doj);
+  const remainingYears = book?.effectiveRetirementDate ? calculateYears(new Date(), book.effectiveRetirementDate) : null;
+  const totalAllowances = Number(employee.riskAllowance || 0) + Number(employee.otherAllowance || 0);
+
+  const getTabBadge = (t) => {
+    if (t === 'Service Book') return book?.timelineCount ?? 0;
+    if (t === 'Pay History') return payEntries.length;
+    if (t === 'Leave' && balances?.rows) return balances.rows.length;
+    return null;
+  };
+
   return (
     <div className="page">
-      <header className="page-header">
-        <div className="page-header-row">
-          <div>
-            <h1>{employee.name}</h1>
-            <p className="mono">
-              {employee.empCode} · {employee.PostCadre?.name || 'No post'} · {employee.designation || 'No designation'}
-            </p>
+      <div className="employee-header-section">
+        <div className="employee-breadcrumbs">
+          <button type="button" className="employee-breadcrumb-btn" onClick={() => navigate('/employees')}>
+            ← Employees
+          </button>
+          <span className="employee-breadcrumb-sep">/</span>
+          <span>{employee.name}</span>
+        </div>
+
+        <div className="employee-profile-card">
+          <div className="employee-profile-main">
+            <div className="employee-avatar">
+              {employee.name ? employee.name.charAt(0).toUpperCase() : 'E'}
+            </div>
+            <div className="employee-identity">
+              <div className="employee-title-row">
+                <h1 className="employee-name">{employee.name}</h1>
+                <Badge variant={employee.status === 'ACTIVE' ? 'success' : 'default'} stamp>
+                  {employee.status}
+                </Badge>
+                <span className="employee-code-badge mono">ID: {employee.empCode}</span>
+              </div>
+              <p className="employee-designation">
+                {employee.designation || employee.PostCadre?.name || 'Employee'}
+                {employee.PostCadre?.name && employee.designation && employee.PostCadre.name !== employee.designation && (
+                  <span className="employee-cadre-tag"> · {employee.PostCadre.name}</span>
+                )}
+              </p>
+            </div>
           </div>
-          <div className="page-header-actions">
+          <div className="employee-profile-actions">
             <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>
-            <Badge variant={employee.status === 'ACTIVE' ? 'success' : 'default'}>{employee.status}</Badge>
             <Button variant="secondary" onClick={() => navigate('/employees')}>Back</Button>
           </div>
         </div>
-      </header>
+      </div>
 
+      {/* Employment Details Ribbon (Clean horizontal metadata replacing oversized card) */}
+      <div className="employee-meta-strip">
+        <div className="meta-strip-item">
+          <span className="meta-strip-label">Pay Scale & Grade</span>
+          <span className="meta-strip-val" title={employee.CurrentPayScale?.name || '—'}>
+            {employee.CurrentPayScale?.name || '—'}
+          </span>
+        </div>
+        <div className="meta-strip-item">
+          <span className="meta-strip-label">Scale Stage</span>
+          <span className="meta-strip-val mono">
+            Stage {employee.CurrentPayStage?.stageNo ?? '—'}
+          </span>
+        </div>
+        <div className="meta-strip-item">
+          <span className="meta-strip-label">Date of Joining</span>
+          <span className="meta-strip-val mono">
+            {fmt.date(employee.doj)}
+            {serviceYears && <span className="meta-strip-sub">({serviceYears} service)</span>}
+          </span>
+        </div>
+        <div className="meta-strip-item">
+          <span className="meta-strip-label">Retirement Date</span>
+          <span className="meta-strip-val mono">
+            {fmt.date(book?.effectiveRetirementDate)}
+            {remainingYears && <span className="meta-strip-sub">({remainingYears} left)</span>}
+          </span>
+        </div>
+      </div>
+
+      {/* High-Impact Numeric KPI Stat Grid */}
       <div className="stat-grid">
-        <div className="stat-ledger"><div className="stat-ledger-label">Basic Pay</div><div className="stat-ledger-value mono">{fmt.money(employee.currentBasicPay)}</div></div>
-        <div className="stat-ledger"><div className="stat-ledger-label">Grade</div><div className="stat-ledger-value">{employee.CurrentPayScale?.name || '—'}</div></div>
-        <div className="stat-ledger"><div className="stat-ledger-label">Stage</div><div className="stat-ledger-value mono">{employee.CurrentPayStage?.stageNo ?? '—'}</div></div>
-        {Number(employee.riskAllowance) > 0 && (
-          <div className="stat-ledger"><div className="stat-ledger-label">Risk Allowance</div><div className="stat-ledger-value mono">{fmt.money(employee.riskAllowance)}</div></div>
-        )}
-        <div className="stat-ledger"><div className="stat-ledger-label">Date of Joining</div><div className="stat-ledger-value mono">{fmt.date(employee.doj)}</div></div>
-        <div className="stat-ledger"><div className="stat-ledger-label">Retirement</div><div className="stat-ledger-value mono">{fmt.date(book?.effectiveRetirementDate)}</div></div>
+        <div className="stat-ledger">
+          <div className="stat-ledger-label">Basic Pay</div>
+          <div className="stat-ledger-value mono">{fmt.money(employee.currentBasicPay)}</div>
+          <div className="stat-ledger-sub">Stage {employee.CurrentPayStage?.stageNo ?? '—'} basic</div>
+        </div>
+        <div className="stat-ledger">
+          <div className="stat-ledger-label">Monthly Allowances</div>
+          <div className="stat-ledger-value mono">{fmt.money(totalAllowances)}</div>
+          <div className="stat-ledger-sub">
+            {Number(employee.riskAllowance) > 0 ? `Risk: ${fmt.money(employee.riskAllowance)}` : 'Standard allowances'}
+          </div>
+        </div>
+        <div className="stat-ledger">
+          <div className="stat-ledger-label">HRA Scheme</div>
+          <div className="stat-ledger-value mono">
+            {employee.hraType === 'FIXED' ? fmt.money(employee.fixedHraAmount) : 'Formula (%)'}
+          </div>
+          <div className="stat-ledger-sub">
+            {employee.hraType === 'FIXED' ? 'Fixed allowance' : 'Percentage based'}
+          </div>
+        </div>
+        <div className="stat-ledger">
+          <div className="stat-ledger-label">Service Events</div>
+          <div className="stat-ledger-value mono">{book?.timelineCount || 0}</div>
+          <div className="stat-ledger-sub">Logged entries</div>
+        </div>
+        <div className="stat-ledger">
+          <div className="stat-ledger-label">Engagement</div>
+          <div className="stat-ledger-value mono" style={{ fontSize: 'var(--text-base)' }}>
+            {employee.employmentType || 'REGULAR'}
+          </div>
+          <div className="stat-ledger-sub">{employee.taxRegime || 'NEW'} Tax Regime</div>
+        </div>
       </div>
 
       <div className="tabs">
-        {TABS.map((t) => (
-          <button key={t} className={`tab ${tab === t ? 'tab-active' : ''}`} onClick={() => setTab(t)}>{t}</button>
-        ))}
+        {TABS.map((t) => {
+          const badgeCount = getTabBadge(t);
+          return (
+            <button key={t} className={`tab ${tab === t ? 'tab-active' : ''}`} onClick={() => setTab(t)}>
+              {t}
+              {badgeCount !== null && badgeCount > 0 ? <span className="tab-badge">{badgeCount}</span> : null}
+            </button>
+          );
+        })}
       </div>
 
       {tab === 'Service Book' && (
