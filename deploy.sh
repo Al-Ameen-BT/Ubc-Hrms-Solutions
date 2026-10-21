@@ -83,12 +83,63 @@ load_config() {
     update_state OS_ID "$OS_ID"
     update_state OS_PKG_MGR "$OS_PKG_MGR"
   fi
-  # Port fallback: fixed constants when unprivileged low ports are available
-  if sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null | grep -q '^80$'; then
-    TLS_PORT="${TLS_PORT:-443}"; HTTP_PORT="${HTTP_PORT:-80}"
-  else
-    TLS_PORT="${TLS_PORT:-8443}"; HTTP_PORT="${HTTP_PORT:-8080}"
+  # Ports: honour a saved choice only while both ports are free, otherwise
+  # re-pick (80/443 preferred, 8080/8443 fallback). Persisted so every
+  # stage — and later single-stage runs — publishes and checks the SAME
+  # ports the stack was actually started with.
+  pick_ports || stage_fail "no free port pair — 80+443 and 8080+8443 are all in use (ss -ltn)"
+  update_state TLS_PORT "$TLS_PORT"
+  update_state HTTP_PORT "$HTTP_PORT"
+}
+
+# ── Port helpers ───────────────────────────────────────────────────────────
+# True when no TCP listener occupies the port. Uses `ss` on purpose: the
+# old `lsof -ti` check silently returned nothing for sockets owned by
+# other users (e.g. host nginx holding 80/443), so preflight passed while
+# the nginx container could not bind.
+port_free() {
+  local out
+  out="$(ss -H -ltn "sport = :$1" 2>/dev/null || true)"
+  [[ -z "$out" ]]
+}
+
+# Choose the HTTP/TLS port pair the stack will publish. Order:
+#   1. saved state pair, while both ports are still free (stable choice)
+#   2. 80/443 — when unprivileged binding allows it and both are free
+#   3. 8080/8443 fallback
+# Fails (return 1) when no pair is available.
+pick_ports() {
+  local st_tls st_http
+  st_tls="$(read_state TLS_PORT)"
+  st_http="$(read_state HTTP_PORT)"
+  if [[ -n "$st_tls" && -n "$st_http" ]]; then
+    # A running hrms-nginx legitimately holds the saved pair during a
+    # redeploy — its own listeners must not be mistaken for a foreign
+    # conflict (that check used to abort every re-run of stage 5+).
+    if systemctl --user is-active --quiet hrms-nginx 2>/dev/null \
+       || { port_free "$st_http" && port_free "$st_tls"; }; then
+      HTTP_PORT="$st_http"; TLS_PORT="$st_tls"; return 0
+    fi
   fi
+  local low_ok=0
+  if [[ "$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || echo 1024)" -le 80 ]]; then
+    low_ok=1
+  fi
+  if (( low_ok )) && port_free 80 && port_free 443; then
+    HTTP_PORT=80; TLS_PORT=443; return 0
+  fi
+  if port_free 8080 && port_free 8443; then
+    HTTP_PORT=8080; TLS_PORT=8443; return 0
+  fi
+  return 1
+}
+
+# Resolve the container a Quadlet unit actually created. Podman names
+# them "systemd-<unit>" on some builds (4.9 here) and "<unit>" on others,
+# so match on the PODMAN_SYSTEMD_UNIT label instead of hardcoding either.
+unit_container() {
+  podman ps -a --filter "label=PODMAN_SYSTEMD_UNIT=$1.service" \
+    --format '{{.Names}}' 2>/dev/null | head -1
 }
 
 # ── Set / change the public hostname (regenerates TLS cert on purpose) ─────
@@ -131,13 +182,11 @@ stage0_preflight() {
   curl -sS --max-time 10 -o /dev/null https://registry-1.docker.io/v2/ \
     || stage_fail "no outbound internet (docker.io unreachable)"
 
-  # Ports free? (match whatever the port-fallback logic may pick)
-  local p
-  for p in 80 443 8443 8080; do
-    if command -v lsof &>/dev/null && lsof -ti :"$p" &>/dev/null; then
-      stage_fail "port $p already in use — free it before deploying (nginx PublishPort)"
-    fi
-  done
+  # Ports: pick the pair the stack will publish (state → 80/443 → 8080/8443).
+  # Fails loudly when nothing is free — the previous lsof-based check could
+  # not see other users' listeners and passed while host nginx held 80/443.
+  pick_ports || stage_fail "no free port pair — need 80+443 or 8080+8443 free (ss -ltn)"
+  echo "ports: http=${HTTP_PORT} tls=${TLS_PORT}"
 
   # Old docker-compose stack detection (aborts, never silently overlaps)
   if podman ps --format '{{.Names}}' 2>/dev/null | grep -qE '^ucb-hrms-(app|mysql)$'; then
@@ -150,14 +199,15 @@ stage0_preflight() {
   if command -v systemctl &>/dev/null; then
     local c
     for c in hrms-mysql hrms-redis hrms-backend hrms-nginx; do
-      if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$c" \
+      # Match by unit label — the container may be named "systemd-<unit>".
+      if [[ -n "$(unit_container "$c")" ]] \
          && ! systemctl --user is-active --quiet "$c" 2>/dev/null; then
         stage_fail "stale container $c exists but unit '$c' is inactive — resolve first (systemctl --user status $c, or ./deploy.sh --stage 5)"
       fi
     done
   else
     # no systemd session available — fall back to name-only detection
-    if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^hrms-(mysql|redis|backend|nginx)$'; then
+    if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^(systemd-)?hrms-(mysql|redis|backend|nginx)$'; then
       stage_fail "hrms-* containers exist but no systemd session to manage them — remove manually if stale"
     fi
   fi
@@ -186,16 +236,19 @@ stage1_install() {
   if [[ "$cur" -gt 80 ]]; then
     if sudo -n sysctl net.ipv4.ip_unprivileged_port_start=80 2>/dev/null; then
       sudo -n bash -c 'echo "net.ipv4.ip_unprivileged_port_start=80" > /etc/sysctl.d/99-ucb-hrms-rootless-ports.conf' 2>/dev/null || true
-      TLS_PORT="443"; HTTP_PORT="80"
     else
-      echo "NOTE: sudo unavailable for sysctl — falling back to ports 8443/8080."
+      echo "NOTE: sudo unavailable for sysctl — low ports may stay restricted."
       echo "MANUAL (as root, to use 80/443):"
       echo "  sysctl net.ipv4.ip_unprivileged_port_start=80"
       echo "  echo 'net.ipv4.ip_unprivileged_port_start=80' > /etc/sysctl.d/99-ucb-hrms-rootless-ports.conf"
-      TLS_PORT="8443"; HTTP_PORT="8080"
     fi
   fi
+  # Decide the pair for real: low ports allowed AND free → 80/443,
+  # otherwise 8080/8443 (never assume 80/443 just because binding is
+  # permitted — something else may already listen there).
+  pick_ports || stage_fail "no free port pair — need 80+443 or 8080+8443 free (ss -ltn)"
   update_state TLS_PORT "$TLS_PORT"; update_state HTTP_PORT "$HTTP_PORT"
+  echo "ports: http=${HTTP_PORT} tls=${TLS_PORT}"
 
   # Linger: units survive reboot
   if ! loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q yes; then
@@ -269,6 +322,11 @@ stage3_secrets() {
   update_state PUBLIC_HOST "$PUBLIC_HOST"
 
   mkdir -p "$CONFIG_DIR"
+  # Non-443 fallback (host nginx holds 443) must carry the port in
+  # APP_BASE_URL — links built from it (emails, invite, /o/<CODE>) otherwise
+  # hit the wrong service on 443.
+  local base_url="https://${PUBLIC_HOST}"
+  [[ "$TLS_PORT" == "443" ]] || base_url="https://${PUBLIC_HOST}:${TLS_PORT}"
   cat > "$CONFIG_DIR/.env" <<ENV
 # UCB-HRMS UAT runtime secrets — generated by deploy.sh $(date -Is)
 # Keep this file; re-deploys reuse it. Rotate by hand only.
@@ -284,10 +342,16 @@ MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)
 NODE_ENV=production
 PORT=3000
 REDIS_URL=redis://${IP_REDIS}:6379
-APP_BASE_URL=https://${PUBLIC_HOST}
+# Links (emails, invite, /o/<CODE>) must carry the published port when the
+# stack fell back to 8080/8443 (host nginx holds 80/443) — omitting it made
+# every generated link hit the wrong service on 443.
+APP_BASE_URL=${base_url}
 SETUP_TOKEN=$(openssl rand -hex 24)
 ALLOW_PROD_SETUP=true
-AUTO_MIGRATE=false
+# Additive-only schema upgrade on boot (sequelize.sync() + migrate()).
+# The UAT dump predates later slices (custom_domain etc.) — with this off,
+# every Organization query 500s with "Unknown column". Never drops/alters.
+AUTO_MIGRATE=true
 ENV
   chmod 600 "$CONFIG_DIR/.env"
   stage_pas "generated $CONFIG_DIR/.env (0600)"
@@ -349,17 +413,26 @@ stage5_deploy() {
   install_quadlets
   systemctl --user daemon-reload
 
-  # Start order: db, redis → backend → nginx. Enable everything first so
-  # the stack comes back after reboot (linger already on from stage 1).
-  systemctl --user enable hrms-net hrms-mysql hrms-redis hrms-backend hrms-nginx
+  # Start order: db, redis → backend → nginx. No `systemctl enable` here:
+  # Quadlet units are GENERATED units (enable fails with "transient or
+  # generated") and the generator already links them into
+  # default.target.wants, so boot enablement is automatic — the previous
+  # enable line always failed and aborted --stage 5 runs outright.
+  # `restart` (not start) so a redeploy picks up rebuilt images and the
+  # regenerated nginx port publishes; restart also starts stopped units.
   for unit in hrms-mysql hrms-redis hrms-backend hrms-nginx; do
-    systemctl --user start "$unit" || stage_fail "failed to start $unit"
+    systemctl --user restart "$unit" || stage_fail "failed to start $unit"
   done
 
   # Wait for mysql health before declaring success (credential-free: ping
-  # is answered even on access-denied, so no password here)
+  # is answered even on access-denied, so no password here). Container
+  # name is resolved via the unit label — podman 4.9 names these
+  # "systemd-hrms-mysql", so a hardcoded "hrms-mysql" never matched.
+  local mysql_ctr
+  mysql_ctr="$(unit_container hrms-mysql)"
+  [[ -n "$mysql_ctr" ]] || stage_fail "hrms-mysql container was not created (systemctl --user status hrms-mysql)"
   for i in {1..30}; do
-    podman exec hrms-mysql mysqladmin ping -h localhost --silent 2>/dev/null && break
+    podman exec "$mysql_ctr" mysqladmin ping -h localhost --silent 2>/dev/null && break
     (( i == 30 )) && stage_fail "mysql not healthy after 30 tries"
     sleep 2
   done
@@ -460,10 +533,12 @@ Network=hrms-net.network
 PodmanArgs=--ip=${IP_NGINX} --network-alias=nginx
 PublishPort=${HTTP_PORT}:80
 PublishPort=${TLS_PORT}:443
-Volume=hrms-page:/usr/share/nginx/html:ro
+Volume=hrms-page:/usr/share/nginx/html:ro,z
 Volume=%h/.config/ucb-hrms/nginx:/etc/nginx/conf.d:Z
 Volume=%h/.config/ucb-hrms/tls:/etc/nginx/tls:Z
-HealthCmd=wget -qO- http://localhost/health || exit 1
+# 127.0.0.1 not localhost: Alpine wget tries ::1 first and nginx listens
+# IPv4-only, so localhost made the unit report permanently unhealthy.
+HealthCmd=wget -qO- http://127.0.0.1/health || exit 1
 HealthInterval=10s
 HealthRetries=6
 [Service]
@@ -481,7 +556,14 @@ UNIT
 Description=UCB HRMS nightly DB backup (throwaway mysql container)
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/podman run --rm --network ${NET_NAME} -v hrms-backups:/backups:Z --env-file %h/.config/ucb-hrms/.env ${MYSQL_IMAGE_FALLBACK:-docker.io/library/mysql:8.0} /bin/sh -c 'mysqldump -h ${IP_MYSQL} -uroot -p"$$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers ${DB_NAME} | gzip > /backups/ucb_hrms-$$(date -u +%%Y%%m%%d-%%H%%M%%S).sql.gz && ls /backups/*.sql.gz | sort -r | tail -n +15 | xargs -r rm'
+# Note: this is an UNQUOTED heredoc, so dollar signs must be written
+# with a backslash-dollar to survive as literal dollars in the file —
+# systemd then turns the doubled dollar into a single one for the
+# container shell. A bare doubled dollar here would expand to deploy.sh's
+# PID (the old unit shipped -p"<pid>MYSQL_ROOT_PASSWORD", so every
+# backup failed). No backticks allowed in here either: they would run
+# command substitution while this heredoc is expanded.
+ExecStart=/usr/bin/podman run --rm --network ${NET_NAME} -v hrms-backups:/backups:Z --env-file %h/.config/ucb-hrms/.env ${MYSQL_IMAGE_FALLBACK:-docker.io/library/mysql:8.0} /bin/sh -c 'mysqldump -h ${IP_MYSQL} -uroot -p"\$\$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers ${DB_NAME} | gzip > /backups/ucb_hrms-\$\$(date -u +%%Y%%m%%d-%%H%%M%%S).sql.gz && ls /backups/*.sql.gz | sort -r | tail -n +15 | xargs -r rm'
 UNIT
   cat > "$SYSTEMD_USER_DIR/hrms-backup.timer" <<UNIT
 [Unit]
@@ -499,18 +581,32 @@ UNIT
   # must live in ~/.config/systemd/user.
   # Ensure the plain-systemd dir exists (Backup units are not Quadlet files:
   # podman 4.x ignores anything other than .container/.network/.volume etc.)
-  systemctl --user enable hrms-backup.timer 2>/dev/null || true
+  # `enable` alone only writes the symlink — the timer stayed inactive
+  # ("0 timers listed") until the next login, so no backup would ever run
+  # on a live box. --now arms it immediately; a broken unit file must
+  # fail stage 5 rather than silently promise backups that never happen.
+  systemctl --user daemon-reload
+  systemctl --user enable --now hrms-backup.timer
 }
 
 # nginx.conf + site config (generated once; regenerated if host changed)
 install_nginx_assets() {
   mkdir -p "$CONFIG_DIR/nginx"
-  # dist volume: backend image's dist copied to a named volume so nginx mounts it
   podman volume exists hrms-page 2>/dev/null \
     || podman volume create hrms-page >/dev/null
-  # serve from the copied dist dir via a one-time tmp container
-  podman run --rm -v hrms-page:/target:Z -v "$CONFIG_DIR/frontend-dist":/src:Z docker.io/library/node:20-alpine \
+  # dist volume: backend image's dist copied to a named volume so nginx mounts it.
+  # The volume MUST be mounted with the shared label (:z), never the private
+  # one (:Z): with :Z the cp container stamps its own MLS categories onto the
+  # files and nginx (mounted without a relabel) then gets EACCES on every
+  # stat() — the SPA silently 500s with "permission denied". nginx's own
+  # mount carries :z too, so either side self-heals a wrong label.
+  podman run --rm -v hrms-page:/target:z -v "$CONFIG_DIR/frontend-dist":/src:Z docker.io/library/node:20-alpine \
     sh -c 'cp -r /src/. /target/' >/dev/null
+  # canary: a passing cp is worthless if index.html did not land — nginx
+  # would only surface that as a 500 at request time.
+  podman run --rm -v hrms-page:/v:z docker.io/library/alpine:3 \
+    sh -c 'test -f /v/index.html' >/dev/null \
+    || stage_fail "hrms-page volume missing index.html after copy"
 
   cat > "$CONFIG_DIR/nginx/uat.conf" <<NGINX
 server {
@@ -530,11 +626,23 @@ server {
   root /usr/share/nginx/html;
   index index.html;
   location / { try_files \$uri /index.html; }
+  # Backend health endpoints must be proxied, not swallowed by the SPA
+  # fallback: stage 8 greps /ready for "status":"ok", and the backend is
+  # the only thing that can produce it (the SPA HTML would fail that).
+  # Regex location wins over the prefix "location /" above; proxy_pass
+  # without a URI passes the original path through.
+  location ~ ^/(healthz|ready)\$ {
+    proxy_pass http://${IP_BACKEND}:3000;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$remote_addr;
+  }
   location /api {
     proxy_pass http://${IP_BACKEND}:3000;
     proxy_set_header Host \$host;
     proxy_set_header X-Forwarded-Proto https;
-    # Keep per-client source IPs: the backend has `trust proxy 1` set and
+    # Keep per-client source IPs: the backend has "trust proxy 1" set and
     # all rate limiters key on req.ip — without this every user shares
     # nginx's own IP as one giant bucket.
     proxy_set_header X-Real-IP \$remote_addr;
@@ -560,7 +668,23 @@ stage6_drift_check() {
     for unit in hrms-nginx hrms-backend hrms-redis hrms-mysql; do
       systemctl --user stop "$unit" 2>/dev/null || true
     done
+    # The network unit stays "active (exited)" while only the containers
+    # are stopped — and because every container Requires= that unit, a
+    # still-active hrms-net-network skips re-creation entirely: the rm'd
+    # network would never come back and every container fails with
+    # "no such network". Stop it, remove the net, then start it again so
+    # Quadlet re-creates the static IPAM (clearing phantom allocations
+    # left by crash-looped containers) BEFORE the containers return.
+    systemctl --user stop hrms-net-network 2>/dev/null || true
     podman network rm "$NET_NAME" 2>/dev/null || true
+    # podman 4.9 leak: IPAM leases live in a RUNTIME ipam.db that
+    # `network rm` does NOT purge, so a long-gone container can keep the
+    # address squatting ("IPAM error: requested ip address ... already
+    # allocated to container ID <gone>") and every recreate fails again
+    # for the same container. All units are stopped at this point, so
+    # dropping the lease file is safe — it is rebuilt on the next start.
+    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/containers/networks/ipam.db"
+    systemctl --user start hrms-net-network 2>/dev/null || true
     # best-effort start; a unit that truly fails is caught by the drift
     # checks below (missing container ⇒ IP "gone" ⇒ loud abort)
     systemctl --user start hrms-mysql hrms-redis hrms-backend hrms-nginx 2>/dev/null || true
@@ -573,7 +697,16 @@ stage6_drift_check() {
   fi
 
   local net_json
-  net_json="$(podman network inspect "$NET_NAME" --format '{{.id}} {{range .subnets}}{{.subnet}} {{.gateway}}{{end}}')"
+  # Template names differ across podman builds: 4.9 (Rocky 9) formats a
+  # types.Network struct and only accepts exported Go fields (.ID/.Subnets/
+  # .Subnet/.Gateway), while other builds accepted the JSON-style names.
+  # Try both; the empty-check below turns total failure into a clear abort
+  # instead of a raw "can't evaluate field id" crash mid-stage.
+  net_json="$(podman network inspect "$NET_NAME" \
+      --format '{{.ID}} {{range .Subnets}}{{.Subnet}} {{.Gateway}}{{end}}' 2>/dev/null \
+    || podman network inspect "$NET_NAME" \
+      --format '{{.id}} {{range .subnets}}{{.subnet}} {{.gateway}}{{end}}' 2>/dev/null \
+    || true)"
   local nid sub gw
   nid="$(echo "$net_json" | awk '{print $1}')"
   sub="$(echo "$net_json" | awk '{print $2}')"
@@ -584,7 +717,9 @@ stage6_drift_check() {
   [[ -n "$nid" && "$nid" != "unknown" ]] || stage_fail "could not read network ID from podman (template mismatch on this podman version?)"
   [[ -n "$sub" && -n "$gw" ]] || stage_fail "could not read subnet/gateway from podman"
 
-  load_baseline 2>/dev/null || true
+  # Baseline lives in the state file (read_state below) — there is no
+  # separate load_baseline helper; the old call was to an undefined
+  # function and only ever "worked" because 2>/dev/null || true hid it.
   local base_id
   base_id="$(read_state NETWORK_ID 2>/dev/null || true)"
   if [[ -n "$base_id" && "$RECREATE_NETWORK" == 1 ]]; then
@@ -616,8 +751,10 @@ stage6_drift_check() {
 
 drift_container() {
   local name="$1" expected="$2"
-  local live
-  live="$(podman inspect "$name" --format '{{(index .NetworkSettings.Networks "hrms-net").IPAddress}}' 2>/dev/null || true)"
+  local ctr live
+  ctr="$(unit_container "$name")"
+  [[ -n "$ctr" ]] || stage_fail "DRIFT: $name container is gone (unit '$name' not running?)"
+  live="$(podman inspect "$ctr" --format '{{(index .NetworkSettings.Networks "hrms-net").IPAddress}}' 2>/dev/null || true)"
   [[ "$live" == "$expected" ]] || stage_fail "DRIFT: $name IP moved (expected $expected, live ${live:-gone})"
 }
 
@@ -707,7 +844,7 @@ EOS
   update_state DUMP_HASH "$hash"
   update_state RESTORE_OK "1"
   echo "imported $n tables into ${DB_NAME}"
-  stage_pas "restore complete (no seeding; AUTO_MIGRATE=false in runtime .env)"
+  stage_pas "restore complete (no seeding; boot applies additive schema upgrade via AUTO_MIGRATE=true)"
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -757,7 +894,7 @@ stage9_report() {
    Readiness:          $base/ready
 
  BACKUP
-   Schedule:           nightly 01:05 UTC (systemd user timer)
+    Schedule:           nightly 01:05 local time (systemd user timer)
    Manual:             ./deploy.sh --backup-now
    Retention:          last 14 dumps in the hrms-backups volume
 
@@ -791,10 +928,13 @@ show_status() {
   echo "── backup timer ───────────────────────────────────"
   systemctl --user list-timers hrms-backup.timer 2>/dev/null | tail -1 || true
   echo "── network ────────────────────────────────────────"
-  podman network inspect "$NET_NAME" --format 'Network: {{.name}}  ID: {{.id}}  subnet: {{(index .subnets 0).subnet}}' 2>/dev/null \
+  podman network inspect "$NET_NAME" --format 'Network: {{.Name}}  ID: {{.ID}}  subnet: {{(index .Subnets 0).Subnet}}' 2>/dev/null \
+    || podman network inspect "$NET_NAME" --format 'Network: {{.name}}  ID: {{.id}}  subnet: {{(index .subnets 0).subnet}}' 2>/dev/null \
     || echo "hrms-net: not present"
   echo "── last restore ───────────────────────────────────"
-  echo "dump hash: $(read_state DUMP_HASH 2>/dev/null | cut -c1-12 || echo none)"
+  local dh
+  dh="$(read_state DUMP_HASH 2>/dev/null | cut -c1-12)"
+  echo "dump hash: ${dh:-none}"
 }
 
 # Manual backup trigger (same command as the timer's unit)
@@ -841,8 +981,22 @@ fi
 
 if [[ "$STAGE" == "all" ]]; then
   for s in 0 1 2 3 4 5 6 7 8 9; do
-    echo "═══════════════════════════════════════════"
-    run_stage "$s" || { echo "ABORTED at stage $s"; exit 1; }
+    echo "═════════════════════════════════════════"
+    # Run each stage in its own subshell. The old
+    # `run_stage "$s" || { echo ABORTED; exit 1; }` put run_stage in an
+    # AND-OR list, which makes bash IGNORE set -e throughout the function
+    # body — every unguarded failure was silently skipped and the deploy
+    # limped on half-configured (that is how the always-failing enable
+    # line, bad container names etc. went unnoticed). A standalone
+    # subshell keeps -e effective; stage_fail still exits with its message.
+    set +e
+    ( set -e; run_stage "$s" )
+    rc=$?
+    set -e
+    if (( rc != 0 )); then
+      echo "ABORTED at stage $s"
+      exit 1
+    fi
   done
 else
   load_config
