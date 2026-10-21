@@ -51,13 +51,6 @@ export function EmployeeDetailPage() {
     onError: (err) => setError(err.message || 'Could not add entry.'),
   });
 
-  if (isLoading) return <div className="page"><p>Loading…</p></div>;
-  const employee = book?.employee;
-  if (!employee) return <div className="page"><EmptyState title="Employee not found" /></div>;
-
-  const timeline = book?.timeline || [];
-  const payEntries = timeline.filter((t) => t.PayHistoryEntry);
-
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payForm, setPayForm] = useState({ hraType: 'PERCENT', fixedHraAmount: '', riskAllowance: '', otherAllowance: '' });
 
@@ -71,6 +64,13 @@ export function EmployeeDetailPage() {
     },
     onError: (err) => setError(err.message || 'Could not update allowances.'),
   });
+
+  if (isLoading) return <div className="page"><p>Loading…</p></div>;
+  const employee = book?.employee;
+  if (!employee) return <div className="page"><EmptyState title="Employee not found" /></div>;
+
+  const timeline = book?.timeline || [];
+  const payEntries = timeline.filter((t) => t.PayHistoryEntry);
 
   const openPayModal = () => {
     setError('');
