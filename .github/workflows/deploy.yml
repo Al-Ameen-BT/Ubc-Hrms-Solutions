@@ -47,15 +47,15 @@ jobs:
       - name: Execute deployment on server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          host: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          username: ${{ secrets.SSH_USER || vars.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
+          port: ${{ secrets.SSH_PORT || vars.SSH_PORT || 22 }}
           script_stop: true
           script: |
             set -euo pipefail
 
-            APP_DIR="${{ secrets.DEPLOY_PATH || '~/Ubc-Hrms-Solutions' }}"
+            APP_DIR="${{ vars.DEPLOY_PATH || secrets.DEPLOY_PATH || '~/Ubc-Hrms-Solutions' }}"
             echo "Deploying update to ${APP_DIR}..."
 
             cd "${APP_DIR}"
