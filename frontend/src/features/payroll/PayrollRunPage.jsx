@@ -10,6 +10,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -62,6 +63,8 @@ export function PayrollRunPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [viewLine, setViewLine] = useState(null);
+  const [confirmDeleteRun, setConfirmDeleteRun] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const { data: run, isLoading } = useQuery({
     queryKey: ['payroll-run', orgId, id],
@@ -108,7 +111,7 @@ export function PayrollRunPage() {
       toast.add('Run deleted.', 'success');
       navigate('/payroll');
     },
-    onError: (err) => toast.add(err.message || 'Could not delete.', 'error'),
+    onError: (err) => setActionError(err.message || 'Could not delete run.'),
   });
   const reprocess = useMutation({
     mutationFn: () => payrollApi.createRun(orgId, { year: run.year, month: run.month }),
@@ -253,7 +256,10 @@ export function PayrollRunPage() {
               <Button
                 variant="secondary"
                 loading={removeRun.isPending}
-                onClick={() => { if (window.confirm('Delete this run? This cannot be undone.')) removeRun.mutate(); }}
+                onClick={() => {
+                  setActionError('');
+                  setConfirmDeleteRun(true);
+                }}
               >
                 Delete Run
               </Button>
@@ -306,6 +312,26 @@ export function PayrollRunPage() {
         )}
         {lineDetail?.payslip?.note && <p className="form-note">{lineDetail.payslip.note}</p>}
       </Modal>
+
+      <ConfirmationModal
+        open={confirmDeleteRun}
+        onClose={() => setConfirmDeleteRun(false)}
+        onConfirm={() => removeRun.mutate()}
+        title="Delete Payroll Run"
+        itemName={run ? `${MONTHS[(run.month || 1) - 1]} ${run.year} Payroll Run` : 'Payroll Run'}
+        details={{
+          'Period': run ? `${MONTHS[(run.month || 1) - 1]} ${run.year}` : '—',
+          'Status': run?.status,
+          'Total Gross Pay': fmt.money(run?.totalGrossPay),
+          'Total Net Pay': fmt.money(run?.totalNetPay),
+          'Paylines': lines?.rows?.length || 0,
+        }}
+        warningMessage="Deleting this payroll run will permanently delete all calculated paylines and payslips for this period. This action cannot be undone."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={removeRun.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

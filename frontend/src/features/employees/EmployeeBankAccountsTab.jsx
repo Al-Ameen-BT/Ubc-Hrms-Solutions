@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const ACCOUNT_TYPES = [
   { value: 'SB', label: 'Savings (SB)' },
@@ -25,6 +26,8 @@ export function EmployeeBankAccountsTab({ employeeId }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(BLANK);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['emp-bank-accounts', employeeId],
@@ -51,8 +54,12 @@ export function EmployeeBankAccountsTab({ employeeId }) {
 
   const remove = useMutation({
     mutationFn: (row) => serviceBookApi.deleteBankAccount(employeeId, row.id),
-    onSuccess: () => { invalidate(); toast.add('Account removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Account removed.', 'success');
+      setDeleteTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove account.'),
   });
 
   const setCredit = useMutation({
@@ -89,7 +96,16 @@ export function EmployeeBankAccountsTab({ employeeId }) {
             setForm({ accountType: r.accountType, accountNumber: r.accountNumber, bankName: r.bankName || '', ifsc: r.ifsc || '', branchName: r.branchName || '', remarks: r.remarks || '', status: r.status });
             setError(''); setOpen(true);
           }}>Edit</Button>
-          <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Remove this bank account?')) remove.mutate(r); }}>Remove</Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setActionError('');
+              setDeleteTarget(r);
+            }}
+          >
+            Remove
+          </Button>
         </div>
       ),
     },
@@ -146,6 +162,26 @@ export function EmployeeBankAccountsTab({ employeeId }) {
           </div>
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={deleteTarget != null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => remove.mutate(deleteTarget)}
+        title="Remove Bank Account"
+        itemName={`${deleteTarget?.bankName || 'Bank'} — ${deleteTarget?.accountNumber}`}
+        details={{
+          'Account Number': deleteTarget?.accountNumber,
+          'Bank Name': deleteTarget?.bankName || '—',
+          'IFSC Code': deleteTarget?.ifsc || '—',
+          'Account Type': deleteTarget?.accountType,
+          'Salary Credit': salaryCreditAccountId === deleteTarget?.id ? 'Primary Net Pay Account' : 'Standard',
+        }}
+        warningMessage="Removing this bank account will detach it from this employee record. If this account was designated for net pay credits, please ensure another account is chosen."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={remove.isPending}
+        error={actionError}
+      />
     </Card>
   );
 }

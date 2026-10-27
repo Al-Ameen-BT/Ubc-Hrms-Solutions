@@ -6,6 +6,7 @@ import { Table } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 /* A generic list-with-add/edit/remove card, used by the employee sub-resource
    tabs (bank accounts, loans, LIC, …). Every one of those is the same shape:
@@ -60,6 +61,8 @@ export function ResourceSection({
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(() => initial || blank(fields));
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({ queryKey, queryFn: listFn });
   const rows = data?.rows || data?.data || [];
@@ -75,8 +78,12 @@ export function ResourceSection({
 
   const remove = useMutation({
     mutationFn: (row) => deleteFn(row.id),
-    onSuccess: () => { invalidate(); toast.add('Removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Removed.', 'success');
+      setDeleteTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove.'),
   });
 
   const shownFields = editing && updateFields ? updateFields : fields;
@@ -98,7 +105,16 @@ export function ResourceSection({
             >{editLabel}</Button>
           )}
           {deleteFn && (
-            <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Remove this record? This cannot be undone.')) remove.mutate(row); }}>Remove</Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setActionError('');
+                setDeleteTarget(row);
+              }}
+            >
+              Remove
+            </Button>
           )}
         </div>
       ),
@@ -135,6 +151,24 @@ export function ResourceSection({
           </div>
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={deleteTarget != null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => remove.mutate(deleteTarget)}
+        title={`Remove ${title}`}
+        itemName={deleteTarget?.policyNumber || deleteTarget?.loanAccountNo || deleteTarget?.accountNumber || deleteTarget?.name || `${title} Record`}
+        details={{
+          'Record ID': deleteTarget?.id ? `#${deleteTarget.id}` : undefined,
+          'Amount': deleteTarget?.amount != null ? String(deleteTarget.amount) : undefined,
+          'Availed Date': deleteTarget?.availedDate || deleteTarget?.startDate || undefined,
+        }}
+        warningMessage={`Are you sure you want to remove this ${title.toLowerCase()} record? This action cannot be undone.`}
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={remove.isPending}
+        error={actionError}
+      />
     </Card>
   );
 }

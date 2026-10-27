@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 /* Pay Revisions (routes/payScales.js — a plain crudFactory CRUD).
    A revision is the umbrella record that a new set of pay scales is built
@@ -17,6 +18,9 @@ export function PayRevisionsPage() {
   const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [activateTarget, setActivateTarget] = useState(null);
+  const [supersedeTarget, setSupersedeTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
   const [form, setForm] = useState({ name: '', effectiveDate: '', ruleReferenceId: '', description: '', status: 'DRAFT' });
   const [error, setError] = useState('');
 
@@ -34,10 +38,24 @@ export function PayRevisionsPage() {
     onError: (err) => setError(err.message || 'Could not save.'),
   });
 
-  const remove = useMutation({
-    mutationFn: (row) => masterDataApi.deletePayRevision(row.id),
-    onSuccess: () => { invalidate(); toast.add('Pay revision superseded.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+  const supersedeMutation = useMutation({
+    mutationFn: (id) => masterDataApi.deletePayRevision(id),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Pay revision superseded.', 'success');
+      setSupersedeTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not supersede pay revision.'),
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: (id) => masterDataApi.updatePayRevision(id, { status: 'ACTIVE' }),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Pay revision activated.', 'success');
+      setActivateTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not activate pay revision.'),
   });
 
   const openAdd = () => { setEditing(null); setForm({ name: '', effectiveDate: '', ruleReferenceId: '', description: '', status: 'DRAFT' }); setError(''); setModalOpen(true); };
@@ -67,7 +85,29 @@ export function PayRevisionsPage() {
       render: (r) => (
         <div className="row-actions">
           <Button variant="secondary" size="sm" onClick={() => openEdit(r)}>Edit</Button>
-          <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Supersede this pay revision?')) remove.mutate(r); }}>Supersede</Button>
+          {r.status === 'SUPERSEDED' ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setActionError('');
+                setActivateTarget(r);
+              }}
+            >
+              Activate
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setActionError('');
+                setSupersedeTarget(r);
+              }}
+            >
+              Supersede
+            </Button>
+          )}
         </div>
       ),
     },
@@ -119,6 +159,42 @@ export function PayRevisionsPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={supersedeTarget != null}
+        onClose={() => setSupersedeTarget(null)}
+        onConfirm={() => supersedeMutation.mutate(supersedeTarget.id)}
+        title="Supersede Pay Revision"
+        itemName={supersedeTarget?.name}
+        details={{
+          'Effective Date': fmt.date(supersedeTarget?.effectiveDate),
+          'Linked Rule': ruleRows.find((x) => String(x.id) === String(supersedeTarget?.ruleReferenceId))?.title || 'None',
+          'Current Status': supersedeTarget?.status,
+        }}
+        warningMessage="Superseding this pay revision will mark it as superseded. Subordinate pay scales and historical pay fixation records will remain preserved."
+        confirmLabel="Confirm Supersede"
+        confirmVariant="danger"
+        loading={supersedeMutation.isPending}
+        error={actionError}
+      />
+
+      <ConfirmationModal
+        open={activateTarget != null}
+        onClose={() => setActivateTarget(null)}
+        onConfirm={() => activateMutation.mutate(activateTarget.id)}
+        title="Activate Pay Revision"
+        itemName={activateTarget?.name}
+        details={{
+          'Effective Date': fmt.date(activateTarget?.effectiveDate),
+          'Linked Rule': ruleRows.find((x) => String(x.id) === String(activateTarget?.ruleReferenceId))?.title || 'None',
+          'Current Status': 'SUPERSEDED',
+        }}
+        warningMessage="Activating this pay revision will restore its active status for pay scale assignments and payroll processing."
+        confirmLabel="Confirm Activation"
+        confirmVariant="primary"
+        loading={activateMutation.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

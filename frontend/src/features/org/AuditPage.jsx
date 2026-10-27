@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../auth/AuthContext';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const PAGE_SIZE = 50;
 
@@ -55,6 +56,8 @@ export function AuditPage() {
   const [page, setPage] = useState(1);
   const [action, setAction] = useState('');
   const [orgFilter, setOrgFilter] = useState('');
+  const [confirmPurge, setConfirmPurge] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const { data: orgs } = useQuery({
     queryKey: ['audit-orgs'],
@@ -77,8 +80,9 @@ export function AuditPage() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['audit'] });
       toast.add(`Purged ${res?.deleted ?? 0} expired entries.`, 'success');
+      setConfirmPurge(false);
     },
-    onError: (err) => toast.add(err.message || 'Purge failed.', 'error'),
+    onError: (err) => setActionError(err.message || 'Purge failed.'),
   });
 
   const rows = data?.data || data?.rows || [];
@@ -125,7 +129,10 @@ export function AuditPage() {
             <Button
               variant="secondary"
               loading={purge.isPending}
-              onClick={() => { if (window.confirm('Run the audit retention purge now? Expired entries are deleted permanently.')) purge.mutate(); }}
+              onClick={() => {
+                setActionError('');
+                setConfirmPurge(true);
+              }}
             >
               Purge expired
             </Button>
@@ -147,6 +154,23 @@ export function AuditPage() {
           <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Older</Button>
         </div>
       </Card>
+
+      <ConfirmationModal
+        open={confirmPurge}
+        onClose={() => setConfirmPurge(false)}
+        onConfirm={() => purge.mutate()}
+        title="Purge Expired Audit Logs"
+        itemName="Audit Log Retention Purge"
+        details={{
+          'Scope': isSuperAdmin && orgFilter ? `Organisation #${orgFilter}` : 'All organisations',
+          'Retention Policy': retention ? `Older than ${retention} days` : 'Per-organisation retention period',
+        }}
+        warningMessage="Running the audit retention purge will permanently delete all expired audit log entries. This action cannot be undone."
+        confirmLabel="Confirm Purge"
+        confirmVariant="danger"
+        loading={purge.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

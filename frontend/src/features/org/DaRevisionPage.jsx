@@ -9,6 +9,7 @@ import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const NEXT_STATUS = { DRAFT: 'APPROVED', APPROVED: 'ACTIVE', ACTIVE: 'CLOSED' };
 
@@ -20,6 +21,8 @@ export function DaRevisionPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [docFile, setDocFile] = useState(null);
+  const [confirmDocDelete, setConfirmDocDelete] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const { data: revision, isLoading } = useQuery({
     queryKey: ['da-revision', id],
@@ -60,8 +63,12 @@ export function DaRevisionPage() {
 
   const removeDoc = useMutation({
     mutationFn: () => arrearsApi.deleteRevisionDocument(id),
-    onSuccess: () => { invalidate(); toast.add('Scan removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Scan removed.', 'success');
+      setConfirmDocDelete(false);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove scan.'),
   });
 
   if (isLoading) return <div className="page"><p>Loading…</p></div>;
@@ -123,7 +130,17 @@ export function DaRevisionPage() {
               <span className="form-note">{doc.label || 'scan'} · {humanSize(doc.sizeBytes)} · {doc.mimeType}</span>
               <div className="row-actions">
                 <Button variant="secondary" size="sm" onClick={() => openFile(arrearsApi.revisionDocumentFileUrl(id)).catch((e) => toast.add(e.message, 'error'))}>View</Button>
-                <Button variant="secondary" size="sm" loading={removeDoc.isPending} onClick={() => { if (window.confirm('Remove this scan?')) removeDoc.mutate(); }}>Remove</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={removeDoc.isPending}
+                  onClick={() => {
+                    setActionError('');
+                    setConfirmDocDelete(true);
+                  }}
+                >
+                  Remove
+                </Button>
               </div>
             </div>
           ) : (
@@ -165,6 +182,25 @@ export function DaRevisionPage() {
           <Table columns={caseColumns} data={rows} keyField="id" emptyMessage="No cases — calculate arrears to populate this." />
         </Card>
       </div>
+
+      <ConfirmationModal
+        open={confirmDocDelete}
+        onClose={() => setConfirmDocDelete(false)}
+        onConfirm={() => removeDoc.mutate()}
+        title="Remove DA Revision Scan"
+        itemName={doc?.label || r.orderNumber || 'GO Scan'}
+        details={{
+          'Order Number': r.orderNumber,
+          'Revised DA': `${Number(r.revisedDaPercent)}%`,
+          'File Size': humanSize(doc?.sizeBytes),
+          'Format': doc?.mimeType,
+        }}
+        warningMessage="Removing this scan will remove the attached Government Order file from this DA revision."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={removeDoc.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

@@ -267,6 +267,7 @@ export const masterDataApi = {
   payScales: (params) => api.get(`/pay-scales?${new URLSearchParams(params)}`),
   createPayScale: (data) => api.post('/pay-scales', data),
   updatePayScale: (id, data) => api.put(`/pay-scales/${id}`, data),
+  deletePayScale: (id) => api.delete(`/pay-scales/${id}`),
   payScaleStages: (scaleId) => api.get(`/pay-scales/${scaleId}/stages`),
   updatePayScaleStages: (scaleId, stages) => api.put(`/pay-scales/${scaleId}/stages`, { stages }),
 

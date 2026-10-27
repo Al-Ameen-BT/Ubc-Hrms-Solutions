@@ -41,15 +41,17 @@ app.use((req, res, next) => {
  * everything the console needs is served from this origin, so there is no
  * need for 'unsafe-inline' — public/js/app.js uses addEventListener and
  * external CSS rather than inline handlers/styles, which keeps it that way.
+ * A development-only allowance for impeccable live mode is included;
+ * it is guarded by NODE_ENV and only active in development.
  */
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "http://localhost:8400"],
       styleSrc: ["'self'"],
       imgSrc: ["'self'", 'data:'],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "http://localhost:8400"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

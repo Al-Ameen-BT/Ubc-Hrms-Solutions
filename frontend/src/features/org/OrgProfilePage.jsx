@@ -11,6 +11,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const BOARD_ROLES = ['CHAIRMAN', 'VICE_CHAIRMAN', 'MEMBER', 'MANAGING_DIRECTOR', 'GENERAL_MANAGER', 'ASSISTANT_GENERAL_MANAGER', 'OTHER'];
 const DOC_TYPES = ['RBI_LICENSE', 'INCORPORATION_CERTIFICATE', 'PAN', 'GSTN', 'TAN', 'OTHER'];
@@ -24,6 +25,10 @@ export function OrgProfilePage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState(null);
+  const [deleteBranchTarget, setDeleteBranchTarget] = useState(null);
+  const [deleteBoardTarget, setDeleteBoardTarget] = useState(null);
+  const [deleteDocTarget, setDeleteDocTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const [branchOpen, setBranchOpen] = useState(false);
   const [branchEditing, setBranchEditing] = useState(null);
@@ -76,8 +81,12 @@ export function OrgProfilePage() {
 
   const removeBranch = useMutation({
     mutationFn: (row) => profileApi.deleteBranch(row.id),
-    onSuccess: () => { invalidate(); toast.add('Branch removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Branch removed.', 'success');
+      setDeleteBranchTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove branch.'),
   });
 
   const saveBoard = useMutation({
@@ -101,8 +110,12 @@ export function OrgProfilePage() {
 
   const removeBoard = useMutation({
     mutationFn: (row) => profileApi.deleteBoardMember(row.id),
-    onSuccess: () => { invalidate(); toast.add('Board member removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Board member removed.', 'success');
+      setDeleteBoardTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove board member.'),
   });
 
   const uploadDoc = useMutation({
@@ -121,8 +134,12 @@ export function OrgProfilePage() {
 
   const removeDoc = useMutation({
     mutationFn: (row) => orgApi.deleteDocument(row.id),
-    onSuccess: () => { invalidate(); toast.add('Document removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Document removed.', 'success');
+      setDeleteDocTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove document.'),
   });
 
   if (isLoading || !form) return <div className="page"><p>Loading…</p></div>;
@@ -147,7 +164,10 @@ export function OrgProfilePage() {
             setBranchForm({ name: r.name || '', branchCode: r.code || '', address: r.address || '', phone: r.phone || '', isHeadOffice: !!r.isHeadOffice });
             setBranchError(''); setBranchOpen(true);
           }}>Edit</Button>
-          <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Remove this branch?')) removeBranch.mutate(r); }}>Remove</Button>
+          <Button variant="secondary" size="sm" onClick={() => {
+            setActionError('');
+            setDeleteBranchTarget(r);
+          }}>Remove</Button>
         </div>
       ),
     },
@@ -167,7 +187,10 @@ export function OrgProfilePage() {
             setBoardForm({ name: r.name || '', role: r.role || 'MEMBER', roleOther: r.roleOther || '', displayOrder: r.displayOrder ?? '' });
             setBoardPhoto(null); setBoardError(''); setBoardOpen(true);
           }}>Edit</Button>
-          <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Remove this board member?')) removeBoard.mutate(r); }}>Remove</Button>
+          <Button variant="secondary" size="sm" onClick={() => {
+            setActionError('');
+            setDeleteBoardTarget(r);
+          }}>Remove</Button>
         </div>
       ),
     },
@@ -184,7 +207,10 @@ export function OrgProfilePage() {
       render: (r) => (
         <div className="row-actions">
           <Button variant="secondary" size="sm" onClick={() => openFile(orgApi.documentFileUrl(r.id)).catch((e) => toast.add(e.message, 'error'))}>View</Button>
-          <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Remove this document?')) removeDoc.mutate(r); }}>Remove</Button>
+          <Button variant="secondary" size="sm" onClick={() => {
+            setActionError('');
+            setDeleteDocTarget(r);
+          }}>Remove</Button>
         </div>
       ),
     },
@@ -381,6 +407,61 @@ export function OrgProfilePage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={deleteBranchTarget != null}
+        onClose={() => setDeleteBranchTarget(null)}
+        onConfirm={() => removeBranch.mutate(deleteBranchTarget)}
+        title="Remove Branch"
+        itemName={deleteBranchTarget?.name}
+        details={{
+          'Branch Code': deleteBranchTarget?.code || '—',
+          'Address': deleteBranchTarget?.address || '—',
+          'Phone': deleteBranchTarget?.phone || '—',
+          'Type': deleteBranchTarget?.isHeadOffice ? 'Head Office' : 'Branch',
+        }}
+        warningMessage="Removing this branch will detach it from the bank profile. Existing employees assigned to this branch remain in the database."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={removeBranch.isPending}
+        error={actionError}
+      />
+
+      <ConfirmationModal
+        open={deleteBoardTarget != null}
+        onClose={() => setDeleteBoardTarget(null)}
+        onConfirm={() => removeBoard.mutate(deleteBoardTarget)}
+        title="Remove Board Member"
+        itemName={deleteBoardTarget?.name}
+        details={{
+          'Role': deleteBoardTarget?.roleOther || deleteBoardTarget?.role,
+          'Display Order': deleteBoardTarget?.displayOrder ?? '—',
+        }}
+        warningMessage="Removing this board member will remove them from the official bank organisation profile."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={removeBoard.isPending}
+        error={actionError}
+      />
+
+      <ConfirmationModal
+        open={deleteDocTarget != null}
+        onClose={() => setDeleteDocTarget(null)}
+        onConfirm={() => removeDoc.mutate(deleteDocTarget)}
+        title="Remove Document"
+        itemName={deleteDocTarget?.label || deleteDocTarget?.fileName}
+        details={{
+          'Document Type': deleteDocTarget?.docType,
+          'File Name': deleteDocTarget?.fileName,
+          'Size': humanSize(deleteDocTarget?.sizeBytes),
+          'Format': deleteDocTarget?.mimeType,
+        }}
+        warningMessage="Removing this statutory document will permanently remove the uploaded file from the bank profile. This cannot be undone."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={removeDoc.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

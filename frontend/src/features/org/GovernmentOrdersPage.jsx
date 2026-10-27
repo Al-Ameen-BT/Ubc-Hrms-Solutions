@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 /* Government Order register with the scanned order attached
    (routes/governmentOrderDocuments.js). */
@@ -24,6 +25,8 @@ export function GovernmentOrdersPage() {
   const [docFile, setDocFile] = useState(null);
   const [docLabel, setDocLabel] = useState('');
   const [docError, setDocError] = useState('');
+  const [confirmDocDelete, setConfirmDocDelete] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['government-orders', { search }],
@@ -64,8 +67,12 @@ export function GovernmentOrdersPage() {
 
   const removeDoc = useMutation({
     mutationFn: () => masterDataApi.deleteGoDocument(selected.id),
-    onSuccess: () => { invalidate(); toast.add('Scan removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Scan removed.', 'success');
+      setConfirmDocDelete(false);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove scan.'),
   });
 
   const openDetail = async (row) => {
@@ -143,7 +150,17 @@ export function GovernmentOrdersPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>
-            {doc?.id && <Button variant="secondary" onClick={() => { if (window.confirm('Remove the attached scan?')) removeDoc.mutate(); }}>Remove</Button>}
+            {doc?.id && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setActionError('');
+                  setConfirmDocDelete(true);
+                }}
+              >
+                Remove
+              </Button>
+            )}
           </>
         }
       >
@@ -178,6 +195,25 @@ export function GovernmentOrdersPage() {
           </>
         )}
       </Modal>
+
+      <ConfirmationModal
+        open={confirmDocDelete}
+        onClose={() => setConfirmDocDelete(false)}
+        onConfirm={() => removeDoc.mutate()}
+        title="Remove GO Scan Document"
+        itemName={doc?.label || selected?.goNumber}
+        details={{
+          'GO Number': selected?.goNumber,
+          'Subject': selected?.subject,
+          'Size': humanSize(doc?.sizeBytes),
+          'Format': doc?.mimeType,
+        }}
+        warningMessage="Removing this attached scan document will permanently remove the uploaded file from this Government Order record."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={removeDoc.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

@@ -36,9 +36,9 @@ export function ConfirmationModal({
       <div className="confirm-modal-content">
         {error && <div className="auth-error" role="alert">{error}</div>}
 
-        <div className={`confirm-warning-banner ${confirmVariant === 'danger' ? 'banner-danger' : 'banner-warning'}`}>
+        <div className={`confirm-warning-banner ${confirmVariant === 'danger' ? 'banner-danger' : confirmVariant === 'primary' ? 'banner-primary' : 'banner-warning'}`}>
           <span className="confirm-warning-icon" aria-hidden="true">
-            {confirmVariant === 'danger' ? '⚠️' : 'ℹ️'}
+            {confirmVariant === 'danger' ? '⚠️' : confirmVariant === 'primary' ? 'ℹ️' : 'ℹ️'}
           </span>
           <div>{warningMessage}</div>
         </div>

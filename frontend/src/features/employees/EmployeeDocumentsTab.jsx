@@ -9,6 +9,7 @@ import { Table } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const DOC_TYPES = [
   { value: 'PAN', label: 'PAN' },
@@ -26,6 +27,8 @@ export function EmployeeDocumentsTab({ employeeId }) {
   const [label, setLabel] = useState('');
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['emp-documents', employeeId],
@@ -48,8 +51,12 @@ export function EmployeeDocumentsTab({ employeeId }) {
 
   const remove = useMutation({
     mutationFn: (row) => documentApi.remove(employeeId, row.id),
-    onSuccess: () => { invalidate(); toast.add('Document removed.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not remove.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Document removed.', 'success');
+      setDeleteTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not remove document.'),
   });
 
   const columns = [
@@ -63,7 +70,16 @@ export function EmployeeDocumentsTab({ employeeId }) {
       render: (r) => (
         <div className="row-actions">
           <Button variant="secondary" size="sm" onClick={() => openFile(documentApi.fileUrl(employeeId, r.id)).catch((e) => toast.add(e.message, 'error'))}>View</Button>
-          <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Remove this document?')) remove.mutate(r); }}>Remove</Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setActionError('');
+              setDeleteTarget(r);
+            }}
+          >
+            Remove
+          </Button>
         </div>
       ),
     },
@@ -107,6 +123,24 @@ export function EmployeeDocumentsTab({ employeeId }) {
           </div>
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={deleteTarget != null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => remove.mutate(deleteTarget)}
+        title="Remove Employee Document"
+        itemName={deleteTarget?.label || deleteTarget?.fileName}
+        details={{
+          'Type': DOC_TYPES.find((t) => t.value === deleteTarget?.docType)?.label || deleteTarget?.docType,
+          'Size': humanSize(deleteTarget?.sizeBytes),
+          'Format': deleteTarget?.mimeType,
+        }}
+        warningMessage="Removing this document will permanently delete the uploaded file from this employee's file."
+        confirmLabel="Confirm Deletion"
+        confirmVariant="danger"
+        loading={remove.isPending}
+        error={actionError}
+      />
     </Card>
   );
 }

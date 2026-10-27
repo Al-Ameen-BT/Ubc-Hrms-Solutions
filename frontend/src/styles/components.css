@@ -1106,6 +1106,13 @@
   color: var(--text-primary);
 }
 
+.confirm-warning-banner.banner-primary,
+.confirm-warning-banner.banner-info {
+  background: var(--info-soft, #e0f2fe);
+  border: 1px solid var(--info, #0284c7);
+  color: var(--text-primary);
+}
+
 .confirm-warning-icon {
   font-size: 1.25rem;
   line-height: 1;

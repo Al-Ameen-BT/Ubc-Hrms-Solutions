@@ -10,6 +10,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -27,6 +28,8 @@ export function ArrearsCasePage() {
   const [planOpen, setPlanOpen] = useState(false);
   const [planMode, setPlanMode] = useState('INSTALLMENT');
   const [planForm, setPlanForm] = useState({ numberOfInstallments: '6', startYear: '', startMonth: '' });
+  const [confirmClearPlan, setConfirmClearPlan] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['arrears-case', id],
@@ -49,8 +52,12 @@ export function ArrearsCasePage() {
 
   const clearPlan = useMutation({
     mutationFn: () => arrearsApi.clearPaymentPlan(id),
-    onSuccess: () => { invalidate(); toast.add('Payment plan cleared.', 'success'); },
-    onError: (err) => toast.add(err.message || 'Could not clear.', 'error'),
+    onSuccess: () => {
+      invalidate();
+      toast.add('Payment plan cleared.', 'success');
+      setConfirmClearPlan(false);
+    },
+    onError: (err) => setActionError(err.message || 'Could not clear plan.'),
   });
 
   const payInstallment = useMutation({
@@ -160,7 +167,15 @@ export function ArrearsCasePage() {
             </Button>
           )}
           {installments.length > 0 && (
-            <Button variant="secondary" onClick={() => { if (window.confirm('Clear the unpaid part of this plan?')) clearPlan.mutate(); }}>Clear Plan</Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setActionError('');
+                setConfirmClearPlan(true);
+              }}
+            >
+              Clear Plan
+            </Button>
           )}
         </div>
         <Table columns={installmentColumns} data={installments} keyField="id" emptyMessage="No installments yet." />
@@ -221,6 +236,24 @@ export function ArrearsCasePage() {
           <p className="form-note">Custom installment schedules (unequal amounts) are set from the API.</p>
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={confirmClearPlan}
+        onClose={() => setConfirmClearPlan(false)}
+        onConfirm={() => clearPlan.mutate()}
+        title="Clear Arrears Payment Plan"
+        itemName={c?.employeeName || 'Payment Plan'}
+        details={{
+          'Employee': c?.employeeName,
+          'Total Arrears': fmt.money(c?.effectiveTotalAmount),
+          'Installments': `${installments.filter((i) => i.status === 'PAID').length} paid / ${installments.length} total`,
+        }}
+        warningMessage="Clearing the payment plan will remove all unpaid installments. Paid installments and their Service Book records remain unaffected."
+        confirmLabel="Confirm Clear Plan"
+        confirmVariant="danger"
+        loading={clearPlan.isPending}
+        error={actionError}
+      />
     </div>
   );
 }

@@ -8,12 +8,18 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 export function PayScalesPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [stageScale, setStageScale] = useState(null);
+  const [activateTarget, setActivateTarget] = useState(null);
+  const [suppressTarget, setSuppressTarget] = useState(null);
+  const [actionError, setActionError] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [form, setForm] = useState({ code: '', name: '', payRevisionId: '', effectiveFrom: '', status: 'ACTIVE' });
   const [error, setError] = useState('');
 
@@ -40,6 +46,39 @@ export function PayScalesPage() {
     onError: (err) => setError(err.message || 'Could not create pay scale.'),
   });
 
+  const activateMutation = useMutation({
+    mutationFn: (id) => masterDataApi.updatePayScale(id, { status: 'ACTIVE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pay-scales'] });
+      toast.add('Pay scale activated.', 'success');
+      setActivateTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not activate pay scale.'),
+  });
+
+  const suppressMutation = useMutation({
+    mutationFn: (id) => masterDataApi.deletePayScale(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pay-scales'] });
+      toast.add('Pay scale suppressed (superseded).', 'success');
+      setSuppressTarget(null);
+    },
+    onError: (err) => setActionError(err.message || 'Could not suppress pay scale.'),
+  });
+
+  const allRows = data?.rows || [];
+  const filteredRows = allRows.filter((r) => {
+    if (statusFilter && r.status !== statusFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const codeMatch = r.code?.toLowerCase().includes(q);
+      const nameMatch = r.name?.toLowerCase().includes(q);
+      const exprMatch = r.scaleExpression?.toLowerCase().includes(q);
+      if (!codeMatch && !nameMatch && !exprMatch) return false;
+    }
+    return true;
+  });
+
   const columns = [
     { field: 'code', label: 'Code', mono: true },
     { field: 'name', label: 'Name' },
@@ -47,7 +86,39 @@ export function PayScalesPage() {
     { field: 'scaleExpression', label: 'Expression', mono: true },
     { field: 'effectiveFrom', label: 'Effective From', mono: true, render: (r) => fmt.date(r.effectiveFrom) },
     { field: 'status', label: 'Status', render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'default'}>{r.status}</Badge> },
-    { field: 'actions', label: '', sortable: false, render: (r) => <Button variant="secondary" size="sm" onClick={() => setStageScale(r)}>Stages</Button> },
+    {
+      field: 'actions',
+      label: '',
+      sortable: false,
+      render: (r) => (
+        <div className="row-actions">
+          <Button variant="secondary" size="sm" onClick={() => setStageScale(r)}>Stages</Button>
+          {r.status === 'SUPERSEDED' ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setActionError('');
+                setActivateTarget(r);
+              }}
+            >
+              Activate
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setActionError('');
+                setSuppressTarget(r);
+              }}
+            >
+              Suppress
+            </Button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -59,10 +130,29 @@ export function PayScalesPage() {
 
       <Card noPadding>
         <div className="table-toolbar">
-          <div />
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flex: 1, maxWidth: '500px' }}>
+            <input
+              type="search"
+              placeholder="Search pay scales…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input table-search"
+            />
+            <select
+              className="input"
+              style={{ width: 'auto' }}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Filter by status"
+            >
+              <option value="">All statuses</option>
+              <option value="ACTIVE">Active only</option>
+              <option value="SUPERSEDED">Suppressed only</option>
+            </select>
+          </div>
           <Button onClick={() => setModalOpen(true)}>Add Pay Scale</Button>
         </div>
-        <Table columns={columns} data={data?.rows || []} keyField="id" loading={isLoading} emptyMessage="No pay scales yet." />
+        <Table columns={columns} data={filteredRows} keyField="id" loading={isLoading} emptyMessage="No pay scales found." />
       </Card>
 
       <Modal
@@ -92,6 +182,46 @@ export function PayScalesPage() {
           <Input id="ps-eff" label="Effective From" type="date" value={form.effectiveFrom} onChange={(e) => setForm({ ...form, effectiveFrom: e.target.value })} />
         </form>
       </Modal>
+
+      <ConfirmationModal
+        open={activateTarget != null}
+        onClose={() => setActivateTarget(null)}
+        onConfirm={() => activateMutation.mutate(activateTarget.id)}
+        title="Activate Pay Scale"
+        itemName={activateTarget?.name}
+        details={{
+          'Pay Scale Code': activateTarget?.code,
+          'Pay Revision': revisionName(activateTarget?.payRevisionId),
+          'Expression': activateTarget?.scaleExpression || '—',
+          'Effective From': fmt.date(activateTarget?.effectiveFrom),
+          'Current Status': 'SUPERSEDED',
+        }}
+        warningMessage="Activating this suppressed pay scale will make it immediately active and available for new employee appointments, promotions, and payroll fixations."
+        confirmLabel="Confirm Activation"
+        confirmVariant="primary"
+        loading={activateMutation.isPending}
+        error={actionError}
+      />
+
+      <ConfirmationModal
+        open={suppressTarget != null}
+        onClose={() => setSuppressTarget(null)}
+        onConfirm={() => suppressMutation.mutate(suppressTarget.id)}
+        title="Suppress Pay Scale"
+        itemName={suppressTarget?.name}
+        details={{
+          'Pay Scale Code': suppressTarget?.code,
+          'Pay Revision': revisionName(suppressTarget?.payRevisionId),
+          'Expression': suppressTarget?.scaleExpression || '—',
+          'Effective From': fmt.date(suppressTarget?.effectiveFrom),
+          'Current Status': 'ACTIVE',
+        }}
+        warningMessage="Suppressing this pay scale will mark it as superseded. It will no longer be available for new employee assignments or promotions. Existing employee service records and pay history remain intact."
+        confirmLabel="Confirm Suppression"
+        confirmVariant="danger"
+        loading={suppressMutation.isPending}
+        error={actionError}
+      />
 
       {stageScale && <StageLadderModal scale={stageScale} onClose={() => setStageScale(null)} />}
     </div>
