@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
         if (!orgCode && data?.code) setOrgCode(data.code);
 
         // Dynamically update favicon
-        const favUrl = data?.faviconUrl || (orgCode ? (data?.logoUrl || '/banihal-round.png') : '/favicon.png');
+        const favUrl = data?.faviconUrl || (orgCode ? (data?.logoUrl || '/alert.png') : '/favicon.png');
         let link = document.querySelector("link[rel*='icon']");
         if (!link) {
           link = document.createElement('link');

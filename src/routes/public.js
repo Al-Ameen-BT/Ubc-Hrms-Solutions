@@ -25,7 +25,7 @@ async function platformBranding() {
     supportEmail: s.supportEmail,
     supportPhone: s.supportPhone,
     loginMessage: s.loginMessage,
-    logoUrl: logo ? `/assets/platform/logo?v=${logo.version}` : '/banihal-round.png',
+    logoUrl: logo ? `/assets/platform/logo?v=${logo.version}` : '/alert.png',
     faviconUrl: favicon ? `/assets/platform/favicon?v=${favicon.version}` : '/favicon.png',
   };
 }

@@ -37,12 +37,14 @@ export function AuthShell({ subtitle, children }) {
 
           <div className="login-brand-top">
             <span className="login-brand-mark" aria-hidden="true">
-              {logoUrl ? (
-                <img src={logoUrl} alt={brandName} className="login-brand-logo-img" />
-              ) : !isOrg ? (
-                <img src="/banihal-round.png" alt="Banihal" className="login-brand-logo-img" />
+              {isOrg ? (
+                logoUrl ? (
+                  <img src={logoUrl} alt={brandName} className="login-brand-logo-img" />
+                ) : (
+                  initials
+                )
               ) : (
-                initials
+                <img src="/alert.png" alt="Banihal" className="login-brand-logo-img" />
               )}
             </span>
             <span className="login-brand-label">
@@ -74,25 +76,27 @@ export function AuthShell({ subtitle, children }) {
         <main className="login-panel">
           <div className="login-panel-inner">
             <header className="login-header">
-              <div className="login-logo-slot">
-                {logoUrl ? (
-                  <img src={logoUrl} alt={`${brandName} logo`} className="login-logo" />
-                ) : !isOrg ? (
-                  <img src="/banihal-round.png" alt="Banihal logo" className="login-logo login-logo-platform" />
-                ) : (
-                  <span className="login-logo-mark" aria-hidden="true">{initials}</span>
-                )}
-              </div>
+              {isOrg && (
+                <div className="login-logo-slot">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt={`${brandName} logo`} className="login-logo" />
+                  ) : (
+                    <span className="login-logo-mark" aria-hidden="true">{initials}</span>
+                  )}
+                </div>
+              )}
               <h1 className="login-org-name">{brandName}</h1>
               <p className="login-org-subtitle">{resolvedSubtitle}</p>
             </header>
 
             {children}
 
-            <p className="login-powered">
-              <span>Powered by</span>
-              <img src="/banihal-logo.png" alt="Banihal Technologies" className="login-powered-logo" />
-            </p>
+            <div className="login-powered-wrap">
+              <p className="login-powered">
+                <span>Powered by</span>
+                <img src="/banihal-logo.png" alt="Banihal Technologies" className="login-powered-logo" />
+              </p>
+            </div>
           </div>
         </main>
       </div>

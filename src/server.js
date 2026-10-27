@@ -176,7 +176,7 @@ app.get('/assets/platform/logo', async (req, res, next) => {
     const row = await brand.find(null, 'LOGO');
     if (!row) {
       res.set('Cache-Control', 'public, max-age=300');
-      return res.sendFile(path.join(__dirname, '..', 'public', 'banihal-round.png'));
+      return res.sendFile(path.join(__dirname, '..', 'public', 'alert.png'));
     }
     return brand.send(res, row);
   } catch (err) { next(err); }

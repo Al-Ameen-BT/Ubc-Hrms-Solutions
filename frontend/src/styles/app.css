@@ -90,26 +90,64 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
-  text-decoration: none;
+  text-decoration: none !important;
   color: inherit;
   cursor: pointer;
-  border-radius: var(--radius);
-  padding: 4px 6px;
-  margin: -4px -6px;
-  transition: background var(--duration-fast) var(--ease), opacity var(--duration-fast) var(--ease);
+  border-radius: var(--radius-md);
+  padding: 5px 8px;
+  margin: -5px -8px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   min-width: 0;
+  user-select: none;
 }
 
 .topbar-brand-link:hover {
+  text-decoration: none !important;
   background: var(--bg-glass-hover);
-  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.topbar-brand-link:active {
+  transform: translateY(0) scale(0.98);
+  background: var(--bg-glass-strong);
+}
+
+.topbar-brand-link:focus,
+.topbar-brand-link:focus-visible {
+  text-decoration: none !important;
+  outline: none;
 }
 
 .topbar-logo {
   height: 32px;
+  max-width: 140px;
   width: auto;
   border-radius: var(--radius);
   flex-shrink: 0;
+  object-fit: contain;
+}
+
+.topbar-logo-round {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: contain;
+}
+
+.topbar-logo-badge {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent) 0%, #1a5276 100%);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .topbar-platform-name,
@@ -121,6 +159,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  text-decoration: none !important;
 }
 
 .topbar-user {
@@ -1762,10 +1801,19 @@ input[type="file"].input::file-selector-button:hover {
   border-color: var(--login-primary-strong);
 }
 
-.login-powered {
-  margin: 30px 0 0;
+.login-powered-wrap {
   display: flex;
+  justify-content: center;
   align-items: center;
+  width: 100%;
+  margin-top: 32px;
+}
+
+.login-powered {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
   color: var(--login-faint);
   font-size: 11px;

@@ -20,11 +20,18 @@ export function TopBar({ theme, onToggleTheme, onToggleSidebar }) {
         <div className="topbar-brand">
           {isPlatform ? (
             <Link to="/" className="topbar-brand-link" title="Return to Overview">
+              <img src="/alert.png" alt="Banihal" className="topbar-logo topbar-logo-round" />
               <span className="topbar-platform-name">{platformName}</span>
             </Link>
           ) : (
             <Link to="/" className="topbar-brand-link" title="Return to Overview">
-              {branding?.logoUrl && <img src={branding.logoUrl} alt="" className="topbar-logo" />}
+              {branding?.logoUrl ? (
+                <img src={branding.logoUrl} alt="" className="topbar-logo" />
+              ) : (
+                <span className="topbar-logo-badge" aria-hidden="true">
+                  {orgName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'UB'}
+                </span>
+              )}
               <span className="topbar-org-name">{orgName}</span>
             </Link>
           )}
