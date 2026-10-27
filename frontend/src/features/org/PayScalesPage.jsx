@@ -80,12 +80,25 @@ export function PayScalesPage() {
   });
 
   const columns = [
-    { field: 'code', label: 'Code', mono: true },
+    { field: 'code', label: 'Code', mono: true, width: '120px' },
     { field: 'name', label: 'Name' },
     { field: 'payRevisionId', label: 'Pay Revision', render: (r) => revisionName(r.payRevisionId) },
-    { field: 'scaleExpression', label: 'Expression', mono: true },
-    { field: 'effectiveFrom', label: 'Effective From', mono: true, render: (r) => fmt.date(r.effectiveFrom) },
-    { field: 'status', label: 'Status', render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'default'}>{r.status}</Badge> },
+    {
+      field: 'scaleExpression',
+      label: 'Expression',
+      className: 'table-expr-cell',
+      render: (r) => (
+        r.scaleExpression ? (
+          <code className="table-expr-code" title={r.scaleExpression}>
+            {r.scaleExpression}
+          </code>
+        ) : (
+          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+        )
+      ),
+    },
+    { field: 'effectiveFrom', label: 'Effective From', mono: true, width: '130px', render: (r) => fmt.date(r.effectiveFrom) },
+    { field: 'status', label: 'Status', width: '110px', render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'default'}>{r.status}</Badge> },
     {
       field: 'actions',
       label: '',
@@ -130,7 +143,7 @@ export function PayScalesPage() {
 
       <Card noPadding>
         <div className="table-toolbar">
-          <div style={{ display: 'flex', gap: 'var(--space-2)', flex: 1, maxWidth: '500px' }}>
+          <div className="table-toolbar-controls">
             <input
               type="search"
               placeholder="Search pay scales…"

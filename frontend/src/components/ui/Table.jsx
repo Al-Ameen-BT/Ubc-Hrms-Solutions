@@ -48,7 +48,8 @@ export function Table({ columns, data, keyField, onRowClick, emptyMessage, loadi
             {columns.map(col => (
               <th
                 key={col.field}
-                className={`table-th ${col.sortable !== false ? 'table-th-sortable' : ''} ${col.align === 'right' ? 'table-th-right' : ''}`}
+                className={`table-th ${col.sortable !== false ? 'table-th-sortable' : ''} ${col.align === 'right' ? 'table-th-right' : ''} ${col.className || ''}`}
+                style={col.width ? { width: col.width } : undefined}
                 onClick={col.sortable !== false ? () => handleSort(col.field) : undefined}
                 aria-sort={sort.field === col.field ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
               >
@@ -70,7 +71,7 @@ export function Table({ columns, data, keyField, onRowClick, emptyMessage, loadi
               {columns.map(col => (
                 <td
                   key={col.field}
-                  className={`table-td ${col.align === 'right' ? 'table-td-right' : ''} ${col.mono ? 'mono' : ''}`}
+                  className={`table-td ${col.align === 'right' ? 'table-td-right' : ''} ${col.mono ? 'mono' : ''} ${col.className || ''}`}
                 >
                   {col.render ? col.render(row) : row[col.field]}
                 </td>
