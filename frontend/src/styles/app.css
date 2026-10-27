@@ -83,12 +83,33 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
+}
+
+.topbar-brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  margin: -4px -6px;
+  transition: background var(--duration-fast) var(--ease), opacity var(--duration-fast) var(--ease);
+  min-width: 0;
+}
+
+.topbar-brand-link:hover {
+  background: var(--bg-glass-hover);
+  opacity: 0.92;
 }
 
 .topbar-logo {
   height: 32px;
   width: auto;
   border-radius: var(--radius);
+  flex-shrink: 0;
 }
 
 .topbar-platform-name,
@@ -1374,6 +1395,16 @@ input[type="file"].input::file-selector-button:hover {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.login-brand-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 2px;
+  display: block;
 }
 
 .login-brand-label {
@@ -1733,14 +1764,34 @@ input[type="file"].input::file-selector-button:hover {
 
 .login-powered {
   margin: 30px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--login-faint);
   font-size: 11px;
   letter-spacing: 0.02em;
 }
 
 .login-powered span {
-  color: #4c5a66;
-  font-weight: 600;
+  color: #7a8b99;
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.login-powered-logo {
+  height: 18px;
+  width: auto;
+  object-fit: contain;
+  opacity: 0.9;
+  display: inline-block;
+}
+
+.login-logo-platform {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
 }
 
 /* ---------- Password recovery ---------- */

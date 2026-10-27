@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 export function TopBar({ theme, onToggleTheme, onToggleSidebar }) {
@@ -18,12 +19,14 @@ export function TopBar({ theme, onToggleTheme, onToggleSidebar }) {
         </button>
         <div className="topbar-brand">
           {isPlatform ? (
-            <span className="topbar-platform-name">{platformName}</span>
+            <Link to="/" className="topbar-brand-link" title="Return to Overview">
+              <span className="topbar-platform-name">{platformName}</span>
+            </Link>
           ) : (
-            <>
+            <Link to="/" className="topbar-brand-link" title="Return to Overview">
               {branding?.logoUrl && <img src={branding.logoUrl} alt="" className="topbar-logo" />}
               <span className="topbar-org-name">{orgName}</span>
-            </>
+            </Link>
           )}
         </div>
       </div>

@@ -25,8 +25,8 @@ async function platformBranding() {
     supportEmail: s.supportEmail,
     supportPhone: s.supportPhone,
     loginMessage: s.loginMessage,
-    logoUrl: logo ? `/assets/platform/logo?v=${logo.version}` : null,
-    faviconUrl: favicon ? `/assets/platform/favicon?v=${favicon.version}` : '/favicon.svg',
+    logoUrl: logo ? `/assets/platform/logo?v=${logo.version}` : '/banihal-round.png',
+    faviconUrl: favicon ? `/assets/platform/favicon?v=${favicon.version}` : '/favicon.png',
   };
 }
 
@@ -36,14 +36,23 @@ async function findOrgByCode(code) {
   return Organization.findOne({ where: sqlWhere(fn('upper', col('code')), c) });
 }
 
-/** The public "card" for one organisation — name + logo, plus platform branding. */
+/** The public "card" for one organisation — name + logo + favicon, plus platform branding. */
 async function orgBranding(org) {
-  const logo = await brand.info(org.id, 'LOGO');
+  const [logo, favicon] = await Promise.all([
+    brand.info(org.id, 'LOGO'),
+    brand.info(org.id, 'FAVICON'),
+  ]);
+  const logoUrl = logo ? `/assets/org/${encodeURIComponent(org.code)}/logo?v=${logo.version}` : null;
+  const faviconUrl = favicon
+    ? `/assets/org/${encodeURIComponent(org.code)}/favicon?v=${favicon.version}`
+    : (logoUrl || '/favicon.png');
+
   return {
     code: org.code,
     name: org.name,
     shortName: org.shortName,
-    logoUrl: logo ? `/assets/org/${encodeURIComponent(org.code)}/logo?v=${logo.version}` : null,
+    logoUrl,
+    faviconUrl,
     platform: await platformBranding(),
   };
 }

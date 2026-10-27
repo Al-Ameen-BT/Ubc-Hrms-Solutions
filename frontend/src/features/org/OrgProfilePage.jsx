@@ -12,6 +12,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { ImageCropModal } from '../../components/ui/ImageCropModal';
 
 const BOARD_ROLES = ['CHAIRMAN', 'VICE_CHAIRMAN', 'MEMBER', 'MANAGING_DIRECTOR', 'GENERAL_MANAGER', 'ASSISTANT_GENERAL_MANAGER', 'OTHER'];
 const DOC_TYPES = ['RBI_LICENSE', 'INCORPORATION_CERTIFICATE', 'PAN', 'GSTN', 'TAN', 'OTHER'];
@@ -29,6 +30,9 @@ export function OrgProfilePage() {
   const [deleteBoardTarget, setDeleteBoardTarget] = useState(null);
   const [deleteDocTarget, setDeleteDocTarget] = useState(null);
   const [actionError, setActionError] = useState('');
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [rawLogoSrc, setRawLogoSrc] = useState(null);
+  const [logoPreviewSrc, setLogoPreviewSrc] = useState(null);
 
   const [branchOpen, setBranchOpen] = useState(false);
   const [branchEditing, setBranchEditing] = useState(null);
@@ -63,7 +67,13 @@ export function OrgProfilePage() {
 
   const uploadLogo = useMutation({
     mutationFn: (dataUrl) => orgApi.uploadLogo(dataUrl),
-    onSuccess: () => { invalidate(); toast.add('Logo updated.', 'success'); },
+    onSuccess: (_, variables) => {
+      invalidate();
+      setLogoPreviewSrc(variables);
+      setCropModalOpen(false);
+      setRawLogoSrc(null);
+      toast.add('Logo updated successfully.', 'success');
+    },
     onError: (err) => toast.add(err.message || 'Logo upload failed.', 'error'),
   });
 
@@ -227,11 +237,22 @@ export function OrgProfilePage() {
         <div className="profile-grid">
           <div className="profile-logo">
             <div className="profile-logo-preview">
-              {data?.logo && o?.code ? (
+              {logoPreviewSrc ? (
+                <img
+                  src={logoPreviewSrc}
+                  alt="Bank Logo Preview"
+                />
+              ) : data?.logo && o?.code ? (
                 <img
                   src={`/assets/org/${encodeURIComponent(o.code)}/logo?v=${data.logo.version || '1'}`}
                   alt="Bank Logo"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  onError={(e) => {
+                    // Fallback to placeholder if asset endpoint is unreachable
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextSibling) {
+                      e.currentTarget.nextSibling.style.display = 'flex';
+                    }
+                  }}
                 />
               ) : (
                 <div className="logo-placeholder">
@@ -249,7 +270,7 @@ export function OrgProfilePage() {
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.75">
                   <path d="M3 13v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3M10 3v10M6 7l4-4 4 4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                {uploadLogo.isPending ? 'Uploading…' : data?.logo ? 'Change Logo' : 'Upload Logo'}
+                {uploadLogo.isPending ? 'Uploading…' : data?.logo || logoPreviewSrc ? 'Change / Crop Logo' : 'Upload Logo'}
               </span>
               <input
                 id="op-logo"
@@ -262,7 +283,8 @@ export function OrgProfilePage() {
                   try {
                     assertUploadable(f);
                     const dataUrl = await readFileAsDataUrl(f);
-                    uploadLogo.mutate(dataUrl);
+                    setRawLogoSrc(dataUrl);
+                    setCropModalOpen(true);
                   } catch (err) {
                     toast.add(err.message || 'Could not read logo.', 'error');
                   }
@@ -270,7 +292,7 @@ export function OrgProfilePage() {
                 }}
               />
             </label>
-            <span className="field-hint" style={{ fontSize: '0.7rem' }}>PNG, JPG or WebP (max 512 KB)</span>
+            <span className="field-hint" style={{ fontSize: '0.7rem' }}>PNG, JPG or WebP (crop & align)</span>
           </div>
           <div className="form-grid">
             <Input id="op-name" label="Registered Name" value={form.name || ''} readOnly disabled />
@@ -461,6 +483,22 @@ export function OrgProfilePage() {
         confirmVariant="danger"
         loading={removeDoc.isPending}
         error={actionError}
+      />
+
+      <ImageCropModal
+        open={cropModalOpen}
+        imageSrc={rawLogoSrc}
+        onClose={() => {
+          setCropModalOpen(false);
+          setRawLogoSrc(null);
+        }}
+        onCropComplete={(croppedDataUrl) => {
+          uploadLogo.mutate(croppedDataUrl);
+        }}
+        title="Crop & Align Bank Logo"
+        aspectRatio={1}
+        outputWidth={400}
+        outputHeight={400}
       />
     </div>
   );

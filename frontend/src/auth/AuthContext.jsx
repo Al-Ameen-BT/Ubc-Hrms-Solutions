@@ -28,6 +28,21 @@ export function AuthProvider({ children }) {
            organisation from the Host header — adopt its code so sign-in is
            scoped to that bank even without an /o/<CODE> path. */
         if (!orgCode && data?.code) setOrgCode(data.code);
+
+        // Dynamically update favicon
+        const favUrl = data?.faviconUrl || (orgCode ? (data?.logoUrl || '/banihal-round.png') : '/favicon.png');
+        let link = document.querySelector("link[rel*='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.href = favUrl;
+
+        // Dynamically update document title if appropriate
+        if (data?.name || data?.platformName) {
+          document.title = data.name || data.platformName;
+        }
       } catch {
         /* branding is cosmetic — never block */
       }

@@ -36,7 +36,15 @@ export function AuthShell({ subtitle, children }) {
           <span className="login-brand-orbit" aria-hidden="true" />
 
           <div className="login-brand-top">
-            <span className="login-brand-mark" aria-hidden="true">{initials}</span>
+            <span className="login-brand-mark" aria-hidden="true">
+              {logoUrl ? (
+                <img src={logoUrl} alt={brandName} className="login-brand-logo-img" />
+              ) : !isOrg ? (
+                <img src="/banihal-round.png" alt="Banihal" className="login-brand-logo-img" />
+              ) : (
+                initials
+              )}
+            </span>
             <span className="login-brand-label">
               {isOrg ? 'Employee HRMS' : 'Platform console'}
             </span>
@@ -69,6 +77,8 @@ export function AuthShell({ subtitle, children }) {
               <div className="login-logo-slot">
                 {logoUrl ? (
                   <img src={logoUrl} alt={`${brandName} logo`} className="login-logo" />
+                ) : !isOrg ? (
+                  <img src="/banihal-round.png" alt="Banihal logo" className="login-logo login-logo-platform" />
                 ) : (
                   <span className="login-logo-mark" aria-hidden="true">{initials}</span>
                 )}
@@ -80,7 +90,8 @@ export function AuthShell({ subtitle, children }) {
             {children}
 
             <p className="login-powered">
-              Powered by <span>Banihal</span>
+              <span>Powered by</span>
+              <img src="/banihal-logo.png" alt="Banihal Technologies" className="login-powered-logo" />
             </p>
           </div>
         </main>

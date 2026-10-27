@@ -162,11 +162,10 @@ const { findOrgByCode } = require('./routes/public');
 app.get(['/assets/platform/favicon', '/favicon.ico'], async (req, res, next) => {
   try {
     const row = await brand.find(null, 'FAVICON');
-    // No upload yet: serve the bundled default directly (a redirect would be
-    // rewritten to https by the CSP's upgrade-insecure-requests on plain-http test hosts).
+    // No upload yet: serve the Banihal round favicon directly
     if (!row) {
       res.set('Cache-Control', 'public, max-age=300');
-      return res.sendFile(path.join(__dirname, '..', 'public', 'favicon.svg'));
+      return res.sendFile(path.join(__dirname, '..', 'public', 'favicon.png'));
     }
     return brand.send(res, row);
   } catch (err) { next(err); }
@@ -175,7 +174,10 @@ app.get(['/assets/platform/favicon', '/favicon.ico'], async (req, res, next) => 
 app.get('/assets/platform/logo', async (req, res, next) => {
   try {
     const row = await brand.find(null, 'LOGO');
-    if (!row) return res.status(404).end();
+    if (!row) {
+      res.set('Cache-Control', 'public, max-age=300');
+      return res.sendFile(path.join(__dirname, '..', 'public', 'banihal-round.png'));
+    }
     return brand.send(res, row);
   } catch (err) { next(err); }
 });
@@ -186,6 +188,23 @@ app.get('/assets/org/:code/logo', async (req, res, next) => {
     const row = org && await brand.find(org.id, 'LOGO');
     if (!row) return res.status(404).end();
     return brand.send(res, row);
+  } catch (err) { next(err); }
+});
+
+app.get('/assets/org/:code/favicon', async (req, res, next) => {
+  try {
+    const org = await findOrgByCode(req.params.code);
+    if (!org) return res.status(404).end();
+    const favRow = await brand.find(org.id, 'FAVICON');
+    if (favRow) return brand.send(res, favRow);
+
+    // Fallback to the organisation's logo if uploaded
+    const logoRow = await brand.find(org.id, 'LOGO');
+    if (logoRow) return brand.send(res, logoRow);
+
+    // Default to platform round favicon
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.sendFile(path.join(__dirname, '..', 'public', 'favicon.png'));
   } catch (err) { next(err); }
 });
 
