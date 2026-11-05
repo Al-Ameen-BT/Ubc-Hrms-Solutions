@@ -16,10 +16,10 @@ function toPaise(n) {
   return Math.round(num * SCALE);
 }
 
-/** Convert paise (integer) to rupees (integer, rounded to nearest whole rupee). */
+/** Convert paise (integer) to rupees (integer, rounded upward to a whole rupee). */
 function toRupees(paise) {
   if (paise === null || paise === undefined) return 0;
-  return Math.round(paise / SCALE);
+  return Math.ceil(paise / SCALE);
 }
 
 /** Add paise values (inputs must already be paise). */
@@ -44,7 +44,9 @@ function divide(paise, divisor) {
 
 /** Percentage of paise: paise * percent / 100. Input paise must be paise. */
 function percentOf(paise, percent) {
-  return Math.round((Number(paise) || 0) * Number(percent) / 100);
+  // Payroll rates have up to three decimals; integer arithmetic avoids false ceilings.
+  const numerator = BigInt(Math.round(Number(paise) || 0)) * BigInt(Math.round(Number(percent || 0) * 1000));
+  return Number(numerator > 0n ? (numerator + 99999n) / 100000n : numerator / 100000n);
 }
 
 /** Minimum of paise values. */
@@ -77,10 +79,7 @@ function sum(arr) {
 
 /** Format paise as rupee string with no decimals. */
 function format(paise) {
-  const sign = paise < 0 ? '-' : '';
-  const abs = Math.abs(Number(paise) || 0);
-  const rupees = Math.round(abs / SCALE);
-  return `${sign}${rupees}`;
+  return String(toRupees(paise));
 }
 
 /** Safe getter: returns paise from either rupee or paise input (detects by magnitude). */

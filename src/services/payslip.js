@@ -21,7 +21,7 @@ const SCALE = 100;
 /** Pro-rate a paise amount by attendance factor (numerator/denominator). */
 function proRatePaise(paise, numerator, denominator) {
   if (numerator >= denominator) return paise;
-  return Math.round(paise * numerator / denominator);
+  return Math.ceil(paise * numerator / denominator);
 }
 
 /** Convert attendance factor to numerator/denominator for exact integer math. */
@@ -42,7 +42,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   const payableDays = payScale && Number(payScale.payableDays) > 0 ? Number(payScale.payableDays) : 30;
   const lopDays = Math.max(0, Math.min(payableDays, Number(attendance && attendance.lopDays) || 0));
   const { num: attNum, den: attDen } = attendanceFraction(lopDays, payableDays);
-  function proRate(paise) { return proRatePaise(paise, attNum, attDen); }
+  function proRate(paise) { return toPaise(toRupees(proRatePaise(paise, attNum, attDen))); }
 
   // ---- Earnings ----
   // DA: VARIABLE = org's daPercent x Basic; FIXED = employee's fixedDaAmount; BOTH = VARIABLE + FIXED
@@ -105,12 +105,12 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
 
   // Admin-defined allowances
   const customAllowanceRows = (customAllowances || []).map((a) => ({ id: a.id, name: a.name, amount: toRupees(toPaise(a.amount)) }));
-  const customAllowancesTotalPaise = sum((customAllowances || []).map(a => toPaise(a.amount)));
+  const customAllowancesTotalPaise = sum(customAllowanceRows.map(a => toPaise(a.amount)));
 
-  const grossEarningsPaise = add(
+  const grossEarningsPaise = sum([
     basicPaise, daPaise, hraPaise, riskPaise, otherPaise,
     ccaPaise, conveyancePaise, medicalAllowancePaise, bonusPaise, customAllowancesTotalPaise
-  );
+  ].map(value => toPaise(toRupees(value))));
 
   // ---- Provident Fund ----
   const pfBasePaise = settings.pfCalculationBase === 'BASIC_PLUS_DA' ? add(basicPaise, daPaise) : basicPaise;

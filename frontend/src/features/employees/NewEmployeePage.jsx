@@ -159,9 +159,9 @@ export function NewEmployeePage() {
                 </select>
               </div>
               {form.hraType === 'FIXED' && (
-                <Input id="fixedHra" label="Fixed HRA Amount (₹)" type="number" step="0.01" value={form.fixedHraAmount} onChange={(e) => set({ fixedHraAmount: e.target.value })} mono required />
+                <Input id="fixedHra" label="Fixed HRA Amount (₹)" type="number" step="1" value={form.fixedHraAmount} onChange={(e) => set({ fixedHraAmount: e.target.value })} mono required />
               )}
-              <Input id="risk" label="Risk Allowance (₹)" type="number" step="0.01" value={form.riskAllowance} onChange={(e) => set({ riskAllowance: e.target.value })} mono hint="Optional risk allowance for this employee." />
+              <Input id="risk" label="Risk Allowance (₹)" type="number" step="1" value={form.riskAllowance} onChange={(e) => set({ riskAllowance: e.target.value })} mono hint="Optional risk allowance for this employee." />
             </div>
             <p className="form-note">HRA is subject to the organisation ceiling. Policies default from the organisation unless set per employee.</p>
           </>

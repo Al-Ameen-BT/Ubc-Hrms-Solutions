@@ -910,7 +910,7 @@
     } else html += '<p class="small muted">None recorded.</p>';
     if (writable && !active.length) {
       html += '<div class="inline-form spaced">' +
-        H.field('fa-amount', 'Amount (≤ 1 month Basic+DA)', H.input('fa-amount', 'number', '', 'step="0.01" min="0"')) +
+        H.field('fa-amount', 'Amount (≤ 1 month Basic+DA)', H.input('fa-amount', 'number', '', 'step="1" min="0"')) +
         H.field('fa-date', 'Date availed', H.input('fa-date', 'date', H.todayYmd())) +
         '<button type="button" class="secondary sm" id="fa-add">Record Festival Advance</button></div>';
     }
@@ -958,7 +958,7 @@
     } else html += '<p class="small muted">None recorded.</p>';
     if (writable && !active.length) {
       html += '<div class="inline-form spaced">' +
-        H.field('od-amount', 'Amount availed (₹)', H.input('od-amount', 'number', '', 'step="0.01" min="0" max="' + res.eligibility.ceiling + '"')) +
+        H.field('od-amount', 'Amount availed (₹)', H.input('od-amount', 'number', '', 'step="1" min="0" max="' + res.eligibility.ceiling + '"')) +
         H.field('od-date', 'Date availed', H.input('od-date', 'date', H.todayYmd())) +
         H.field('od-months', 'Repay over (months)', H.input('od-months', 'number', res.maxRepayMonths, 'min="1" max="' + res.maxRepayMonths + '"')) +
         H.field('od-rate', 'Interest rate (%)', H.input('od-rate', 'number', currentRate, 'step="0.001" min="0"')) +
@@ -995,8 +995,8 @@
         H.field('lic-policy', 'Policy number (optional)', H.input('lic-policy', 'text', '', '')) +
         H.field('lic-open', 'Opening date', H.input('lic-open', 'date', H.todayYmd())) +
         H.field('lic-start', 'Started date', H.input('lic-start', 'date', H.todayYmd())) +
-        H.field('lic-amt', 'Deduction amount (₹/month)', H.input('lic-amt', 'number', '', 'step="0.01" min="0"')) +
-        H.field('lic-sum', 'Sum assured (₹)', H.input('lic-sum', 'number', '', 'step="0.01" min="0"')) +
+        H.field('lic-amt', 'Deduction amount (₹/month)', H.input('lic-amt', 'number', '', 'step="1" min="0"')) +
+        H.field('lic-sum', 'Sum assured (₹)', H.input('lic-sum', 'number', '', 'step="1" min="0"')) +
         H.field('lic-mat', 'Maturity date (optional)', H.input('lic-mat', 'date', '', '')) +
         '<button type="button" class="secondary sm" id="lic-add">Add LIC policy</button></div>';
     }
@@ -1030,7 +1030,7 @@
     } else html += '<p class="small muted">None recorded.</p>';
     if (writable) {
       html += '<div class="inline-form spaced">' +
-        H.field('hl-amt', 'Total loan amount (₹)', H.input('hl-amt', 'number', '', 'step="0.01" min="0"')) +
+        H.field('hl-amt', 'Total loan amount (₹)', H.input('hl-amt', 'number', '', 'step="1" min="0"')) +
         H.field('hl-rate', 'Interest rate (%)', H.input('hl-rate', 'number', '', 'step="0.001" min="0"')) +
         H.field('hl-start', 'EMI start date', H.input('hl-start', 'date', H.todayYmd())) +
         H.field('hl-end', 'EMI end date', H.input('hl-end', 'date', '')) +
@@ -1065,12 +1065,12 @@
     } else html += '<p class="small muted">None recorded.</p>';
     if (writable && (allowMultiple || !active.length)) {
       html += '<div class="inline-form spaced">' +
-        H.field('vl-amt', 'Total amount (₹)', H.input('vl-amt', 'number', '', 'step="0.01" min="0"')) +
+        H.field('vl-amt', 'Total amount (₹)', H.input('vl-amt', 'number', '', 'step="1" min="0"')) +
         H.field('vl-type', 'Type of vehicle', H.input('vl-type', 'text', '', '')) +
         H.field('vl-start', 'Start date', H.input('vl-start', 'date', H.todayYmd())) +
         H.field('vl-end', 'End date', H.input('vl-end', 'date', '')) +
         H.field('vl-rate', 'Interest rate % (blank = manual EMI)', H.input('vl-rate', 'number', currentRate, 'step="0.001" min="0"')) +
-        H.field('vl-emi', 'EMI amount (only if rate is blank)', H.input('vl-emi', 'number', '', 'step="0.01" min="0"')) +
+        H.field('vl-emi', 'EMI amount (only if rate is blank)', H.input('vl-emi', 'number', '', 'step="1" min="0"')) +
         '<button type="button" class="secondary sm" id="vl-add">Add Vehicle Loan</button></div>';
     } else if (writable && !allowMultiple && active.length) {
       html += '<p class="small muted">This employee already has an active Vehicle Loan. The organisation has not enabled multiple Vehicle Loans (see Payroll Settings).</p>';
@@ -1116,7 +1116,7 @@
     } else html += '<p class="small muted">None recorded.</p>';
     if (writable && !active.length && openOD) {
       html += '<div class="inline-form spaced">' +
-        H.field('rd-amount', 'Monthly amount (₹)', H.input('rd-amount', 'number', openOD.monthlyInstallment, 'step="0.01" min="0"')) +
+        H.field('rd-amount', 'Monthly amount (₹)', H.input('rd-amount', 'number', openOD.monthlyInstallment, 'step="1" min="0"')) +
         H.field('rd-date', 'Start date', H.input('rd-date', 'date', H.todayYmd())) +
         H.field('rd-account', 'Bank account (optional, type RD)', H.select('rd-account', refOptions((bankAccounts || []).filter(function (a) { return a.accountType === 'RD'; }), function (a) { return a.accountNumber + (a.bankName ? ' — ' + a.bankName : ''); }, '— none / not linked —'))) +
         '<button type="button" class="secondary sm" id="rd-add">Record Recurring Deposit</button></div>' +

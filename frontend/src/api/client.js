@@ -102,6 +102,18 @@ export const api = {
   postRaw: (path, body) => request('POST', path, body, { raw: true }),
 };
 
+export const bankRulesApi = {
+  metadata: () => api.get('/admin/bank-rule-catalogue/metadata'),
+  list: (bankClass = '', status = '') => api.get(`/admin/bank-rule-catalogue?${new URLSearchParams({ ...(bankClass ? { bankClass } : {}), ...(status ? { status } : {}) })}`),
+  get: (id) => api.get(`/admin/bank-rule-catalogue/${id}`),
+  reference: (bankClass) => api.get(`/admin/bank-rule-catalogue/reference/${encodeURIComponent(bankClass)}`),
+  preview: (body) => api.post('/admin/bank-rule-catalogue/preview', body),
+  create: (body) => api.post('/admin/bank-rule-catalogue', body),
+  update: (id, body) => api.put(`/admin/bank-rule-catalogue/${id}`, body),
+  publish: (id, body) => api.post(`/admin/bank-rule-catalogue/${id}/publish`, body),
+  delete: (id, version) => request('DELETE', `/admin/bank-rule-catalogue/${id}`, { version }),
+};
+
 /* Authenticated binary downloads (CSV exports, payslip/register PDFs). The
    shared client is JSON-only, so these bypass it but keep the same session
    handling: a 401 signs the user out rather than silently failing. */
@@ -319,7 +331,7 @@ export const fmt = {
       currency: 'INR',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(Math.round(Number(amount)));
+    }).format(Math.ceil(Number(amount)));
   },
   date(dateStr) {
     if (!dateStr) return '—';

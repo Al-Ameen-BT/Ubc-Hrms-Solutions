@@ -296,7 +296,7 @@
       return '<div class="card"><h3>Manual adjustment</h3><div class="card-body">' +
         '<p class="small muted">Override the calculated total with a mandatory reason (spec payment mode 4). This clears any pending payment plan, since the total changes.</p>' +
         '<div class="grid-2">' +
-        H.field('adj-amount', 'Approved amount', H.input('adj-amount', 'number', data.case.effectiveTotalAmount, 'step="0.01" min="0"')) +
+        H.field('adj-amount', 'Approved amount', H.input('adj-amount', 'number', data.case.effectiveTotalAmount, 'step="1" min="0"')) +
         H.field('adj-reason', 'Reason (required)', H.textarea('adj-reason', '', 'rows="2"')) +
         '</div><div class="btn-row"><button type="button" id="adj-save">Save adjustment</button></div>' +
         '</div></div>';

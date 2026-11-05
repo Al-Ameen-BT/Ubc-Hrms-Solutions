@@ -319,17 +319,19 @@ async function setSingleShot(arrearsCase, { year, month, userId }) {
 async function setInstallments(arrearsCase, { numberOfInstallments, startYear, startMonth, userId }) {
   const n = Number(numberOfInstallments);
   startYear = Number(startYear); startMonth = Number(startMonth);
-  if (!(n >= 1 && n <= 60)) throw new ArrearsError('Number of installments must be between 1 and 60.');
+  if (!Number.isInteger(n) || !(n >= 1 && n <= 60)) throw new ArrearsError('Number of installments must be a whole number between 1 and 60.');
   if (!(startYear >= 2000 && startYear <= 2100) || !(startMonth >= 1 && startMonth <= 12)) throw new ArrearsError('A valid starting year and month are required.');
-  const totalPaise = toPaise(arrearsCase.effectiveTotalAmount);
-  if (!(totalPaise > 0)) throw new ArrearsError('This case has no arrears amount to pay.');
-  const perPaise = Math.floor(totalPaise / n);
+  const totalRupees = toRupees(toPaise(arrearsCase.effectiveTotalAmount));
+  if (!(totalRupees > 0)) throw new ArrearsError('This case has no arrears amount to pay.');
+  if (n > totalRupees) throw new ArrearsError('Each installment must contain at least one rupee. Reduce the number of installments.');
+  const perRupees = Math.ceil(totalRupees / n);
   const rows = [];
   let y = startYear; let m = startMonth; let running = 0;
   for (let i = 0; i < n; i += 1) {
-    const amountPaise = i === n - 1 ? totalPaise - running : perPaise;
-    running += amountPaise;
-    rows.push({ year: y, month: m, amount: toRupees(amountPaise) });
+    // Reserve one rupee for each later installment so rounding cannot overpay.
+    const amount = Math.min(perRupees, totalRupees - running - (n - i - 1));
+    running += amount;
+    rows.push({ year: y, month: m, amount });
     m += 1; if (m > 12) { m = 1; y += 1; }
   }
   return sequelize.transaction((t) => replacePendingInstallments(arrearsCase, rows, 'INSTALLMENT', userId, t));

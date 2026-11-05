@@ -16,7 +16,7 @@ export const Input = forwardRef(function Input(
       )}
       <input ref={ref} className={cls} aria-invalid={!!error} aria-describedby={
         error ? `${props.id}-error` : hint ? `${props.id}-hint` : undefined
-      } {...props} />
+      } {...props} value={props.type === 'number' && props.value != null && props.value !== '' && Number.isFinite(Number(props.value)) ? Number(props.value) : props.value} />
       {hint && !error && <p className="field-hint" id={`${props.id}-hint`}>{hint}</p>}
       {error && <p className="field-error" id={`${props.id}-error`} role="alert">{error}</p>}
     </div>

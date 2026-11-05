@@ -12,6 +12,7 @@ const NAV = {
         { to: '/', label: 'Overview', icon: 'dashboard' },
         { to: '/organisations', label: 'Organisations', icon: 'orgs' },
         { to: '/platform-users', label: 'Platform Users', icon: 'users' },
+        { to: '/bank-rules', label: 'Bank Classes & Rules', icon: 'scales' },
         { to: '/platform-settings', label: 'Settings', icon: 'settings' },
         { to: '/audit', label: 'Audit Log', icon: 'audit' },
       ],

@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createHashRouter, RouterProvider, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { ThemeProvider } from './auth/ThemeContext';
 import { ToastProvider } from './components/ui/Toast';
@@ -15,6 +15,7 @@ import { MyAccountPage } from './features/auth/MyAccountPage';
 import { PlatformDashboard } from './features/platform/PlatformDashboard';
 import { PlatformUsersPage } from './features/platform/PlatformUsersPage';
 import { PlatformSettingsPage } from './features/platform/PlatformSettingsPage';
+import { BankRulesPage } from './features/platform/BankRulesPage';
 import { OrgDashboard } from './features/org/OrgDashboard';
 import { EmployeesPage } from './features/employees/EmployeesPage';
 import { BulkImportPage } from './features/employees/BulkImportPage';
@@ -86,6 +87,8 @@ function AppRoutes() {
         <Route path="organisations/:id" element={<OrganisationDetailPage />} />
         <Route path="platform-users" element={<PlatformUsersPage />} />
         <Route path="platform-settings" element={<PlatformSettingsPage />} />
+        <Route path="bank-rules" element={user?.role === 'SUPER_ADMIN' ? <BankRulesPage /> : <Navigate to="/" replace />} />
+        <Route path="bank-rules/:id" element={user?.role === 'SUPER_ADMIN' ? <BankRulesPage /> : <Navigate to="/" replace />} />
 
         <Route path="employees" element={<EmployeesPage />} />
         <Route path="employees/new" element={<NewEmployeePage />} />
@@ -128,14 +131,14 @@ function HomeRoute() {
   return isSuperAdmin ? <PlatformDashboard /> : <OrgDashboard />;
 }
 
+const router = createHashRouter([{ path: '*', element: <AppRoutes /> }]);
+
 export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <ToastProvider>
-          <HashRouter>
-            <AppRoutes />
-          </HashRouter>
+          <RouterProvider router={router} />
         </ToastProvider>
       </AuthProvider>
     </ThemeProvider>

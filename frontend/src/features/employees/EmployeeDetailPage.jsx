@@ -406,7 +406,7 @@ export function EmployeeDetailPage() {
                 id="modal-emp-fixed-hra"
                 label="Fixed HRA Amount (₹)"
                 type="number"
-                step="0.01"
+                step="1"
                 value={payForm.fixedHraAmount}
                 onChange={(e) => setPayForm({ ...payForm, fixedHraAmount: e.target.value })}
                 mono
@@ -418,7 +418,7 @@ export function EmployeeDetailPage() {
               id="emp-risk-allowance"
               label="Risk Allowance (₹)"
               type="number"
-              step="0.01"
+              step="1"
               value={payForm.riskAllowance}
               onChange={(e) => setPayForm({ ...payForm, riskAllowance: e.target.value })}
               mono
@@ -428,7 +428,7 @@ export function EmployeeDetailPage() {
               id="emp-other-allowance"
               label="Other Allowance (₹)"
               type="number"
-              step="0.01"
+              step="1"
               value={payForm.otherAllowance}
               onChange={(e) => setPayForm({ ...payForm, otherAllowance: e.target.value })}
               mono

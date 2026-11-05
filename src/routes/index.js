@@ -14,6 +14,7 @@ router.use('/auth', require('./auth'));
 
 // Super Admin platform administration.
 router.use('/admin', require('./admin'));
+router.use('/admin/bank-rule-catalogue', require('./bankRuleCatalogue'));
 
 // An Org Admin's own organisation settings.
 router.use('/org', require('./orgSettings'));

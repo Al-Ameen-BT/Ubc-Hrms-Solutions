@@ -75,18 +75,18 @@ function estimateAnnualTax({ grossAnnualSalary, regime = 'NEW', annual80C = 0, o
     const taxableIncome = Math.max(0, gross - OLD_REGIME.standardDeduction - capped80C - (Number(otherDeclaredDeductions) || 0));
     let tax = taxFromSlabs(taxableIncome, OLD_REGIME.slabs);
     if (taxableIncome <= OLD_REGIME.rebateThreshold) tax = Math.max(0, tax - OLD_REGIME.rebateMax);
-    const annualTax = Math.round(tax * (1 + CESS_RATE));
+    const annualTax = Math.ceil(tax * (1 + CESS_RATE));
     return {
-      taxableIncome, annualTax, monthlyTax: Math.round(annualTax / 12), regime: 'OLD',
+      taxableIncome, annualTax, monthlyTax: Math.ceil(annualTax / 12), regime: 'OLD',
       note: 'Old regime — Rule verification required: HRA exemption and declarations beyond 80C/other are not modelled here.',
     };
   }
   const taxableIncome = Math.max(0, gross - NEW_REGIME.standardDeduction);
   let tax = taxFromSlabs(taxableIncome, NEW_REGIME.slabs);
   if (taxableIncome <= NEW_REGIME.rebateThreshold) tax = Math.max(0, tax - NEW_REGIME.rebateMax);
-  const annualTax = Math.round(tax * (1 + CESS_RATE));
+  const annualTax = Math.ceil(tax * (1 + CESS_RATE));
   return {
-    taxableIncome, annualTax, monthlyTax: Math.round(annualTax / 12), regime: 'NEW',
+    taxableIncome, annualTax, monthlyTax: Math.ceil(annualTax / 12), regime: 'NEW',
     note: 'New regime (FY 2025-26 slabs) — marginal relief at the rebate edge is not modelled.',
   };
 }

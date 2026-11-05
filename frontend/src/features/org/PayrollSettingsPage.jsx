@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orgApi } from '../../api/client';
 import { useToast } from '../../components/ui/Toast';
@@ -51,7 +52,7 @@ export function PayrollSettingsPage() {
         <div className="page-header-row">
           <div>
             <h1>Payroll Settings</h1>
-            <p>Rates and limits used when computing every payslip for this organisation.</p>
+            <p>Rates and limits used when computing every payslip for this organisation. Money rounds upward to whole rupees; percentage rates retain decimals.</p>
           </div>
           <div className="page-header-actions">
             <Button loading={save.isPending} onClick={() => save.mutate(form)}>Save Settings</Button>
@@ -73,13 +74,13 @@ export function PayrollSettingsPage() {
             ]}
           />
           {form.hraType === 'FIXED' ? (
-            <Input id="ps-hrafixed" label="Fixed HRA Amount (₹)" type="number" step="0.01" value={form.hraFixedAmount ?? ''} onChange={f('hraFixedAmount')} mono />
+            <Input id="ps-hrafixed" label="Fixed HRA Amount (₹)" type="number" step="1" value={form.hraFixedAmount ?? ''} onChange={f('hraFixedAmount')} mono />
           ) : (
             <Input id="ps-hra" label="House Rent Allowance %" type="number" step="0.001" value={form.hraPercent ?? ''} onChange={f('hraPercent')} mono />
           )}
-          <Input id="ps-hramax" label="HRA Ceiling / Max Limit (₹)" type="number" step="0.01" value={form.hraMaxAmount ?? ''} onChange={f('hraMaxAmount')} mono hint="Optional maximum cap applied to HRA (0 or blank for no cap)." />
-          <Input id="ps-cca" label="City Compensatory Allowance" type="number" step="0.01" value={form.ccaAmount ?? ''} onChange={f('ccaAmount')} mono hint="0 disables it." />
-          <Input id="ps-conv" label="Conveyance Allowance" type="number" step="0.01" value={form.conveyanceAmount ?? ''} onChange={f('conveyanceAmount')} mono hint="0 disables it." />
+          <Input id="ps-hramax" label="HRA Ceiling / Max Limit (₹)" type="number" step="1" value={form.hraMaxAmount ?? ''} onChange={f('hraMaxAmount')} mono hint="Optional maximum cap applied to HRA (0 or blank for no cap)." />
+          <Input id="ps-cca" label="City Compensatory Allowance" type="number" step="1" value={form.ccaAmount ?? ''} onChange={f('ccaAmount')} mono hint="0 disables it." />
+          <Input id="ps-conv" label="Conveyance Allowance" type="number" step="1" value={form.conveyanceAmount ?? ''} onChange={f('conveyanceAmount')} mono hint="0 disables it." />
           <Input id="ps-retire" label="Retirement Age (years)" type="number" value={form.retirementAge ?? ''} onChange={f('retirementAge')} mono hint="45–75. Used to derive each employee's retirement date." />
         </div>
       </Card>
@@ -95,7 +96,7 @@ export function PayrollSettingsPage() {
 
       <Card title="Group Savings Linked Insurance &amp; Professional Tax">
         <div className="form-grid">
-          <Input id="ps-gsli" label="GSLI Amount" type="number" step="0.01" value={form.gsliAmount ?? ''} onChange={f('gsliAmount')} mono />
+          <Input id="ps-gsli" label="GSLI Amount" type="number" step="1" value={form.gsliAmount ?? ''} onChange={f('gsliAmount')} mono />
           <Input id="ps-gslicut" label="GSLI Eligibility Cutoff" type="date" value={(form.gsliCutoffDate || '').slice(0, 10)} onChange={f('gsliCutoffDate')} hint="Only employees who joined before this date are eligible." />
           <Select id="ps-ptsch" label="Professional Tax Schedule" value={form.ptSchedule} onChange={(v) => setForm((s) => ({ ...s, ptSchedule: v }))}
             options={[{ value: 'MONTHLY', label: 'Monthly' }, { value: 'HALF_YEARLY', label: 'Half-yearly' }]} />
@@ -106,21 +107,38 @@ export function PayrollSettingsPage() {
 
       <Card title="Employee Overdraft">
         <div className="form-grid">
-          <Input id="ps-odmult" label="Eligibility Multiplier" type="number" step="0.01" value={form.odMultiplier ?? ''} onChange={f('odMultiplier')} mono hint="× (Basic + DA)." />
-          <Input id="ps-odmax" label="Maximum Amount" type="number" step="0.01" value={form.odMaxAmount ?? ''} onChange={f('odMaxAmount')} mono />
+          <Input id="ps-odmult" label="Eligibility (% of Basic + DA)" type="number" step="1" value={form.odMultiplier == null ? '' : Math.round(Number(form.odMultiplier) * 100)} onChange={e => setForm(s => ({ ...s, odMultiplier: e.target.value === '' ? '' : Number(e.target.value) / 100 }))} mono hint="1500% is 15 times Basic + DA; the maximum amount still applies." />
+          <Input id="ps-odmax" label="Maximum Amount" type="number" step="1" value={form.odMaxAmount ?? ''} onChange={f('odMaxAmount')} mono />
           <Input id="ps-odmonths" label="Maximum Repayment Months" type="number" value={form.odMaxRepayMonths ?? ''} onChange={f('odMaxRepayMonths')} mono />
           <Input id="ps-odrate" label="Interest % p.a." type="number" step="0.001" value={form.odInterestRatePercent ?? ''} onChange={f('odInterestRatePercent')} mono hint="Applies to new overdrafts only." />
         </div>
       </Card>
 
-      <Card title="Festival Advance, Medical Allowance &amp; Stagnation">
+      <Card title="Festival Advance — Recoverable Advance">
+        <p className="form-note">Set the repayment period here. Record each employee’s advance under their Loans &amp; Advances tab; recoveries appear as payroll deductions.</p>
         <div className="form-grid">
           <Input id="ps-fa" label="Festival Advance Repayment Months" type="number" value={form.festivalAdvanceRepayMonths ?? ''} onChange={f('festivalAdvanceRepayMonths')} mono />
-          <Input id="ps-medamt" label="Medical Allowance Amount" type="number" step="0.01" value={form.medicalAllowanceAmount ?? ''} onChange={f('medicalAllowanceAmount')} mono />
+        </div>
+      </Card>
+
+      <Card title="Medical Allowance — Annual Earning">
+        <p className="form-note">Paid once in the selected month and included in gross salary. This is an allowance, not a recoverable advance.</p>
+        <div className="form-grid">
+          <Input id="ps-medamt" label="Medical Allowance Amount" type="number" step="1" value={form.medicalAllowanceAmount ?? ''} onChange={f('medicalAllowanceAmount')} mono />
           <Select id="ps-medmonth" label="Medical Allowance Month" value={form.medicalAllowanceMonth} onChange={(v) => setForm((s) => ({ ...s, medicalAllowanceMonth: v }))} options={MONTH_OPTIONS} />
+        </div>
+      </Card>
+
+      <Card title="Stagnation — Pay Progression">
+        <p className="form-note">Defines eligibility and extra pay stages after a period without promotion. Apply an authorised higher-grade event through the employee’s Service Book; this is not a separate allowance.</p>
+        <div className="form-grid">
           <Input id="ps-stagy" label="Stagnation Years" type="number" value={form.stagnationYears ?? ''} onChange={f('stagnationYears')} mono hint="No-promotion years before an extra increment." />
           <Input id="ps-stags" label="Stagnation Extra Stages" type="number" value={form.stagnationExtraStages ?? ''} onChange={f('stagnationExtraStages')} mono />
         </div>
+      </Card>
+
+      <Card title="Additional Payroll Earnings">
+        <p>Add other monthly, yearly or one-time salary payments through <Link to="/allowances">Allowances</Link>, with the appropriate posts and payment period. Use employee-specific Other Allowance for a recurring individual amount. Office purchases and other non-payroll expenses belong in accounting.</p>
       </Card>
 
       <Card title="Bonus">
@@ -130,9 +148,9 @@ export function PayrollSettingsPage() {
             emptyLabel="Not declared" options={[{ value: 'PROFIT', label: 'Profit' }, { value: 'LOSS', label: 'Loss' }]}
             hint="Bonus is only paid once a result is declared." />
           <Input id="ps-bprof" label="Profit: % of Basic" type="number" step="0.001" value={form.bonusProfitPercent ?? ''} onChange={f('bonusProfitPercent')} mono />
-          <Input id="ps-bprofmax" label="Profit: Maximum Bonus" type="number" step="0.01" value={form.bonusProfitMaxAmount ?? ''} onChange={f('bonusProfitMaxAmount')} mono />
+          <Input id="ps-bprofmax" label="Profit: Maximum Bonus" type="number" step="1" value={form.bonusProfitMaxAmount ?? ''} onChange={f('bonusProfitMaxAmount')} mono />
           <Input id="ps-bloss" label="Loss: % of Basic" type="number" step="0.001" value={form.bonusLossPercent ?? ''} onChange={f('bonusLossPercent')} mono />
-          <Input id="ps-blossmax" label="Loss: Maximum Bonus" type="number" step="0.01" value={form.bonusLossMaxAmount ?? ''} onChange={f('bonusLossMaxAmount')} mono />
+          <Input id="ps-blossmax" label="Loss: Maximum Bonus" type="number" step="1" value={form.bonusLossMaxAmount ?? ''} onChange={f('bonusLossMaxAmount')} mono />
         </div>
       </Card>
 

@@ -260,7 +260,7 @@
             H.field('pr-pf-base', 'Calculated on', H.select('pr-pf-base', [['BASIC', 'Basic pay only'], ['BASIC_PLUS_DA', 'Basic + DA']], s.pfCalculationBase || 'BASIC'), 'Applies to both the employee\'s and employer\'s PF, and VPF.') +
           '</div>' +
           '<h4>GSLI</h4><div class="grid-2">' +
-            H.field('pr-gsli-amt', 'Default amount (₹)', H.input('pr-gsli-amt', 'number', s.gsliAmount, 'step="0.01" min="0"')) +
+            H.field('pr-gsli-amt', 'Default amount (₹)', H.input('pr-gsli-amt', 'number', s.gsliAmount, 'step="1" min="0"')) +
             H.field('pr-gsli-cut', 'Applies to employees who joined before', H.input('pr-gsli-cut', 'date', s.gsliCutoffDate)) +
           '</div>' +
           '<h4>Professional Tax</h4><div class="grid-2">' +
@@ -270,8 +270,8 @@
             H.field('pr-pt-m2', 'Second month (1–12)', H.input('pr-pt-m2', 'number', s.ptMonth2, 'min="1" max="12"')) +
           '</div>' +
           '<h4>Employee Overdraft</h4><div class="grid-2">' +
-            H.field('pr-od-mult', 'Limit multiplier (× Basic+DA)', H.input('pr-od-mult', 'number', s.odMultiplier, 'step="0.01" min="0"')) +
-            H.field('pr-od-max', 'Maximum amount (₹)', H.input('pr-od-max', 'number', s.odMaxAmount, 'step="0.01" min="0"')) +
+            H.field('pr-od-mult', 'Eligibility (% of Basic+DA)', H.input('pr-od-mult', 'number', Math.round(Number(s.odMultiplier) * 100), 'step="1" min="0"')) +
+            H.field('pr-od-max', 'Maximum amount (₹)', H.input('pr-od-max', 'number', s.odMaxAmount, 'step="1" min="0"')) +
             H.field('pr-od-months', 'Maximum repayment period (months)', H.input('pr-od-months', 'number', s.odMaxRepayMonths, 'min="1"')) +
             H.field('pr-od-rate', 'Interest rate (%)', H.input('pr-od-rate', 'number', s.odInterestRatePercent, 'step="0.001" min="0"'), 'Applies to Overdrafts availed from now on. Each existing Overdraft keeps the rate that was current the day it was availed.') +
           '</div>' +
@@ -284,11 +284,11 @@
           '</div>' +
           H.checkbox('pr-vl-multi', 'Allow an employee to hold more than one Vehicle Loan at a time', !!s.vehicleLoanAllowMultiple, 'Off by default — one Vehicle Loan at a time.') +
           '<h4>City Compensatory &amp; Conveyance Allowance</h4><div class="grid-2">' +
-            H.field('pr-cca-amt', 'City Compensatory Allowance (₹/month)', H.input('pr-cca-amt', 'number', s.ccaAmount, 'step="0.01" min="0"'), 'Default amount; an employee can override or opt out.') +
-            H.field('pr-conv-amt', 'Conveyance Allowance (₹/month)', H.input('pr-conv-amt', 'number', s.conveyanceAmount, 'step="0.01" min="0"'), 'Default amount; an employee can override or opt out.') +
+            H.field('pr-cca-amt', 'City Compensatory Allowance (₹/month)', H.input('pr-cca-amt', 'number', s.ccaAmount, 'step="1" min="0"'), 'Default amount; an employee can override or opt out.') +
+            H.field('pr-conv-amt', 'Conveyance Allowance (₹/month)', H.input('pr-conv-amt', 'number', s.conveyanceAmount, 'step="1" min="0"'), 'Default amount; an employee can override or opt out.') +
           '</div>' +
           '<h4>Medical Allowance</h4><div class="grid-2">' +
-            H.field('pr-med-amt', 'Amount per year (₹)', H.input('pr-med-amt', 'number', s.medicalAllowanceAmount, 'step="0.01" min="0"')) +
+            H.field('pr-med-amt', 'Amount per year (₹)', H.input('pr-med-amt', 'number', s.medicalAllowanceAmount, 'step="1" min="0"')) +
             H.field('pr-med-month', 'Paid in month (1–12)', H.input('pr-med-month', 'number', s.medicalAllowanceMonth, 'min="1" max="12"')) +
           '</div>' +
           '<h4>Bonus</h4>' +
@@ -297,9 +297,9 @@
             H.field('pr-bonus-month', 'Paid in month (1–12)', H.input('pr-bonus-month', 'number', s.bonusMonth, 'min="1" max="12"')) +
             H.field('pr-bonus-result', 'This year\'s result', H.select('pr-bonus-result', [['', '— Not yet declared —'], ['PROFIT', 'Profit'], ['LOSS', 'Loss']], s.bonusResult || '')) +
             H.field('pr-bonus-profit-pct', 'If Profit: % of Basic added (on top of Basic)', H.input('pr-bonus-profit-pct', 'number', s.bonusProfitPercent, 'step="0.001" min="0"')) +
-            H.field('pr-bonus-profit-max', 'If Profit: maximum bonus (₹)', H.input('pr-bonus-profit-max', 'number', s.bonusProfitMaxAmount, 'step="0.01" min="0"')) +
+            H.field('pr-bonus-profit-max', 'If Profit: maximum bonus (₹)', H.input('pr-bonus-profit-max', 'number', s.bonusProfitMaxAmount, 'step="1" min="0"')) +
             H.field('pr-bonus-loss-pct', 'If Loss: % of Basic added (on top of Basic)', H.input('pr-bonus-loss-pct', 'number', s.bonusLossPercent, 'step="0.001" min="0"')) +
-            H.field('pr-bonus-loss-max', 'If Loss: maximum bonus (₹)', H.input('pr-bonus-loss-max', 'number', s.bonusLossMaxAmount, 'step="0.01" min="0"')) +
+            H.field('pr-bonus-loss-max', 'If Loss: maximum bonus (₹)', H.input('pr-bonus-loss-max', 'number', s.bonusLossMaxAmount, 'step="1" min="0"')) +
           '</div>' +
           '<h4>Stagnation increment</h4><div class="grid-2">' +
             H.field('pr-stag-years', 'Years without promotion', H.input('pr-stag-years', 'number', s.stagnationYears, 'min="1"'), 'An employee stuck on the same post this long gets an extra stage jump.') +
@@ -321,7 +321,7 @@
           pfEmployeePercent: H.val('#pr-pfe'), pfEmployerPercent: H.val('#pr-pfr'), pfCalculationBase: H.val('#pr-pf-base'),
           gsliAmount: H.val('#pr-gsli-amt'), gsliCutoffDate: H.val('#pr-gsli-cut'),
           ptSchedule: H.val('#pr-pt-sched'), ptMonth1: H.val('#pr-pt-m1'), ptMonth2: H.val('#pr-pt-m2'),
-          odMultiplier: H.val('#pr-od-mult'), odMaxAmount: H.val('#pr-od-max'), odMaxRepayMonths: H.val('#pr-od-months'),
+          odMultiplier: H.val('#pr-od-mult') === '' ? '' : Number(H.val('#pr-od-mult')) / 100, odMaxAmount: H.val('#pr-od-max'), odMaxRepayMonths: H.val('#pr-od-months'),
           odInterestRatePercent: H.val('#pr-od-rate'),
           vehicleLoanInterestRatePercent: H.val('#pr-vl-rate'), vehicleLoanAllowMultiple: H.$('#pr-vl-multi').checked,
           ccaAmount: H.val('#pr-cca-amt'), conveyanceAmount: H.val('#pr-conv-amt'),

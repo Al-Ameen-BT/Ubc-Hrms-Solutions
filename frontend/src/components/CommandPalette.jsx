@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 
 const SCREENS = [
   { label: 'Overview', to: '/' },
@@ -11,6 +12,7 @@ const SCREENS = [
   { label: 'Government Orders', to: '/government-orders' },
   { label: 'KSR Rules', to: '/ksr-rules' },
   { label: 'Pay Scales', to: '/pay-scales' },
+  { label: 'Bank Classes & Rules', to: '/bank-rules', roles: ['SUPER_ADMIN'] },
   { label: 'Posts & Cadres', to: '/posts' },
   { label: 'Leave', to: '/leave' },
   { label: 'Audit Log', to: '/audit' },
@@ -19,6 +21,7 @@ const SCREENS = [
 ];
 
 export function CommandPalette() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -45,6 +48,7 @@ export function CommandPalette() {
   useEffect(() => {
     const q = query.trim().toLowerCase();
     const screenHits = SCREENS
+      .filter((s) => !s.roles || s.roles.includes(user?.role))
       .filter((s) => !q || s.label.toLowerCase().includes(q))
       .map((s) => ({ group: 'Screens', label: s.label, action: () => navigate(s.to) }));
 
@@ -62,7 +66,7 @@ export function CommandPalette() {
       .catch(() => setResults(screenHits));
 
     return () => { cancelled = true; };
-  }, [query, navigate]);
+  }, [query, navigate, user?.role]);
 
   if (!open) return null;
 

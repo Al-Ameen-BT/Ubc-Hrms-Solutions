@@ -44,7 +44,7 @@ function FieldInput({ f, value, onChange }) {
       required={f.required}
       mono={f.mono}
       hint={f.hint}
-      step={f.step}
+      step={f.step ?? (f.type === 'number' ? /Percent$/.test(f.name) ? '0.001' : '1' : undefined)}
       min={f.min}
     />
   );

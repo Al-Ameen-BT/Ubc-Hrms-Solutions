@@ -41,7 +41,7 @@
         H.field('af-frequency', 'Frequency', H.select('af-frequency', [['MONTHLY', 'Monthly'], ['YEARLY', 'Yearly'], ['ONE_TIME', 'One-time']], row ? row.frequency : 'MONTHLY')) +
         H.field('af-month', 'Month (1–12)', H.input('af-month', 'number', row ? row.month : '', 'min="1" max="12"'), 'Required for Yearly/One-time.') +
         H.field('af-year', 'Year', H.input('af-year', 'number', row ? row.year : '', 'min="2000" max="2100"'), 'Required for One-time only.') +
-        H.field('af-amount', 'Amount (₹)', H.input('af-amount', 'number', row ? row.amount : '', 'step="0.01" min="0.01"')) +
+        H.field('af-amount', 'Amount (₹)', H.input('af-amount', 'number', row ? row.amount : '', 'step="1" min="1"')) +
       '</div>' + H.field('af-remarks', 'Remarks', H.textarea('af-remarks', row ? row.remarks : ''));
     }
 

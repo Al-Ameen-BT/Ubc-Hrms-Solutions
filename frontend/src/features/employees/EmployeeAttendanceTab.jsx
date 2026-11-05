@@ -73,7 +73,7 @@ export function EmployeeAttendanceTab({ employeeId }) {
                   <td className="table-td table-td-right">
                     <input
                       className="input mono"
-                      type="number" min="0" max="31"
+                      type="number" min="0" max="31" step="0.5"
                       style={{ width: '6rem' }}
                       value={v.lopDays}
                       onChange={(e) => edit(row.month, { lopDays: e.target.value })}

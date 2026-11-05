@@ -68,7 +68,7 @@ export function AllowancesPage() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>Allowances</h1>
+        <h1>Additional Payroll Allowances</h1>
         <p>Allowance types available in payroll</p>
       </header>
 
@@ -103,7 +103,7 @@ export function AllowancesPage() {
                 <option value="ONE_TIME">One Time</option>
               </select>
             </div>
-            <Input id="al-amt" label="Amount (₹)" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} mono required />
+            <Input id="al-amt" label="Amount (₹)" type="number" step="1" min="1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} mono required />
           </div>
           {form.frequency !== 'MONTHLY' && (
             <div className="form-grid">

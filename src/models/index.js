@@ -51,6 +51,7 @@ const LeaveType = require('./leaveType');
 const EmployeeLeaveBalance = require('./employeeLeaveBalance');
 const LeaveApplication = require('./leaveApplication');
 const EmployeeBankAccount = require('./employeeBankAccount');
+const BankRuleCatalogue = require('./bankRuleCatalogue');
 
 // ----------------------------------------------------------------------------
 // Associations — this is the literal implementation of the required chain:
@@ -275,6 +276,7 @@ EmployeeOverdraft.belongsTo(EmployeeBankAccount, { as: 'Account', foreignKey: 'a
 EmployeeRecurringDeposit.belongsTo(EmployeeBankAccount, { as: 'Account', foreignKey: 'accountId' });
 
 module.exports = {
+  BankRuleCatalogue,
   sequelize,
   Organization,
   GovernmentOrder,

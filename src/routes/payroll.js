@@ -235,7 +235,7 @@ const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
 
 function fmtAmount(v) {
   if (v === null || v === undefined || v === '') return '0';
-  const num = Math.round(Number(v));
+  const num = Math.ceil(Number(v));
   return isNaN(num) ? '0' : String(num);
 }
 

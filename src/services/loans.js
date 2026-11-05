@@ -14,7 +14,7 @@
 
 const DEFAULT_RETIREMENT_AGE_YEARS = 58;
 
-const { toPaise, toRupees, add, percentOf, round } = require('../utils/money');
+const { toPaise, toRupees, add, percentOf, round, min, max, multiply, subtract } = require('../utils/money');
 
 function retirementDate(employee, settings) {
   if (!employee) return null;
@@ -58,14 +58,14 @@ function scheduleStatus(record, asOf) {
   const amountPaise = toPaise(record.amount);
   const repayMonths = Math.max(1, Number(record.repayMonths) || 1);
   const ratePercent = Number(record.interestRatePercent) || 0;
-  const interestPaise = ratePercent ? round(percentOf(amountPaise, ratePercent) * repayMonths / 12) : 0;
-  const totalRepayablePaise = add(amountPaise, interestPaise);
-  const monthlyInstallmentPaise = round(totalRepayablePaise / repayMonths);
+  const interestPaise = ratePercent ? Math.ceil(percentOf(amountPaise, ratePercent) * repayMonths / 12) : 0;
+  const totalRepayablePaise = toPaise(toRupees(add(amountPaise, interestPaise)));
+  const monthlyInstallmentPaise = toPaise(Math.ceil(toRupees(totalRepayablePaise) / repayMonths));
   const availed = new Date(String(record.availedDate) + 'T00:00:00Z');
   const monthsElapsed = Math.min(repayMonths, monthsBetween(availed, asOf));
   // The instalment due THIS month (0 once fully elapsed/repaid).
-  const dueThisMonthPaise = monthsElapsed >= repayMonths ? 0 : monthlyInstallmentPaise;
-  const repaidSoFarPaise = min(totalRepayablePaise, multiply(monthlyInstallmentPaise, monthsElapsed));
+  const dueThisMonthPaise = monthsElapsed >= repayMonths ? 0 : max(0, min(monthlyInstallmentPaise, totalRepayablePaise - monthlyInstallmentPaise * monthsElapsed));
+  const repaidSoFarPaise = monthsElapsed >= repayMonths ? totalRepayablePaise : min(totalRepayablePaise, multiply(monthlyInstallmentPaise, monthsElapsed));
   const balanceRemainingPaise = max(0, subtract(totalRepayablePaise, repaidSoFarPaise));
   return {
     monthlyInstallment: toRupees(monthlyInstallmentPaise),
@@ -155,10 +155,10 @@ function reducingBalanceEmi(principal, annualRatePercent, periodMonths) {
   const pPaise = toPaise(principal);
   const n = Math.max(1, Number(periodMonths) || 1);
   const annualRate = Number(annualRatePercent) || 0;
-  if (!annualRate) return toRupees(round(pPaise / n));
+  if (!annualRate) return toRupees(Math.ceil(pPaise / n));
   const r = annualRate / 12 / 100;
   const factor = Math.pow(1 + r, n);
-  const emiPaise = Math.round((pPaise * r * factor) / (factor - 1));
+  const emiPaise = Math.ceil((pPaise * r * factor) / (factor - 1));
   return toRupees(emiPaise);
 }
 

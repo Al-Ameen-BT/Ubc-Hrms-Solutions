@@ -1,0 +1,44 @@
+.bank-rules-page { min-width: 0; }
+.bank-rules-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-5); }
+.bank-rules-header .row-actions { flex-wrap: wrap; justify-content: flex-end; }
+.bank-class-picker { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
+.bank-class-option { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3) var(--space-4); font: inherit; cursor: pointer; }
+.bank-class-option:hover, .bank-class-option.is-selected { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+.bank-rules-page .tabs { overflow-x: auto; }
+.bank-rules-page .tab { white-space: nowrap; }
+.bank-rules-page .table-toolbar > p { max-width: 65ch; }
+.bank-rules-page .table-toolbar .field { margin: 0; min-width: 150px; }
+.bank-rules-message { padding: var(--space-5) 0; color: var(--text-secondary); }
+.bank-rules-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.bank-rules-fields > .field { margin-top: var(--space-4); }
+.bank-rules-page fieldset:disabled input, .bank-rules-page fieldset:disabled textarea, .bank-rules-page fieldset:disabled select { opacity: 1; color: var(--text-primary); }
+.bank-rules-page a { overflow-wrap: anywhere; }
+.bank-rules-unsaved { display: inline-block; margin-left: var(--space-3); color: var(--text-secondary); font-size: var(--text-sm); }
+.bank-rules-notice { padding: var(--space-4); background: var(--accent-soft); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: var(--space-4); }
+.bank-posts-table { min-width: 1040px; }
+.bank-posts-table td:nth-child(1) { min-width: 155px; }
+.bank-posts-table td:nth-child(2) { min-width: 220px; }
+.bank-posts-table td:nth-child(3) { min-width: 280px; }
+.bank-posts-table input[type='number'] { min-width: 70px; }
+.bank-stage-preview { margin-top: var(--space-5); }
+.bank-stage-preview h3 { margin-bottom: var(--space-4); }
+.bank-stage-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: var(--space-2) var(--space-5); }
+.bank-stage-list li { display: flex; justify-content: space-between; gap: var(--space-2); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.bank-stage-list li span { color: var(--text-secondary); }
+.bank-rule-entry { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-4); margin: var(--space-5) 0; min-width: 0; }
+.bank-rule-entry legend { padding: 0 var(--space-2); font-weight: 600; }
+.bank-rule-entry > .field { margin: var(--space-4) 0; }
+.bank-payroll-add { display: flex; align-items: flex-end; gap: var(--space-3); margin: var(--space-5) 0; }
+.bank-payroll-add .field { flex: 1; max-width: 400px; margin: 0; }
+.bank-payroll-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-5); }
+.bank-payroll-setting { display: flex; align-items: flex-end; gap: var(--space-2); }
+.bank-payroll-setting .field { flex: 1; margin: 0; min-width: 0; }
+.bank-rules-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-5); }
+.bank-verification { display: flex; align-items: flex-start; gap: var(--space-3); margin: var(--space-5) 0; }
+.bank-verification input { margin-top: 4px; flex-shrink: 0; }
+@media (max-width: 760px) {
+  .bank-rules-header { flex-direction: column; }
+  .bank-rules-header .row-actions { justify-content: flex-start; }
+  .bank-rules-page .table-toolbar { align-items: stretch; flex-direction: column; }
+  .bank-rules-footer { flex-direction: column; align-items: flex-start; }
+}
