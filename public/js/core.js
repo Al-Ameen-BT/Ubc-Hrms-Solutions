@@ -193,7 +193,7 @@
   H.money = function (v) {
     if (v === null || v === undefined || v === '') return '—';
     var n = Number(v);
-    return isNaN(n) ? H.esc(v) : '₹' + Math.ceil(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    return isNaN(n) ? H.esc(v) : '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
   };
   H.todayYmd = function () {
     var d = new Date(Date.now() + 5.5 * 3600000);

@@ -203,7 +203,6 @@
   border-right: 1px solid var(--border);
   overflow: hidden;
   flex-shrink: 0;
-  transition: width var(--duration) var(--ease);
   display: flex;
   flex-direction: column;
 }
@@ -409,6 +408,11 @@
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.app-version {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
 }
 
 .sidebar-footer-name {
@@ -1803,6 +1807,8 @@ input[type="file"].input::file-selector-button:hover {
 
 .login-powered-wrap {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
   justify-content: center;
   align-items: center;
   width: 100%;

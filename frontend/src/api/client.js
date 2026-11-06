@@ -287,6 +287,7 @@ export const masterDataApi = {
   employee: (id) => api.get(`/employees/${id}`),
   createEmployee: (data) => api.post('/employees', data),
   updateEmployee: (id, data) => api.put(`/employees/${id}`, data),
+  updateDirectPaySalary: (id, data) => api.put(`/employees/${id}/direct-pay-salary`, data),
   serviceBook: (id) => api.get(`/employees/${id}/service-book`),
   addServiceBookEvent: (id, data) => api.post(`/employees/${id}/service-book/events`, data),
 
@@ -331,7 +332,7 @@ export const fmt = {
       currency: 'INR',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(Math.ceil(Number(amount)));
+    }).format(Number(amount));
   },
   date(dateStr) {
     if (!dateStr) return '—';

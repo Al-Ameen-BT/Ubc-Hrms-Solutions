@@ -10,11 +10,12 @@
 
 const PDFDocument = require('pdfkit');
 const documentHeader = require('./documentHeader');
+const { roundRupees } = require('../utils/money');
 
 // See payslipPdf.js's identical comment: pdfkit's built-in Helvetica has no
 // glyph for the Rupee sign, so "Rs." is used instead of an unsupported ₹.
 function money(v) {
-  const n = Math.ceil(Number(v) || 0);
+  const n = roundRupees(v);
   return 'Rs. ' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 

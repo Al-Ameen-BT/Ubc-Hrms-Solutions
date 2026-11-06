@@ -57,14 +57,17 @@ function monthsUntilRetirement(employee, asOf, settings) {
 function scheduleStatus(record, asOf) {
   const amountPaise = toPaise(record.amount);
   const repayMonths = Math.max(1, Number(record.repayMonths) || 1);
-  const ratePercent = Number(record.interestRatePercent) || 0;
-  const interestPaise = ratePercent ? Math.ceil(percentOf(amountPaise, ratePercent) * repayMonths / 12) : 0;
-  const totalRepayablePaise = toPaise(toRupees(add(amountPaise, interestPaise)));
-  const monthlyInstallmentPaise = toPaise(Math.ceil(toRupees(totalRepayablePaise) / repayMonths));
+  const manual = record.totalRepaymentAmount != null;
+  const ratePercent = manual ? 0 : Number(record.interestRatePercent) || 0;
+  const interestPaise = ratePercent ? Math.round(percentOf(amountPaise, ratePercent) * repayMonths / 12) : 0;
+  const totalRepayablePaise = manual ? toPaise(record.totalRepaymentAmount) : toPaise(toRupees(add(amountPaise, interestPaise)));
+  const monthlyInstallmentPaise = manual ? toPaise(record.monthlyPayment) : toPaise(Math.ceil(toRupees(totalRepayablePaise) / repayMonths));
   const availed = new Date(String(record.availedDate) + 'T00:00:00Z');
-  const monthsElapsed = Math.min(repayMonths, monthsBetween(availed, asOf));
+  const availedMonth = new Date(Date.UTC(availed.getUTCFullYear(), availed.getUTCMonth(), 1));
+  const asOfMonth = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
+  const monthsElapsed = Math.min(repayMonths, monthsBetween(availedMonth, asOfMonth));
   // The instalment due THIS month (0 once fully elapsed/repaid).
-  const dueThisMonthPaise = monthsElapsed >= repayMonths ? 0 : max(0, min(monthlyInstallmentPaise, totalRepayablePaise - monthlyInstallmentPaise * monthsElapsed));
+  const dueThisMonthPaise = asOfMonth < availedMonth || monthsElapsed >= repayMonths ? 0 : max(0, min(monthlyInstallmentPaise, totalRepayablePaise - monthlyInstallmentPaise * monthsElapsed));
   const repaidSoFarPaise = monthsElapsed >= repayMonths ? totalRepayablePaise : min(totalRepayablePaise, multiply(monthlyInstallmentPaise, monthsElapsed));
   const balanceRemainingPaise = max(0, subtract(totalRepayablePaise, repaidSoFarPaise));
   return {
@@ -80,23 +83,33 @@ function scheduleStatus(record, asOf) {
   };
 }
 
-/** Employee Overdraft eligibility ceiling = min(org max, (Basic+DA) x multiplier). */
+/** The bank's minimum overdraft offer is fifteen times Basic plus DA. */
 function overdraftEligibility(employee, settings) {
   const basicPaise = toPaise(employee.currentBasicPay);
-  const daPaise = percentOf(basicPaise, settings.daPercent);
-  const ceilingPaise = min(
-    toPaise(settings.odMaxAmount),
-    percentOf(add(basicPaise, daPaise), settings.odMultiplier)
-  );
-  return { basic: toRupees(basicPaise), da: toRupees(daPaise), ceiling: toRupees(ceilingPaise) };
+  const daPaise = employee.daType === 'FIXED' ? toPaise(employee.fixedDaAmount) : percentOf(basicPaise, settings.daPercent);
+  return { basic: toRupees(basicPaise), da: toRupees(daPaise), minimumOffer: toRupees(multiply(add(basicPaise, daPaise), 15)) };
 }
 
 /** Maximum allowed Overdraft repayment period: the org's standard (default 84 months), shortened to whatever's left until retirement if that's sooner. */
 function overdraftMaxRepayMonths(employee, settings, asOf) {
-  const orgMax = Number(settings.odMaxRepayMonths) || 84;
+  const orgMax = 84;
   const untilRetirement = monthsUntilRetirement(employee, asOf || new Date(), settings);
   if (untilRetirement === null) return orgMax;
-  return Math.max(1, Math.min(orgMax, untilRetirement));
+  return Math.max(0, Math.min(orgMax, untilRetirement));
+}
+
+function validateRepaymentTerms(principal, total, monthly, months) {
+  const p = toRupees(toPaise(principal)); const t = toRupees(toPaise(total)); const m = toRupees(toPaise(monthly));
+  if (![principal, total, monthly].every((value) => Number.isFinite(Number(value)) && value !== '' && value != null)
+    || !Number.isInteger(Number(months)) || Number(months) < 1 || p <= 0 || t < p || m <= 0 || m * Number(months) < t) {
+    throw new Error('Enter positive principal, total repayment at least principal, and a monthly payment that clears the total within the term.');
+  }
+}
+
+function manualPaymentDue(record, startDate, asOf) {
+  const start = new Date(String(startDate) + 'T00:00:00Z');
+  const elapsed = monthsBetween(new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1)), new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1)));
+  return toRupees(max(0, min(toPaise(record.monthlyPayment), toPaise(record.totalRepaymentAmount) - toPaise(record.monthlyPayment) * elapsed)));
 }
 
 /** The 1st of `month` (1-12) in the current calendar year — the reference date a payslip preview for that month is computed "as of". */
@@ -155,15 +168,17 @@ function reducingBalanceEmi(principal, annualRatePercent, periodMonths) {
   const pPaise = toPaise(principal);
   const n = Math.max(1, Number(periodMonths) || 1);
   const annualRate = Number(annualRatePercent) || 0;
-  if (!annualRate) return toRupees(Math.ceil(pPaise / n));
+  // A fixed EMI must cover the principal over the scheduled months.
+  if (!annualRate) return Math.ceil(pPaise / n / 100);
   const r = annualRate / 12 / 100;
   const factor = Math.pow(1 + r, n);
   const emiPaise = Math.ceil((pPaise * r * factor) / (factor - 1));
-  return toRupees(emiPaise);
+  return Math.ceil(emiPaise / 100);
 }
 
 /** Housing Loan EMI — always rate-driven (see reducingBalanceEmi above). */
 function housingLoanEmi(record) {
+  if (record.totalRepaymentAmount != null) return toRupees(toPaise(record.monthlyPayment));
   return reducingBalanceEmi(record.totalLoanAmount, record.interestRatePercent, record.periodMonths);
 }
 
@@ -177,12 +192,13 @@ function housingLoanStatus(record, asOf, monthGranular) {
   const active = isActiveRange(record.emiStartDate, record.emiEndDate, record.closureDate, asOf, monthGranular);
   const emiAmount = housingLoanEmi(record);
   const periodMonths = Math.max(1, Number(record.periodMonths) || 1);
-  const totalRepayablePaise = multiply(toPaise(emiAmount), periodMonths);
-  const interestPaise = subtract(totalRepayablePaise, toPaise(record.totalLoanAmount));
+  const manual = record.totalRepaymentAmount != null;
+  const totalRepayablePaise = manual ? toPaise(record.totalRepaymentAmount) : multiply(toPaise(emiAmount), periodMonths);
+  const interestPaise = manual ? 0 : subtract(totalRepayablePaise, toPaise(record.totalLoanAmount));
   return {
     active,
     emiAmount,
-    dueThisMonth: active ? emiAmount : 0,
+    dueThisMonth: active ? (manual ? manualPaymentDue(record, record.emiStartDate, asOf) : emiAmount) : 0,
     interest: toRupees(interestPaise),
     totalRepayable: toRupees(totalRepayablePaise),
   };
@@ -199,16 +215,17 @@ function housingLoanStatus(record, asOf, monthGranular) {
  */
 function vehicleLoanStatus(record, asOf, monthGranular) {
   const active = isActiveRange(record.startDate, record.endDate, record.closureDate, asOf, monthGranular);
-  const emiAmount = record.interestRatePercent != null
+  const manual = record.totalRepaymentAmount != null;
+  const emiAmount = manual ? toRupees(toPaise(record.monthlyPayment)) : record.interestRatePercent != null
     ? reducingBalanceEmi(record.totalAmount, record.interestRatePercent, record.periodMonths)
     : toRupees(toPaise(record.emiAmount));
   const periodMonths = Math.max(1, Number(record.periodMonths) || 1);
-  const totalRepayablePaise = multiply(toPaise(emiAmount), periodMonths);
-  const interestPaise = subtract(totalRepayablePaise, toPaise(record.totalAmount));
+  const totalRepayablePaise = manual ? toPaise(record.totalRepaymentAmount) : multiply(toPaise(emiAmount), periodMonths);
+  const interestPaise = manual ? 0 : subtract(totalRepayablePaise, toPaise(record.totalAmount));
   return {
     active,
     emiAmount,
-    dueThisMonth: active ? emiAmount : 0,
+    dueThisMonth: active ? (manual ? manualPaymentDue(record, record.startDate, asOf) : emiAmount) : 0,
     interest: toRupees(interestPaise),
     totalRepayable: toRupees(totalRepayablePaise),
   };
@@ -253,6 +270,7 @@ module.exports = {
   scheduleStatus,
   overdraftEligibility,
   overdraftMaxRepayMonths,
+  validateRepaymentTerms,
   loadActiveLoans,
   asOfForMonth,
   isActiveRange,

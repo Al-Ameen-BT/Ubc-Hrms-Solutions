@@ -7,16 +7,11 @@ import { Card } from '../../components/ui/Card';
 import { StatLedger } from '../../components/ui/StatLedger';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ServiceBookPayslips } from '../employees/ServiceBookPayslips';
 
 export function EmployeePortalPage() {
   const { user } = useAuth();
   const employeeId = user?.employeeId;
-
-  const { data: employee } = useQuery({
-    queryKey: ['my-employee', employeeId],
-    queryFn: () => masterDataApi.employee(employeeId),
-    enabled: !!employeeId,
-  });
 
   const { data: balances } = useQuery({
     queryKey: ['my-leave-balances', employeeId],
@@ -29,6 +24,7 @@ export function EmployeePortalPage() {
     queryFn: () => masterDataApi.serviceBook(employeeId),
     enabled: !!employeeId,
   });
+  const employee = book?.employee;
 
   if (!employeeId) {
     return (
@@ -113,6 +109,7 @@ export function EmployeePortalPage() {
           </tbody>
         </table>
       </Card>
+      <ServiceBookPayslips payslips={book?.payslips} />
     </div>
   );
 }

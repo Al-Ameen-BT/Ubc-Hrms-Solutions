@@ -26,6 +26,8 @@ const EmployeeOverdraft = sequelize.define('EmployeeOverdraft', {
   amount: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
   availedDate: { type: DataTypes.DATEONLY, allowNull: false, field: 'availed_date' },
   repayMonths: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'repay_months' },
+  totalRepaymentAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: true, field: 'total_repayment_amount' },
+  monthlyPayment: { type: DataTypes.DECIMAL(12, 2), allowNull: true, field: 'monthly_payment' },
   interestRatePercent: { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 0, field: 'interest_rate_percent' },
   accountId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'account_id' }, // -> EmployeeBankAccount (accountType OD) this Overdraft is availed against
   remarks: { type: DataTypes.STRING(500) },

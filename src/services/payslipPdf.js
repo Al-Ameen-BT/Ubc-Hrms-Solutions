@@ -9,6 +9,7 @@
 
 const PDFDocument = require('pdfkit');
 const documentHeader = require('./documentHeader');
+const { roundRupees } = require('../utils/money');
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -18,7 +19,7 @@ const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
 // which renders as a stray superscript "1" in front of every amount. "Rs."
 // is plain ASCII and renders correctly with no embedded font needed.
 function money(v) {
-  const n = Math.ceil(Number(v) || 0);
+  const n = roundRupees(v);
   return 'Rs. ' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
@@ -91,7 +92,7 @@ async function buildPayslipPdf({ organization, employee, payslip, year }) {
 
     const earningsRows = [
       e.actualBasic != null && Number(e.actualBasic) !== Number(e.basic) ? ['Actual Basic', e.actualBasic] : null,
-      [e.actualBasic != null && Number(e.actualBasic) !== Number(e.basic) ? 'Basic (after LOP)' : 'Basic', e.basic],
+      [payslip.directPay ? 'Bank-set Gross Salary' : e.actualBasic != null && Number(e.actualBasic) !== Number(e.basic) ? 'Basic (after LOP)' : 'Basic', e.basic],
       ['DA', e.da],
       ['HRA', e.hra],
       e.riskAllowance ? ['Risk Allowance', e.riskAllowance] : null,

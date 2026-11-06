@@ -37,6 +37,7 @@ const Employee = sequelize.define('Employee', {
     defaultValue: 'REGULAR',
     field: 'employment_type',
   },
+  directPay: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'direct_pay' },
   status: { type: DataTypes.ENUM('ACTIVE', 'INACTIVE'), allowNull: false, defaultValue: 'ACTIVE' },
 
   // ---- Salary structure: earnings (see services/payslip.js for how these

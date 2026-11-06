@@ -249,7 +249,7 @@ app.use(express.static(WEB_ROOT, {
 
 // Liveness probe (Protocol 56/57): confirms the process is alive.
 app.get(['/health', '/healthz'], (req, res) => {
-  res.json({ status: 'ok', service: 'ucb-hrms-payroll', env: process.env.NODE_ENV || 'development' });
+  res.json({ status: 'ok', service: 'ucb-hrms-payroll', version: require('../package.json').version, env: process.env.NODE_ENV || 'development' });
 });
 
 // Readiness probe (Protocol 56/57): confirms the database connection is healthy.

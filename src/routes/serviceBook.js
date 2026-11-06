@@ -22,12 +22,16 @@ const {
   EmployeeDocument,
   ServiceHistoryDocument,
   EmployeeBankAccount,
+  PayrollRun,
+  PayrollRunLine,
+  sequelize,
 } = require('../models');
 const documents = require('../services/documents');
 const attachments = require('../services/attachments');
 const attendance = require('../services/attendance');
 
 const router = express.Router();
+const HR_RECORDERS = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
 
 const { stageBelongsToOrg } = require('./payScales');
 const { assertCanAddEmployee } = require('../services/license');
@@ -221,13 +225,11 @@ router.post('/bulk-import', authenticate, async (req, res) => {
 // Employee master. Creating (or reactivating) an employee record takes a
 // licence seat (Organization.maxEmployees). Every referenced post / scale /
 // stage / policy must belong to the same organisation.
-router.use(
-  '/',
-  crudRouter(Employee, {
+const employeeCrud = crudRouter(Employee, {
     fields: [
       'organizationId', 'empCode', 'name', 'dob', 'doj', 'doa', 'postCadreId', 'grade', 'category',
       'currentPayScaleId', 'currentStageId', 'currentBasicPay', 'incrementPolicyId', 'payFixationPolicyId',
-      'employeeSpecificIncrementDate', 'employmentStatus', 'employmentType', 'status',
+      'employeeSpecificIncrementDate', 'employmentStatus', 'employmentType', 'directPay', 'status',
       // Payroll: earnings, deductions, tax, stagnation tracking (see services/payslip.js)
       'riskAllowance', 'otherAllowance', 'vpfPercent', 'welfareFundOptIn', 'welfareFundAmount',
       'gsliOptIn', 'gsliAmount', 'ptAmount', 'taxRegime', 'taxOtherDeductions',
@@ -259,18 +261,50 @@ router.use(
       payFixationPolicyId: PayFixationPolicy,
     },
     beforeCreate: async (req, payload) => {
+      if (payload.directPay !== undefined && typeof payload.directPay !== 'boolean') throw Object.assign(new Error('directPay must be true or false.'), { status: 400 });
+      if (payload.directPay) {
+        if (payload.currentPayScaleId || payload.currentStageId) throw Object.assign(new Error('Direct-pay staff cannot be assigned a government pay scale or stage.'), { status: 400 });
+        if (!(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
+      }
       if (payload.status !== 'INACTIVE') await assertCanAddEmployee(payload.organizationId);
       const org = await Organization.findByPk(payload.organizationId);
       orgFields.validateEmployeeMandatoryFields(org, payload);
     },
     beforeUpdate: async (req, row, payload) => {
+      if (payload.directPay !== undefined && typeof payload.directPay !== 'boolean') throw Object.assign(new Error('directPay must be true or false.'), { status: 400 });
+      if (payload.directPay !== undefined && payload.directPay !== row.directPay) throw Object.assign(new Error('Payroll type cannot be changed after creation.'), { status: 400 });
+      if (row.directPay && (payload.currentPayScaleId || payload.currentStageId)) throw Object.assign(new Error('Direct-pay staff cannot be assigned a government pay scale or stage.'), { status: 400 });
+      if (row.directPay && payload.currentBasicPay !== undefined && !(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
+      if (row.directPay && payload.currentBasicPay !== undefined && Number(payload.currentBasicPay) !== Number(row.currentBasicPay)) throw Object.assign(new Error('Use the direct-pay salary change action to record the Service Book entry.'), { status: 400 });
       if (payload.status === 'ACTIVE' && row.status !== 'ACTIVE') await assertCanAddEmployee(row.organizationId);
       const org = await Organization.findByPk(row.organizationId);
       const effective = Object.assign({}, row.toJSON(), payload);
       orgFields.validateEmployeeMandatoryFields(org, effective);
     },
-  })
-);
+  });
+
+router.put('/:id/direct-pay-salary', authenticate, async (req, res) => {
+  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can set direct-pay salary.' });
+  try {
+    const inputAmount = Number(req.body?.amount);
+    const amount = require('../utils/money').roundRupees(inputAmount);
+    const reason = String(req.body?.reason || '').trim();
+    if (!Number.isFinite(inputAmount) || !(amount > 0) || amount > 9999999999 || !reason || reason.length > 500) return res.status(400).json({ status: 'error', message: 'A positive monthly gross salary and reason of at most 500 characters are required.' });
+    const changed = await sequelize.transaction(async (transaction) => {
+      const employee = await Employee.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!employee || String(employee.organizationId) !== String(req.user.organizationId) || !employee.directPay) return null;
+      const previous = Number(employee.currentBasicPay);
+      if (previous === amount) return { employee, previous, unchanged: true };
+      employee.currentBasicPay = amount;
+      await employee.save({ transaction });
+      await EmployeeServiceHistory.create({ employeeId: employee.id, eventType: 'OTHER', eventDate: new Date().toISOString().slice(0, 10), remarks: `Bank-set monthly gross salary changed from ₹${previous} to ₹${amount}. ${reason}` }, { transaction });
+      return { employee, previous };
+    });
+    if (!changed) return res.status(404).json({ status: 'error', message: 'Direct-pay staff record not found.' });
+    if (!changed.unchanged) await require('../services/audit').audit(req, 'employee.direct_pay_salary.change', { organizationId: changed.employee.organizationId, targetType: 'employee', targetId: changed.employee.id, details: { previous: changed.previous, amount, reason } });
+    res.json({ data: changed.employee });
+  } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
+});
 
 /**
  * GET /:id/service-book — the digital Service Book (architecture doc §6).
@@ -279,7 +313,7 @@ router.use(
  * rule/GO reference resolved, so the response is ready to render as a
  * timeline without further client-side joins.
  */
-const SERVICE_BOOK_READERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD'];
+const SERVICE_BOOK_READERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'EMPLOYEE'];
 
 router.get('/:id/service-book', authenticate, async (req, res) => {
   if (!SERVICE_BOOK_READERS.includes(req.user.role)) {
@@ -297,6 +331,9 @@ router.get('/:id/service-book', authenticate, async (req, res) => {
     if (req.user.role !== 'SUPER_ADMIN' && String(employee.organizationId) !== String(req.user.organizationId)) {
       return res.status(404).json({ status: 'error', message: 'Employee not found' });
     }
+    if (req.user.role === 'EMPLOYEE' && String(employee.id) !== String(req.user.employeeId)) {
+      return res.status(404).json({ status: 'error', message: 'Employee not found' });
+    }
 
     const timeline = await EmployeeServiceHistory.findAll({
       where: { employeeId: employee.id },
@@ -311,6 +348,19 @@ router.get('/:id/service-book', authenticate, async (req, res) => {
     const docMap = await attachments.infoBatch(ServiceHistoryDocument, 'serviceHistoryId', timeline.map((t) => t.id));
     const timelineWithDocs = timeline.map((t) => Object.assign(t.toJSON(), { document: docMap[t.id] || null }));
 
+    const finalizedLines = await PayrollRunLine.findAll({
+      where: { employeeId: employee.id },
+      include: [{ model: PayrollRun, where: { organizationId: employee.organizationId, status: ['APPROVED', 'PAID'] } }],
+      order: [[PayrollRun, 'year', 'DESC'], [PayrollRun, 'month', 'DESC'], ['id', 'DESC']],
+    });
+    const payslips = finalizedLines.map((line) => ({
+      id: line.id,
+      year: line.PayrollRun.year,
+      month: line.PayrollRun.month,
+      status: line.PayrollRun.status,
+      payslip: JSON.parse(line.payslipJson),
+    }));
+
     // Auto-calculated from DOB + the organisation's standard retirement age
     // (OrgPayrollSetting.retirementAge) unless the employee has an explicit
     // dateOfRetirement override on file — see services/loans.js.
@@ -323,6 +373,7 @@ router.get('/:id/service-book', authenticate, async (req, res) => {
         employee,
         timeline: timelineWithDocs,
         timelineCount: timeline.length,
+        payslips,
         effectiveRetirementDate,
       },
     });
@@ -718,13 +769,12 @@ router.get('/:id/overdrafts', authenticate, async (req, res) => {
       eligibility: loans.overdraftEligibility(employee, settings),
       maxRepayMonths: loans.overdraftMaxRepayMonths(employee, settings, today),
       retirementDate: loans.retirementDate(employee, settings),
-      currentInterestRatePercent: Number(settings.odInterestRatePercent) || 0,
     });
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
 router.post('/:id/overdrafts', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot record an Overdraft.' });
+  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record an Overdraft.' });
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -734,30 +784,21 @@ router.post('/:id/overdrafts', authenticate, async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'This employee already has an unrepaid Overdraft.' });
     }
     const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
-    const { ceiling } = loans.overdraftEligibility(employee, settings);
     const amount = Number(b.amount);
-    if (!(amount > 0) || amount > ceiling) {
-      return res.status(400).json({ status: 'error', message: `Amount must be positive and at most ₹${ceiling} (this employee's eligibility ceiling).` });
-    }
+    if (!(amount > 0)) return res.status(400).json({ status: 'error', message: 'Amount must be positive.' });
     const maxMonths = loans.overdraftMaxRepayMonths(employee, settings, today);
     if (maxMonths < 1) {
       return res.status(400).json({ status: 'error', message: 'This employee is at or past standard retirement age — no repayment period remains.' });
     }
     const repayMonths = Number(b.repayMonths) || maxMonths;
-    if (!(repayMonths >= 1) || repayMonths > maxMonths) {
+    if (!Number.isInteger(repayMonths) || repayMonths < 1 || repayMonths > maxMonths) {
       return res.status(400).json({ status: 'error', message: `Repayment period must be between 1 and ${maxMonths} months (the organisation's standard, or less if this employee is retiring sooner).` });
     }
     if (!b.availedDate) return res.status(400).json({ status: 'error', message: 'availedDate is required.' });
-    // Interest rate is SNAPSHOTTED at the moment this Overdraft is created —
-    // the organisation's current rate, unless an admin explicitly overrides
-    // it for this one record. Later changes to the org rate never touch this
-    // row; only a subsequently-created Overdraft picks up a new org rate.
-    const interestRatePercent = b.interestRatePercent !== undefined && b.interestRatePercent !== null && b.interestRatePercent !== ''
-      ? Number(b.interestRatePercent)
-      : (Number(settings.odInterestRatePercent) || 0);
-    if (!(interestRatePercent >= 0)) {
-      return res.status(400).json({ status: 'error', message: 'interestRatePercent must be zero or a positive number.' });
-    }
+    if (b.interestRatePercent != null && b.interestRatePercent !== '') return res.status(400).json({ status: 'error', message: 'Interest is not calculated by this application.' });
+    const totalRepaymentAmount = Number(b.totalRepaymentAmount);
+    const monthlyPayment = Number(b.monthlyPayment);
+    loans.validateRepaymentTerms(amount, totalRepaymentAmount, monthlyPayment, repayMonths);
     // Optional: which of the employee's own bank accounts (accountType OD)
     // this Overdraft is availed against — purely a record-keeping/
     // reconciliation link, doesn't change the deduction math itself.
@@ -769,10 +810,10 @@ router.post('/:id/overdrafts', authenticate, async (req, res) => {
       accountId = acct.id;
     }
     const row = await EmployeeOverdraft.create({
-      employeeId: employee.id, amount, availedDate: b.availedDate, repayMonths, interestRatePercent, accountId,
+      employeeId: employee.id, amount, availedDate: b.availedDate, repayMonths, interestRatePercent: 0, totalRepaymentAmount, monthlyPayment, accountId,
       remarks: b.remarks ? String(b.remarks).slice(0, 500) : null,
     });
-    await require('../services/audit').audit(req, 'employee.overdraft.add', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { amount, repayMonths, interestRatePercent } });
+    await require('../services/audit').audit(req, 'employee.overdraft.add', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { amount, repayMonths, totalRepaymentAmount, monthlyPayment } });
     res.status(201).json({ data: { ...row.toJSON(), ...loans.scheduleStatus(row, today) } });
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
@@ -788,7 +829,7 @@ router.get('/:id/recurring-deposits', authenticate, async (req, res) => {
 });
 
 router.post('/:id/recurring-deposits', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot record a Recurring Deposit.' });
+  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record a Recurring Deposit.' });
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -806,9 +847,8 @@ router.post('/:id/recurring-deposits', authenticate, async (req, res) => {
       overdraftRow = odRows.find((r) => !loans.scheduleStatus(r, today).fullyRepaid) || null;
     }
     if (!overdraftRow) return res.status(400).json({ status: 'error', message: 'A Recurring Deposit requires an active Overdraft for this employee — record the Overdraft first.' });
-    let monthlyAmount = Number(b.monthlyAmount);
-    if (!monthlyAmount) monthlyAmount = loans.scheduleStatus(overdraftRow, new Date()).monthlyInstallment;
-    if (!(monthlyAmount > 0)) return res.status(400).json({ status: 'error', message: 'monthlyAmount is required (defaults to the linked Overdraft\'s instalment).' });
+    const monthlyAmount = loans.scheduleStatus(overdraftRow, new Date()).monthlyInstallment;
+    if (b.monthlyAmount != null && b.monthlyAmount !== '' && Number(b.monthlyAmount) !== monthlyAmount) return res.status(400).json({ status: 'error', message: 'RD monthly amount must match the Overdraft repayment schedule.' });
     if (!b.startDate) return res.status(400).json({ status: 'error', message: 'startDate is required.' });
     // Optional: which of the employee's own bank accounts (accountType RD)
     // this instalment is credited into.
@@ -835,7 +875,7 @@ router.put('/:id/recurring-deposits/:rdId', authenticate, async (req, res) => {
     const row = await EmployeeRecurringDeposit.findOne({ where: { id: req.params.rdId, employeeId: employee.id } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Recurring Deposit not found' });
     const b = req.body || {};
-    if (b.monthlyAmount !== undefined) row.monthlyAmount = Number(b.monthlyAmount);
+    if (b.monthlyAmount !== undefined && Number(b.monthlyAmount) !== Number(row.monthlyAmount)) return res.status(400).json({ status: 'error', message: 'Change the Overdraft repayment terms rather than the linked RD amount.' });
     if (b.status && ['ACTIVE', 'CLOSED'].includes(b.status)) row.status = b.status;
     await row.save();
     res.json({ data: row });
@@ -911,14 +951,13 @@ router.get('/:id/housing-loans', authenticate, async (req, res) => {
 });
 
 router.post('/:id/housing-loans', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot record a Housing Loan.' });
+  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record a Housing Loan.' });
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
     const totalLoanAmount = Number(b.totalLoanAmount);
     if (!(totalLoanAmount > 0)) return res.status(400).json({ status: 'error', message: 'totalLoanAmount must be positive.' });
-    const interestRatePercent = Number(b.interestRatePercent);
-    if (!(interestRatePercent >= 0)) return res.status(400).json({ status: 'error', message: 'interestRatePercent must be zero or a positive number.' });
+    if (b.interestRatePercent != null && b.interestRatePercent !== '') return res.status(400).json({ status: 'error', message: 'Interest is not calculated by this application.' });
     if (!b.emiStartDate) return res.status(400).json({ status: 'error', message: 'emiStartDate is required.' });
     if (!b.emiEndDate) return res.status(400).json({ status: 'error', message: 'emiEndDate is required.' });
     const start = new Date(b.emiStartDate + 'T00:00:00Z');
@@ -927,12 +966,15 @@ router.post('/:id/housing-loans', authenticate, async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'emiEndDate must be after emiStartDate.' });
     }
     const periodMonths = Math.max(1, loans.monthsBetween(start, end));
+    const totalRepaymentAmount = Number(b.totalRepaymentAmount);
+    const monthlyPayment = Number(b.monthlyPayment);
+    loans.validateRepaymentTerms(totalLoanAmount, totalRepaymentAmount, monthlyPayment, periodMonths);
     const row = await EmployeeHousingLoan.create({
-      employeeId: employee.id, totalLoanAmount, interestRatePercent,
+      employeeId: employee.id, totalLoanAmount, interestRatePercent: 0, totalRepaymentAmount, monthlyPayment,
       emiStartDate: b.emiStartDate, emiEndDate: b.emiEndDate, periodMonths,
       remarks: b.remarks ? String(b.remarks).slice(0, 500) : null,
     });
-    await require('../services/audit').audit(req, 'employee.housing_loan.add', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { totalLoanAmount, interestRatePercent, periodMonths } });
+    await require('../services/audit').audit(req, 'employee.housing_loan.add', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { totalLoanAmount, totalRepaymentAmount, monthlyPayment, periodMonths } });
     res.status(201).json({ data: { ...row.toJSON(), ...loans.housingLoanStatus(row, new Date()) } });
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
@@ -962,13 +1004,12 @@ router.get('/:id/vehicle-loans', authenticate, async (req, res) => {
     res.json({
       data: rows.map((r) => ({ ...r.toJSON(), ...loans.vehicleLoanStatus(r, today) })),
       allowMultiple: !!settings.vehicleLoanAllowMultiple,
-      currentInterestRatePercent: Number(settings.vehicleLoanInterestRatePercent) || 0,
     });
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
 router.post('/:id/vehicle-loans', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot record a Vehicle Loan.' });
+  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record a Vehicle Loan.' });
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -996,28 +1037,17 @@ router.post('/:id/vehicle-loans', authenticate, async (req, res) => {
     }
     const periodMonths = Math.max(1, loans.monthsBetween(start, end));
 
-    // interestRatePercent (rate-driven, diminishing-balance EMI) is the
-    // normal path, defaulting to the org's current rate; pass
-    // interestRatePercent: null explicitly to fall back to a manually
-    // entered emiAmount instead (e.g. a loan taken before rates were
-    // tracked here).
-    let interestRatePercent = null; let emiAmount = null;
-    if (b.interestRatePercent === null) {
-      emiAmount = Number(b.emiAmount);
-      if (!(emiAmount > 0)) return res.status(400).json({ status: 'error', message: 'emiAmount must be positive when interestRatePercent is explicitly omitted.' });
-    } else {
-      interestRatePercent = b.interestRatePercent !== undefined && b.interestRatePercent !== ''
-        ? Number(b.interestRatePercent)
-        : (Number(settings.vehicleLoanInterestRatePercent) || 0);
-      if (!(interestRatePercent >= 0)) return res.status(400).json({ status: 'error', message: 'interestRatePercent must be zero or a positive number.' });
-    }
+    if (b.interestRatePercent != null && b.interestRatePercent !== '') return res.status(400).json({ status: 'error', message: 'Interest is not calculated by this application.' });
+    const totalRepaymentAmount = Number(b.totalRepaymentAmount);
+    const monthlyPayment = Number(b.monthlyPayment);
+    loans.validateRepaymentTerms(totalAmount, totalRepaymentAmount, monthlyPayment, periodMonths);
 
     const row = await EmployeeVehicleLoan.create({
       employeeId: employee.id, totalAmount, vehicleType: b.vehicleType ? String(b.vehicleType).slice(0, 100) : null,
-      startDate: b.startDate, endDate: b.endDate, periodMonths, interestRatePercent, emiAmount,
+      startDate: b.startDate, endDate: b.endDate, periodMonths, interestRatePercent: null, emiAmount: monthlyPayment, totalRepaymentAmount, monthlyPayment,
       remarks: b.remarks ? String(b.remarks).slice(0, 500) : null,
     });
-    await require('../services/audit').audit(req, 'employee.vehicle_loan.add', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { totalAmount, interestRatePercent, emiAmount, periodMonths } });
+    await require('../services/audit').audit(req, 'employee.vehicle_loan.add', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { totalAmount, totalRepaymentAmount, monthlyPayment, periodMonths } });
     res.status(201).json({ data: { ...row.toJSON(), ...loans.vehicleLoanStatus(row, new Date()) } });
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
@@ -1095,5 +1125,6 @@ registerDeleteRoute('housing-loans', EmployeeHousingLoan, 'Housing Loan', 'emplo
 registerDeleteRoute('vehicle-loans', EmployeeVehicleLoan, 'Vehicle Loan', 'employee.vehicle_loan.delete');
 
 router.NON_PAY_EVENTS = NON_PAY_EVENTS;
+router.employeeCrud = employeeCrud;
 
 module.exports = router;

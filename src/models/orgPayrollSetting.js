@@ -41,11 +41,8 @@ const OrgPayrollSetting = sequelize.define('OrgPayrollSetting', {
   ptMonth1: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 8, field: 'pt_month1' }, // August
   ptMonth2: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 2, field: 'pt_month2' }, // February
 
-  // Employee Overdraft: limit = min(odMultiplier x (Basic+DA), odMaxAmount).
-  // odInterestRatePercent is the rate applied to a NEW Overdraft — changing
-  // it here only affects Overdrafts availed after the change; each existing
-  // Overdraft keeps whatever rate was current on the day it was availed
-  // (snapshotted onto the record itself — see models/employeeOverdraft.js).
+  // Legacy overdraft settings retained for existing data. New overdrafts use
+  // a fixed minimum offer of (Basic + DA) × 15 and a maximum of 84 months.
   odMultiplier: { type: DataTypes.DECIMAL(6, 2), allowNull: false, defaultValue: 15, field: 'od_multiplier' },
   odMaxAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 400000, field: 'od_max_amount' },
   odMaxRepayMonths: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 84, field: 'od_max_repay_months' },
@@ -69,7 +66,7 @@ const OrgPayrollSetting = sequelize.define('OrgPayrollSetting', {
   // before that month's payroll. NULL = not yet declared (no bonus paid).
   bonusMonth: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 4, field: 'bonus_month' }, // April
   bonusResult: { type: DataTypes.ENUM('PROFIT', 'LOSS'), allowNull: true, field: 'bonus_result' },
-  bonusProfitPercent: { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 20, field: 'bonus_profit_percent' }, // bonus = min(cap, Basic + this% of Basic)
+  bonusProfitPercent: { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 20, field: 'bonus_profit_percent' }, // legacy setting, ignored by payroll
   bonusProfitMaxAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 16800, field: 'bonus_profit_max_amount' },
   bonusLossPercent: { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 8.33, field: 'bonus_loss_percent' },
   bonusLossMaxAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 7000, field: 'bonus_loss_max_amount' },

@@ -106,12 +106,7 @@ export function PayrollSettingsPage() {
       </Card>
 
       <Card title="Employee Overdraft">
-        <div className="form-grid">
-          <Input id="ps-odmult" label="Eligibility (% of Basic + DA)" type="number" step="1" value={form.odMultiplier == null ? '' : Math.round(Number(form.odMultiplier) * 100)} onChange={e => setForm(s => ({ ...s, odMultiplier: e.target.value === '' ? '' : Number(e.target.value) / 100 }))} mono hint="1500% is 15 times Basic + DA; the maximum amount still applies." />
-          <Input id="ps-odmax" label="Maximum Amount" type="number" step="1" value={form.odMaxAmount ?? ''} onChange={f('odMaxAmount')} mono />
-          <Input id="ps-odmonths" label="Maximum Repayment Months" type="number" value={form.odMaxRepayMonths ?? ''} onChange={f('odMaxRepayMonths')} mono />
-          <Input id="ps-odrate" label="Interest % p.a." type="number" step="0.001" value={form.odInterestRatePercent ?? ''} onChange={f('odInterestRatePercent')} mono hint="Applies to new overdrafts only." />
-        </div>
+        <p className="form-note">The minimum bank offer is (Basic + DA) × 15. HR records the amount borrowed, total repayment, and monthly payment. Repayment is limited to 84 months or the employee's earlier retirement.</p>
       </Card>
 
       <Card title="Festival Advance — Recoverable Advance">
@@ -147,16 +142,11 @@ export function PayrollSettingsPage() {
           <Select id="ps-bresult" label="Declared Result" value={form.bonusResult ?? ''} onChange={(v) => setForm((s) => ({ ...s, bonusResult: v }))}
             emptyLabel="Not declared" options={[{ value: 'PROFIT', label: 'Profit' }, { value: 'LOSS', label: 'Loss' }]}
             hint="Bonus is only paid once a result is declared." />
-          <Input id="ps-bprof" label="Profit: % of Basic" type="number" step="0.001" value={form.bonusProfitPercent ?? ''} onChange={f('bonusProfitPercent')} mono />
-          <Input id="ps-bprofmax" label="Profit: Maximum Bonus" type="number" step="1" value={form.bonusProfitMaxAmount ?? ''} onChange={f('bonusProfitMaxAmount')} mono />
-          <Input id="ps-bloss" label="Loss: % of Basic" type="number" step="0.001" value={form.bonusLossPercent ?? ''} onChange={f('bonusLossPercent')} mono />
-          <Input id="ps-blossmax" label="Loss: Maximum Bonus" type="number" step="1" value={form.bonusLossMaxAmount ?? ''} onChange={f('bonusLossMaxAmount')} mono />
         </div>
       </Card>
 
       <Card title="Vehicle Loan &amp; Year-End">
         <div className="form-grid">
-          <Input id="ps-vlrate" label="Vehicle Loan Interest % p.a." type="number" step="0.001" value={form.vehicleLoanInterestRatePercent ?? ''} onChange={f('vehicleLoanInterestRatePercent')} mono hint="Applies to new loans only." />
           <Select id="ps-yeartype" label="Year Type" value={form.yearType} onChange={(v) => setForm((s) => ({ ...s, yearType: v }))}
             options={[{ value: 'CALENDAR', label: 'Calendar (Jan–Dec)' }, { value: 'FINANCIAL', label: 'Financial (Apr–Mar)' }]} />
         </div>

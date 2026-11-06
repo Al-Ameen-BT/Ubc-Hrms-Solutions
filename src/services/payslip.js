@@ -8,7 +8,7 @@
  * currently active for them (see services/loans.js).
  *
  * All monetary calculations are done in integer paise to avoid floating-point
- * precision issues. Final values are returned as rupees (number with 2 decimals)
+ * precision issues. Final values are returned as whole rupees
  * for API compatibility.
  */
 
@@ -21,7 +21,7 @@ const SCALE = 100;
 /** Pro-rate a paise amount by attendance factor (numerator/denominator). */
 function proRatePaise(paise, numerator, denominator) {
   if (numerator >= denominator) return paise;
-  return Math.ceil(paise * numerator / denominator);
+  return Math.round(paise * numerator / denominator);
 }
 
 /** Convert attendance factor to numerator/denominator for exact integer math. */
@@ -36,9 +36,10 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   loans = loans || {};
   const asOf = new Date(); asOf.setUTCFullYear(asOf.getUTCFullYear(), month - 1, 1);
   const basicFullPaise = toPaise(employee.currentBasicPay);
+  const directPay = employee.directPay === true;
 
   // ---- Attendance / Loss of Pay ----
-  const payScale = employee.CurrentPayScale || null;
+  const payScale = directPay ? null : employee.CurrentPayScale || null;
   const payableDays = payScale && Number(payScale.payableDays) > 0 ? Number(payScale.payableDays) : 30;
   const lopDays = Math.max(0, Math.min(payableDays, Number(attendance && attendance.lopDays) || 0));
   const { num: attNum, den: attDen } = attendanceFraction(lopDays, payableDays);
@@ -46,8 +47,8 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
 
   // ---- Earnings ----
   // DA: VARIABLE = org's daPercent x Basic; FIXED = employee's fixedDaAmount; BOTH = VARIABLE + FIXED
-  const daVariableFullPaise = percentOf(basicFullPaise, settings.daPercent);
-  const daFixedFullPaise = toPaise(employee.fixedDaAmount);
+  const daVariableFullPaise = directPay ? 0 : percentOf(basicFullPaise, settings.daPercent);
+  const daFixedFullPaise = directPay ? 0 : toPaise(employee.fixedDaAmount);
   const daFullPaise = employee.daType === 'FIXED' ? daFixedFullPaise
     : employee.daType === 'BOTH' ? add(daVariableFullPaise, daFixedFullPaise)
     : daVariableFullPaise;
@@ -64,15 +65,15 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   if (settings.hraMaxAmount != null && Number(settings.hraMaxAmount) > 0) {
     hraCalculatedFullPaise = min(hraCalculatedFullPaise, toPaise(settings.hraMaxAmount));
   }
-  const hraFullPaise = hraCalculatedFullPaise;
-  const riskFullPaise = toPaise(employee.riskAllowance);
-  const otherFullPaise = toPaise(employee.otherAllowance);
+  const hraFullPaise = directPay ? 0 : hraCalculatedFullPaise;
+  const riskFullPaise = directPay ? 0 : toPaise(employee.riskAllowance);
+  const otherFullPaise = directPay ? 0 : toPaise(employee.otherAllowance);
 
   // CCA / Conveyance
   const ccaEligible = employee.ccaOptIn !== false;
-  const ccaFullPaise = ccaEligible ? toPaise(employee.ccaAmount != null ? employee.ccaAmount : settings.ccaAmount) : 0;
+  const ccaFullPaise = directPay ? 0 : ccaEligible ? toPaise(employee.ccaAmount != null ? employee.ccaAmount : settings.ccaAmount) : 0;
   const conveyanceEligible = employee.conveyanceOptIn !== false;
-  const conveyanceFullPaise = conveyanceEligible ? toPaise(employee.conveyanceAmount != null ? employee.conveyanceAmount : settings.conveyanceAmount) : 0;
+  const conveyanceFullPaise = directPay ? 0 : conveyanceEligible ? toPaise(employee.conveyanceAmount != null ? employee.conveyanceAmount : settings.conveyanceAmount) : 0;
 
   // "Actual Basic" — full sanctioned Basic before LOP
   const actualBasicPaise = basicFullPaise;
@@ -87,24 +88,22 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   const conveyancePaise = proRate(conveyanceFullPaise);
 
   // Medical Allowance — flat amount in configured month
-  const medicalAllowancePaise = month === Number(settings.medicalAllowanceMonth) ? toPaise(settings.medicalAllowanceAmount) : 0;
+  const medicalAllowancePaise = !directPay && month === Number(settings.medicalAllowanceMonth) ? toPaise(settings.medicalAllowanceAmount) : 0;
 
   // Bonus — paid entirely in configured month
   let bonusPaise = 0; let bonusNote = null;
   if (month === Number(settings.bonusMonth)) {
     if (settings.bonusResult === 'PROFIT') {
-      const bonusCalcPaise = add(basicFullPaise, percentOf(basicFullPaise, settings.bonusProfitPercent));
-      bonusPaise = min(toPaise(settings.bonusProfitMaxAmount), bonusCalcPaise);
+      bonusPaise = percentOf(basicFullPaise, 20);
     } else if (settings.bonusResult === 'LOSS') {
-      const bonusCalcPaise = add(basicFullPaise, percentOf(basicFullPaise, settings.bonusLossPercent));
-      bonusPaise = min(toPaise(settings.bonusLossMaxAmount), bonusCalcPaise);
+      bonusPaise = percentOf(basicFullPaise, 8.33);
     } else {
       bonusNote = 'Bonus month, but the organisation has not yet declared this year\'s Profit/Loss result in Payroll Settings — no bonus included.';
     }
   }
 
   // Admin-defined allowances
-  const customAllowanceRows = (customAllowances || []).map((a) => ({ id: a.id, name: a.name, amount: toRupees(toPaise(a.amount)) }));
+  const customAllowanceRows = (directPay ? [] : customAllowances || []).map((a) => ({ id: a.id, name: a.name, amount: toRupees(toPaise(a.amount)) }));
   const customAllowancesTotalPaise = sum(customAllowanceRows.map(a => toPaise(a.amount)));
 
   const grossEarningsPaise = sum([
@@ -138,7 +137,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   const festivalAdvancePaise = faStatus ? toPaise(faStatus.dueThisMonth) : 0;
   const odStatus = loans.overdraft ? scheduleStatus(loans.overdraft, asOf) : null;
   const overdraftPaise = odStatus ? toPaise(odStatus.dueThisMonth) : 0;
-  const recurringDepositPaise = loans.recurringDeposit && loans.recurringDeposit.status !== 'CLOSED' ? toPaise(loans.recurringDeposit.monthlyAmount) : 0;
+  const recurringDepositPaise = loans.recurringDeposit && !loans.recurringDeposit.overdraftId && loans.recurringDeposit.status !== 'CLOSED' ? toPaise(loans.recurringDeposit.monthlyAmount) : 0;
 
   // ---- LIC / Housing Loan / Vehicle Loan ----
   const licRows = (loans.lics || []).map((r) => ({ id: r.id, ...licStatus(r, asOf, true) }));
@@ -163,11 +162,6 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   });
   const monthlyTaxPaise = toPaise(tax.monthlyTax);
 
-  // Overdraft is NOT deducted from pay directly — recovered through RD
-  const totalDeductionsPaise = add(
-    pfEmployeePaise, vpfPaise, welfarePaise, gsliPaise, ptPaise, monthlyTaxPaise,
-    festivalAdvancePaise, recurringDepositPaise, licPaise, housingLoanPaise, vehicleLoanPaise
-  );
   // ---- Line item rupee conversions (integer-rounded) ----
   const basicRupees = toRupees(basicPaise);
   const daRupees = toRupees(daPaise);
@@ -198,7 +192,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   const vehicleLoanRupees = toRupees(vehicleLoanPaise);
 
   const totalDeductionsRupees = pfEmployeeRupees + vpfRupees + welfareRupees + gsliRupees + ptRupees
-    + monthlyTaxRupees + festivalAdvanceRupees + recurringDepositRupees + licRupees + housingLoanRupees + vehicleLoanRupees;
+    + monthlyTaxRupees + festivalAdvanceRupees + overdraftRupees + recurringDepositRupees + licRupees + housingLoanRupees + vehicleLoanRupees;
 
   const netPayRupees = grossEarningsRupees - totalDeductionsRupees;
 
@@ -211,6 +205,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   // Convert all values to clean whole rupees for API response
   return {
     forMonth: month,
+    directPay,
     grade,
     attendance: { payableDays, lopDays, paidDays: payableDays - lopDays },
     earnings: {
@@ -259,8 +254,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
     netPay: netPayRupees,
     note: [
       'Estimate for payroll purposes.',
-      'Overdraft interest is flat/simple over the full repayment period at the rate in force on the day it was availed (later rate changes only affect new Overdrafts) — Rule verification required against the bank\'s actual OD product, since reducing-balance was not specified. Festival Advance and Recurring Deposit carry no interest.',
-      'Housing Loan and Vehicle Loan EMIs use the standard reducing-balance amortisation formula from the recorded interest rate (a Vehicle Loan with no rate on record falls back to a directly-entered EMI instead).',
+      'New loan records use bank-entered total repayment and monthly payment; this application does not calculate their interest. Older loans retain their saved repayment formulas.',
       lopDays > 0 ? `Basic, DA and allowances are pro-rated for ${lopDays} Loss of Pay day(s) this month out of ${payableDays} payable days.` : null,
       bonusNote,
     ].filter(Boolean).join(' '),

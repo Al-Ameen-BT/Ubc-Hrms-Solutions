@@ -73,7 +73,7 @@ async function processRun({ organizationId, year, month, userId }) {
   const employees = await Employee.findAll({
     where: { organizationId, status: 'ACTIVE', employmentStatus: 'ACTIVE' },
     include: [
-      { model: PayScale, as: 'CurrentPayScale' },
+      { model: PayScale, as: 'CurrentPayScale', required: false },
       { model: PostCadre, required: false },
       { model: EmployeeBankAccount, as: 'SalaryCreditAccount', required: false },
     ],

@@ -1,5 +1,22 @@
 # UCB HRMS & Payroll — Framework (First Slice)
 
+## Application version and releases
+
+The root `package.json` is the application version shown on the sign-in screen and in the sidebar. The backend health response at `/healthz` reports the same version. The frontend package and both lockfiles must match; `npm run version:check` checks this in CI.
+
+Use Semantic Versioning: patch for compatible fixes, minor for compatible features, and major for breaking changes. For each release:
+
+1. Choose the new version and update both packages and lockfiles with `npm version <version> --no-git-tag-version` in the repository root and in `frontend/`.
+2. Move the relevant entries from `CHANGELOG.md`'s **Unreleased** section into a dated section for that version.
+3. Run `npm run version:check`, the frontend build, and the normal CI checks. Review database migration and deployment impact before releasing.
+4. Commit the release changes, then create an annotated `v<version>` tag on that commit. Deploy the tagged commit. Do not reuse a tag for later changes.
+
+The existing `0.1.0` is a baseline; this changelog does not claim a previous tagged release.
+
+## Monetary rounding
+
+For a non-negative rupee amount, round to the nearest whole rupee: fractions below ₹0.50 round down, and ₹0.50 or more round up. Thus ₹140.40 becomes ₹140 and ₹140.50 becomes ₹141. The formula is `floor(amount + 0.5)`; for negative adjustments the implementation rounds halves away from zero. Calculations use integer paise and round when writing or displaying a monetary amount. Percentages, day fractions, and the overdraft multiplier keep their precision. Installment schedules retain an exact final remainder, and fixed loan EMIs round upward where needed to cover the principal. Tax/TDS estimates retain their separate rounding policy.
+
 Multi-tenant HRMS/Payroll foundation for Urban Co-operative Banks following
 Kerala service rules. This slice implements the architecture end-to-end —
 Organization → Post/Cadre → Pay Revision → Pay Scale → Pay Stage →

@@ -1,6 +1,6 @@
 {
   "name": "ucb-hrms-payroll",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha.1",
   "description": "Multi-tenant HRMS & Payroll framework for Urban Co-operative Banks — policy-driven Service Book, Increment and Pay Fixation engine (no hard-coded service rules).",
   "main": "src/server.js",
   "private": true,
@@ -10,6 +10,7 @@
     "db:reset": "node src/scripts/dbSync.js",
     "seed": "node src/seed/index.js",
     "seed:demo": "node src/scripts/seedDemoTenants.js",
+    "version:check": "node scripts/check-version.js",
     "start": "node src/server.js"
   },
   "dependencies": {

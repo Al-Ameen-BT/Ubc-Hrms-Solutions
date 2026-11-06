@@ -24,6 +24,9 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
 
+      - name: Check application version metadata
+        run: npm run version:check
+
       - name: Validate JavaScript syntax (Node.js AST check)
         run: |
           echo "Checking JavaScript syntax across backend code..."

@@ -48,6 +48,7 @@ const COLUMN_STEPS = [
   // Slice: bank class + pay scale library, part-time contingent employment type
   ['organization', 'bank_class', { type: DataTypes.ENUM('SPECIAL_GRADE', 'CLASS_I', 'CLASS_II', 'CLASS_III', 'CLASS_IV', 'CLASS_V'), allowNull: true }],
   ['employee', 'employment_type', { type: DataTypes.ENUM('REGULAR', 'PART_TIME_CONTINGENT'), allowNull: false, defaultValue: 'REGULAR' }],
+  ['employee', 'direct_pay', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
   // Slice: payroll salary structure & deductions (Phase 1). Note:
   // org_payroll_setting is a brand-new table, created automatically by
   // sequelize.sync() — no column step needed for it here.
@@ -82,6 +83,12 @@ const COLUMN_STEPS = [
   // sequelize.sync() — no column steps needed for them here.
   ['org_payroll_setting', 'od_interest_rate_percent', { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 6.5 }],
   ['employee_overdraft', 'interest_rate_percent', { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 0 }],
+  ['employee_overdraft', 'total_repayment_amount', { type: DataTypes.DECIMAL(12, 2), allowNull: true }],
+  ['employee_overdraft', 'monthly_payment', { type: DataTypes.DECIMAL(12, 2), allowNull: true }],
+  ['employee_housing_loan', 'total_repayment_amount', { type: DataTypes.DECIMAL(12, 2), allowNull: true }],
+  ['employee_housing_loan', 'monthly_payment', { type: DataTypes.DECIMAL(12, 2), allowNull: true }],
+  ['employee_vehicle_loan', 'total_repayment_amount', { type: DataTypes.DECIMAL(12, 2), allowNull: true }],
+  ['employee_vehicle_loan', 'monthly_payment', { type: DataTypes.DECIMAL(12, 2), allowNull: true }],
   // Slice: employee personal/HR details, employee documents, DA
   // fixed/variable, City Compensatory & Conveyance Allowances, Vehicle Loan
   // interest rate + multiple-loans toggle, admin/HR-only loan edit/delete.

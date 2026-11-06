@@ -7,6 +7,7 @@
 FROM docker.io/library/node:20-alpine AS frontend-builder
 WORKDIR /build/frontend
 
+COPY package.json /build/package.json
 COPY frontend/package*.json ./
 RUN npm ci
 

@@ -12,7 +12,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 /* Live (estimated) payslip preview — routes/serviceBook.js GET /:id/payslip.
    Not a frozen run line; it recomputes from the employee's current salary,
    the organisation's payroll settings and today's active loans. */
-export function EmployeePayslipTab({ employeeId, employeeName }) {
+export function EmployeePayslipTab({ employeeId, employeeName, directPay }) {
   const toast = useToast();
   const [month, setMonth] = useState(new Date().getMonth() + 1);
 
@@ -33,7 +33,7 @@ export function EmployeePayslipTab({ employeeId, employeeName }) {
   const d = data?.deductions;
 
   const earningRows = e ? [
-    ['Basic Pay', e.basic], ['Dearness Allowance', e.da], ['House Rent Allowance', e.hra],
+    [directPay ? 'Bank-set Gross Salary' : 'Basic Pay', e.basic], ['Dearness Allowance', e.da], ['House Rent Allowance', e.hra],
     ['Risk Allowance', e.riskAllowance], ['Other Allowance', e.otherAllowance],
     ['City Compensatory Allowance', e.cca], ['Conveyance', e.conveyance],
     ['Medical Allowance', e.medicalAllowance], ['Bonus', e.bonus],

@@ -15,6 +15,7 @@ import { EmployeeLoansTab } from './EmployeeLoansTab';
 import { EmployeeAttendanceTab } from './EmployeeAttendanceTab';
 import { EmployeeDocumentsTab } from './EmployeeDocumentsTab';
 import { EmployeePayslipTab } from './EmployeePayslipTab';
+import { ServiceBookPayslips } from './ServiceBookPayslips';
 
 const TABS = ['Service Book', 'Pay History', 'Leave', 'Attendance', 'Bank Accounts', 'Loans', 'Documents', 'Payslip'];
 const NON_PAY_EVENTS = ['APPOINTMENT', 'PROBATION', 'CONFIRMATION', 'TRANSFER', 'SUSPENSION', 'LWA', 'BREAK_IN_SERVICE', 'DISCIPLINARY', 'RETIREMENT', 'OTHER'];
@@ -52,6 +53,8 @@ export function EmployeeDetailPage() {
   });
 
   const [payModalOpen, setPayModalOpen] = useState(false);
+  const [salaryModalOpen, setSalaryModalOpen] = useState(false);
+  const [salaryForm, setSalaryForm] = useState({ amount: '', reason: '' });
   const [payForm, setPayForm] = useState({ hraType: 'PERCENT', fixedHraAmount: '', riskAllowance: '', otherAllowance: '' });
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -81,6 +84,17 @@ export function EmployeeDetailPage() {
       setPayModalOpen(false);
     },
     onError: (err) => setError(err.message || 'Could not update allowances.'),
+  });
+
+  const updateSalary = useMutation({
+    mutationFn: (payload) => masterDataApi.updateDirectPaySalary(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['service-book', id] });
+      queryClient.invalidateQueries({ queryKey: ['emp-payslip', id] });
+      toast.add('Bank-set salary updated and recorded in the Service Book.', 'success');
+      setSalaryModalOpen(false);
+    },
+    onError: (err) => setError(err.message || 'Could not update salary.'),
   });
 
   if (isLoading) return <div className="page"><p>Loading…</p></div>;
@@ -122,7 +136,7 @@ export function EmployeeDetailPage() {
 
   const serviceYears = calculateYears(employee.doj);
   const remainingYears = book?.effectiveRetirementDate ? calculateYears(new Date(), book.effectiveRetirementDate) : null;
-  const totalAllowances = Number(employee.riskAllowance || 0) + Number(employee.otherAllowance || 0);
+  const totalAllowances = employee.directPay ? 0 : Number(employee.riskAllowance || 0) + Number(employee.otherAllowance || 0);
 
   const getTabBadge = (t) => {
     if (t === 'Service Book') return book?.timelineCount ?? 0;
@@ -173,7 +187,7 @@ export function EmployeeDetailPage() {
           </div>
           <div className="employee-profile-actions">
             <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>
-            <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>
+            {employee.directPay ? <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(employee.currentBasicPay || ''), reason: '' }); setError(''); setSalaryModalOpen(true); }}>Edit Salary</Button> : <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>}
             <Button variant="secondary" onClick={() => navigate('/employees')}>Back</Button>
           </div>
         </div>
@@ -194,15 +208,15 @@ export function EmployeeDetailPage() {
           </span>
         </div>
         <div className="meta-strip-item">
-          <span className="meta-strip-label">Pay Scale & Grade</span>
+          <span className="meta-strip-label">{employee.directPay ? 'Payroll Type' : 'Pay Scale & Grade'}</span>
           <span className="meta-strip-val" title={employee.CurrentPayScale?.name || '—'}>
-            {employee.CurrentPayScale?.name || '—'}
+            {employee.directPay ? 'Bank-set salary' : employee.CurrentPayScale?.name || '—'}
           </span>
         </div>
         <div className="meta-strip-item">
-          <span className="meta-strip-label">Scale Stage</span>
+          <span className="meta-strip-label">{employee.directPay ? 'Self-service' : 'Scale Stage'}</span>
           <span className="meta-strip-val mono">
-            Stage {employee.CurrentPayStage?.stageNo ?? '—'}
+            {employee.directPay ? 'Unavailable' : `Stage ${employee.CurrentPayStage?.stageNo ?? '—'}`}
           </span>
         </div>
         <div className="meta-strip-item">
@@ -224,15 +238,15 @@ export function EmployeeDetailPage() {
       {/* High-Impact Numeric KPI Stat Grid */}
       <div className="stat-grid">
         <div className="stat-ledger">
-          <div className="stat-ledger-label">Basic Pay</div>
+          <div className="stat-ledger-label">{employee.directPay ? 'Bank-set Gross' : 'Basic Pay'}</div>
           <div className="stat-ledger-value mono">{fmt.money(employee.currentBasicPay)}</div>
-          <div className="stat-ledger-sub">Stage {employee.CurrentPayStage?.stageNo ?? '—'} basic</div>
+          <div className="stat-ledger-sub">{employee.directPay ? 'Fixed monthly salary' : `Stage ${employee.CurrentPayStage?.stageNo ?? '—'} basic`}</div>
         </div>
         <div className="stat-ledger">
           <div className="stat-ledger-label">Monthly Allowances</div>
           <div className="stat-ledger-value mono">{fmt.money(totalAllowances)}</div>
           <div className="stat-ledger-sub">
-            {Number(employee.riskAllowance) > 0 ? `Risk: ${fmt.money(employee.riskAllowance)}` : 'Standard allowances'}
+            {employee.directPay ? 'Fixed bank-set gross' : Number(employee.riskAllowance) > 0 ? `Risk: ${fmt.money(employee.riskAllowance)}` : 'Standard allowances'}
           </div>
         </div>
         <div className="stat-ledger">
@@ -271,6 +285,7 @@ export function EmployeeDetailPage() {
       </div>
 
       {tab === 'Service Book' && (
+        <>
         <Card noPadding>
           <div className="table-toolbar">
             <span className="mono">{book?.timelineCount || 0} entries</span>
@@ -298,6 +313,8 @@ export function EmployeeDetailPage() {
             )) : <EmptyState title="No service book entries" description="Entries appear here as events are recorded." />}
           </div>
         </Card>
+        <ServiceBookPayslips payslips={book?.payslips} />
+        </>
       )}
 
       {tab === 'Pay History' && (
@@ -360,7 +377,16 @@ export function EmployeeDetailPage() {
       {tab === 'Bank Accounts' && <EmployeeBankAccountsTab employeeId={id} />}
       {tab === 'Loans' && <EmployeeLoansTab employeeId={id} />}
       {tab === 'Documents' && <EmployeeDocumentsTab employeeId={id} />}
-      {tab === 'Payslip' && <EmployeePayslipTab employeeId={id} employeeName={employee.name} />}
+      {tab === 'Payslip' && <EmployeePayslipTab employeeId={id} employeeName={employee.name} directPay={employee.directPay} />}
+
+      <Modal open={salaryModalOpen} onClose={() => setSalaryModalOpen(false)} title="Change Bank-set Salary"
+        footer={<><Button variant="secondary" onClick={() => setSalaryModalOpen(false)}>Cancel</Button><Button loading={updateSalary.isPending} disabled={!Number(salaryForm.amount) || !salaryForm.reason.trim()} onClick={() => { setError(''); updateSalary.mutate(salaryForm); }}>Save Salary</Button></>}>
+        {error && <div className="auth-error" role="alert">{error}</div>}
+        <div className="form-grid">
+          <Input id="direct-salary" label="Monthly Gross Salary (₹)" type="number" value={salaryForm.amount} onChange={(e) => setSalaryForm((s) => ({ ...s, amount: e.target.value }))} mono required />
+          <Input id="direct-salary-reason" label="Reason for Change" value={salaryForm.reason} onChange={(e) => setSalaryForm((s) => ({ ...s, reason: e.target.value }))} required />
+        </div>
+      </Modal>
 
       <Modal
         open={payModalOpen}

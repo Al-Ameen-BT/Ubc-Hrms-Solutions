@@ -21,6 +21,7 @@ const EMPTY = {
   empCode: '', name: '', dob: '', gender: 'MALE', category: 'GENERAL',
   panNumber: '', aadhaarNumber: '', personalEmail: '',
   doj: '', postCadreId: '', designation: '', department: '',
+  directPay: false,
   currentPayScaleId: '', currentStageId: '', currentBasicPay: '',
   hraType: 'PERCENT', fixedHraAmount: '',
   riskAllowance: '', otherAllowance: '',
@@ -57,8 +58,8 @@ export function NewEmployeePage() {
 
   const canAdvance = () => {
     if (step === 0) return form.name && form.empCode && form.dob && form.gender;
-    if (step === 1) return form.doj;
-    if (step === 2) return form.currentPayScaleId && form.currentStageId && form.currentBasicPay;
+    if (step === 1) return form.doj && form.postCadreId;
+    if (step === 2) return form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay;
     if (step === 3) return form.bankName && form.bankAccountNumber && form.bankIfsc;
     return true;
   };
@@ -105,6 +106,10 @@ export function NewEmployeePage() {
                 </select>
               </div>
             </div>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={form.directPay} onChange={(e) => set({ directPay: e.target.checked, currentPayScaleId: '', currentStageId: '', currentBasicPay: '' })} />
+              <span>Direct-pay staff (security, cleaning or other bank-set salary; no self-service account)</span>
+            </label>
             <h3 className="form-section-title">Identity &amp; Contact</h3>
             <div className="form-grid">
               <Input id="pan" label="PAN" value={form.panNumber} onChange={(e) => set({ panNumber: e.target.value.toUpperCase() })} mono required />
@@ -133,6 +138,9 @@ export function NewEmployeePage() {
         {step === 2 && (
           <>
             <div className="form-grid">
+              {form.directPay ? (
+                <Input id="basic" label="Bank-set Monthly Gross Salary (₹)" type="number" value={form.currentBasicPay} onChange={(e) => set({ currentBasicPay: e.target.value })} mono required />
+              ) : <>
               <div className="field">
                 <label className="field-label" htmlFor="scale">Grade / Pay Scale</label>
                 <select id="scale" className="input" value={form.currentPayScaleId} onChange={(e) => set({ currentPayScaleId: e.target.value, currentStageId: '' })} required>
@@ -162,8 +170,9 @@ export function NewEmployeePage() {
                 <Input id="fixedHra" label="Fixed HRA Amount (₹)" type="number" step="1" value={form.fixedHraAmount} onChange={(e) => set({ fixedHraAmount: e.target.value })} mono required />
               )}
               <Input id="risk" label="Risk Allowance (₹)" type="number" step="1" value={form.riskAllowance} onChange={(e) => set({ riskAllowance: e.target.value })} mono hint="Optional risk allowance for this employee." />
+              </>}
             </div>
-            <p className="form-note">HRA is subject to the organisation ceiling. Policies default from the organisation unless set per employee.</p>
+            <p className="form-note">{form.directPay ? 'This gross salary is set by the bank. Government pay stages and grade allowances do not apply; configured deductions still apply.' : 'HRA is subject to the organisation ceiling. Policies default from the organisation unless set per employee.'}</p>
           </>
         )}
 
@@ -187,10 +196,10 @@ export function NewEmployeePage() {
             <ReviewRow label="Post" value={postName(form.postCadreId)} />
             <ReviewRow label="Designation" value={form.designation} />
             <ReviewRow label="Department" value={form.department} />
-            <ReviewRow label="Pay Scale" value={scaleName(form.currentPayScaleId)} />
-            <ReviewRow label="Basic Pay" value={form.currentBasicPay} />
-            <ReviewRow label="HRA Basis" value={form.hraType === 'FIXED' ? `Fixed Amount (₹${Number(form.fixedHraAmount || 0).toLocaleString('en-IN')})` : 'Calculated from Basic Pay (%)'} />
-            {Number(form.riskAllowance) > 0 && <ReviewRow label="Risk Allowance" value={`₹${Number(form.riskAllowance).toLocaleString('en-IN')}`} />}
+            <ReviewRow label={form.directPay ? 'Bank-set Monthly Gross' : 'Basic Pay'} value={form.currentBasicPay} />
+            {!form.directPay && <ReviewRow label="Pay Scale" value={scaleName(form.currentPayScaleId)} />}
+            {!form.directPay && <ReviewRow label="HRA Basis" value={form.hraType === 'FIXED' ? `Fixed Amount (₹${Number(form.fixedHraAmount || 0).toLocaleString('en-IN')})` : 'Calculated from Basic Pay (%)'} />}
+            {!form.directPay && Number(form.riskAllowance) > 0 && <ReviewRow label="Risk Allowance" value={`₹${Number(form.riskAllowance).toLocaleString('en-IN')}`} />}
             <ReviewRow label="Bank" value={`${form.bankName} · ${form.bankAccountNumber} · ${form.bankIfsc}`} />
           </div>
         )}

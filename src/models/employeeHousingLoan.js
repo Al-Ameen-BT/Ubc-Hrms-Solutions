@@ -16,6 +16,8 @@ const EmployeeHousingLoan = sequelize.define('EmployeeHousingLoan', {
   id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
   employeeId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'employee_id' },
   totalLoanAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, field: 'total_loan_amount' },
+  totalRepaymentAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: true, field: 'total_repayment_amount' },
+  monthlyPayment: { type: DataTypes.DECIMAL(12, 2), allowNull: true, field: 'monthly_payment' },
   interestRatePercent: { type: DataTypes.DECIMAL(6, 3), allowNull: false, field: 'interest_rate_percent' },
   emiStartDate: { type: DataTypes.DATEONLY, allowNull: false, field: 'emi_start_date' },
   emiEndDate: { type: DataTypes.DATEONLY, allowNull: false, field: 'emi_end_date' },

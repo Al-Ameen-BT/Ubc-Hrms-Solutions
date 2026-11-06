@@ -16,10 +16,16 @@ function toPaise(n) {
   return Math.round(num * SCALE);
 }
 
-/** Convert paise (integer) to rupees (integer, rounded upward to a whole rupee). */
+/** Round a monetary rupee amount to the nearest whole rupee, with halves away from zero. */
+function roundRupees(amount) {
+  const number = Number(amount) || 0;
+  return Math.sign(number) * Math.round(Math.abs(number));
+}
+
+/** Convert paise (integer) to whole rupees. */
 function toRupees(paise) {
   if (paise === null || paise === undefined) return 0;
-  return Math.ceil(paise / SCALE);
+  return roundRupees(paise / SCALE);
 }
 
 /** Add paise values (inputs must already be paise). */
@@ -44,9 +50,9 @@ function divide(paise, divisor) {
 
 /** Percentage of paise: paise * percent / 100. Input paise must be paise. */
 function percentOf(paise, percent) {
-  // Payroll rates have up to three decimals; integer arithmetic avoids false ceilings.
+  // Payroll rates have up to three decimals; integer arithmetic avoids floating-point boundary errors.
   const numerator = BigInt(Math.round(Number(paise) || 0)) * BigInt(Math.round(Number(percent || 0) * 1000));
-  return Number(numerator > 0n ? (numerator + 99999n) / 100000n : numerator / 100000n);
+  return Number(numerator >= 0n ? (numerator + 50000n) / 100000n : (numerator - 50000n) / 100000n);
 }
 
 /** Minimum of paise values. */
@@ -97,6 +103,7 @@ module.exports = {
   SCALE,
   toPaise,
   toRupees,
+  roundRupees,
   toPaiseSafe,
   add,
   subtract,

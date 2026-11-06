@@ -7,7 +7,7 @@
  * email and audit entry are identical no matter which screen it came from.
  */
 
-const { User, Organization } = require('../models');
+const { User, Organization, Employee } = require('../models');
 const { hashPassword, generateTempPassword } = require('./authService');
 const { assertCanAddUser } = require('./license');
 const mailer = require('./mailer');
@@ -74,6 +74,11 @@ async function createAccount(req, { organizationId, email, name, role, employeeI
     throw new UserAdminError(409, 'A user with this email already exists.');
   }
   if (organizationId) await assertCanAddUser(organizationId);
+  if (employeeId) {
+    const employee = await Employee.findByPk(employeeId);
+    if (!employee || String(employee.organizationId) !== String(organizationId)) throw new UserAdminError(400, 'Employee must belong to this bank.');
+    if (employee.directPay) throw new UserAdminError(400, 'Direct-pay staff do not have self-service accounts.');
+  }
 
   const tempPassword = generateTempPassword();
   const user = await User.create({

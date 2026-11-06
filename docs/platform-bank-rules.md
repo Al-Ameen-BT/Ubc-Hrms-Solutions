@@ -55,8 +55,9 @@ Sequelize and needs one new table. Follow the normal deployment process:
   enabled. With `AUTO_MIGRATE=false`, apply setup before serving the new feature.
 - Do not use `db:reset` or seed scripts on a database containing real records.
 
-No new packages, environment variables, seed changes or existing-table alterations
-are required. Take the normal deployment backup before applying schema changes.
+No new packages, environment variables or seed changes are required for the
+catalogue. The current payroll work also adds nullable loan repayment columns;
+apply the additive migration only during an authorised deployment after a backup.
 
 ## Verification
 
@@ -90,11 +91,12 @@ progression). Additional monthly/yearly/one-time employee payments use Allowance
 recurring individual payments may use the employee's Other Allowance. Non-payroll
 expenses belong to accounting; no general expense ledger was added.
 
-New/changed monetary values round upward to whole rupees. Percentages retain
+New/changed monetary values round to the nearest whole rupee, with 50 paise
+rounding up. Percentages retain
 their supported decimal precision and leave/attendance retain day fractions.
-Borrowing eligibility is displayed as a percentage (1550% means 15.5 times
-Basic+DA), preserving the original multiplier internally. Catalogue monetary
-defaults and scale expressions require whole-rupee values.
+The overdraft minimum offer is (Basic + DA) times 15, with a maximum 84-month
+repayment window. Catalogue monetary defaults and scale expressions require
+whole-rupee values.
 
 Payslip earning/deduction rows are rounded before their displayed totals are
 summed. Repayment schedules adjust the rounding remainder without collecting

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../auth/AuthContext';
+import { version } from '../../../../package.json';
 
 /** "MCUB" -> MC, "Demo UCB" -> DU, "UCB HRMS & Payroll" -> UH */
 function initialsOf(name) {
@@ -92,6 +93,7 @@ export function AuthShell({ subtitle, children }) {
             {children}
 
             <div className="login-powered-wrap">
+              <span className="app-version">Version {version}</span>
               <p className="login-powered">
                 <span>Powered by</span>
                 <img src="/banihal-logo.png" alt="Banihal Technologies" className="login-powered-logo" />

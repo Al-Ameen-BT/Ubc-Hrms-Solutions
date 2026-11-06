@@ -5,11 +5,10 @@ const { OrgPayrollSetting } = require('../models');
 const FIELDS = [
   'daPercent', 'hraType', 'hraPercent', 'hraFixedAmount', 'hraMaxAmount', 'pfEmployeePercent', 'pfEmployerPercent', 'pfCalculationBase',
   'gsliAmount', 'gsliCutoffDate', 'ptSchedule', 'ptMonth1', 'ptMonth2',
-  'odMultiplier', 'odMaxAmount', 'odMaxRepayMonths', 'odInterestRatePercent',
   'festivalAdvanceRepayMonths', 'stagnationYears', 'stagnationExtraStages',
   'medicalAllowanceAmount', 'medicalAllowanceMonth',
-  'bonusMonth', 'bonusResult', 'bonusProfitPercent', 'bonusProfitMaxAmount', 'bonusLossPercent', 'bonusLossMaxAmount',
-  'ccaAmount', 'conveyanceAmount', 'vehicleLoanAllowMultiple', 'vehicleLoanInterestRatePercent',
+  'bonusMonth', 'bonusResult',
+  'ccaAmount', 'conveyanceAmount', 'vehicleLoanAllowMultiple',
   'retirementAge', 'yearType',
 ];
 

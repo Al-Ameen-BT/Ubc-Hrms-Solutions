@@ -62,9 +62,10 @@ router.use('/allowance-types', require('./allowanceTypes'));
 const leaveRoutes = require('./leave');
 router.use('/leave-types', leaveRoutes.types);
 router.use('/leave-applications', leaveRoutes.applications);
+const serviceBook = require('./serviceBook');
+router.use('/employees', serviceBook);
 router.use('/employees', leaveRoutes.employeeLeave);
-
-router.use('/employees', require('./serviceBook'));
+router.use('/employees', serviceBook.employeeCrud);
 
 router.use('/organizations/:orgId/payroll-runs', require('./payroll'));
 router.use('/organizations/:orgId/year-end', require('./yearEnd'));

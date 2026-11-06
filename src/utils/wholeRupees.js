@@ -1,5 +1,7 @@
 'use strict';
 
+const { roundRupees } = require('./money');
+
 function isWholeNumberField(key, attribute) {
   // Leave balances use scale 1; half-day attendance and percentages retain precision.
   return attribute.type.key === 'DECIMAL' && attribute.type.options.scale === 2 && !/Percent$|Days$/.test(key) && key !== 'odMultiplier';
@@ -14,7 +16,7 @@ function normalizeValues(values, attributes, changed = () => true) {
       error.status = 400;
       throw error;
     }
-    values[key] = Math.ceil(number);
+    values[key] = roundRupees(number);
   }
 }
 function normalizeInstance(instance) {

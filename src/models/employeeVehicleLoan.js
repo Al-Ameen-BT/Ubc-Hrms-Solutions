@@ -21,6 +21,8 @@ const EmployeeVehicleLoan = sequelize.define('EmployeeVehicleLoan', {
   id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
   employeeId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'employee_id' },
   totalAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, field: 'total_amount' },
+  totalRepaymentAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: true, field: 'total_repayment_amount' },
+  monthlyPayment: { type: DataTypes.DECIMAL(12, 2), allowNull: true, field: 'monthly_payment' },
   vehicleType: { type: DataTypes.STRING(100), field: 'vehicle_type' },
   startDate: { type: DataTypes.DATEONLY, allowNull: false, field: 'start_date' },
   endDate: { type: DataTypes.DATEONLY, allowNull: false, field: 'end_date' },

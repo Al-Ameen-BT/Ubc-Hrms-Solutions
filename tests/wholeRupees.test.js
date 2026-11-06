@@ -4,24 +4,24 @@ process.env.DB_STORAGE = ':memory:';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { sequelize, OrgPayrollSetting, Organization, PayStage, EmployeeAttendance, Employee, PostCadre, PayRevision, PayScale } = require('../src/models');
-const { scheduleStatus } = require('../src/services/loans');
+const { scheduleStatus, housingLoanEmi } = require('../src/services/loans');
 const { computePayslip } = require('../src/services/payslip');
 const catalogue = require('../src/services/bankRuleCatalogue');
 let org, post, scale;
 before(async () => { await sequelize.sync(); org = await Organization.create({ code: 'ROUND', name: 'Rounding test', bankClass: 'CLASS_I' }); post = await PostCadre.create({ organizationId: org.id, code: 'T', name: 'Test post' }); const revision = await PayRevision.create({ organizationId: org.id, name: 'Test', effectiveDate: '2026-01-01' }); scale = await PayScale.create({ organizationId: org.id, payRevisionId: revision.id, code: 'T', name: 'Test', effectiveFrom: '2026-01-01' }); });
 after(async () => { await sequelize.close(); });
-test('new and changed money values round upward; percentages retain precision', async () => {
-  const settings = await OrgPayrollSetting.create({ organizationId: org.id, medicalAllowanceAmount: 4000.55, hraMaxAmount: 123.4, daPercent: 12.345, odMultiplier: 15.5 });
-  assert.equal(Number(settings.medicalAllowanceAmount), 4001);
-  assert.equal(Number(settings.hraMaxAmount), 124);
+test('new and changed money values round half up; percentages retain precision', async () => {
+  const settings = await OrgPayrollSetting.create({ organizationId: org.id, medicalAllowanceAmount: 140.5, hraMaxAmount: 140.4, daPercent: 12.345, odMultiplier: 15.5 });
+  assert.equal(Number(settings.medicalAllowanceAmount), 141);
+  assert.equal(Number(settings.hraMaxAmount), 140);
   assert.equal(Number(settings.daPercent), 12.345);
   assert.equal(Number(settings.odMultiplier), 15.5);
-  await OrgPayrollSetting.update({ medicalAllowanceAmount: 3000.6 }, { where: { id: settings.id } });
-  assert.equal(Number((await settings.reload()).medicalAllowanceAmount), 3001);
+  await OrgPayrollSetting.update({ medicalAllowanceAmount: 3000.4 }, { where: { id: settings.id } });
+  assert.equal(Number((await settings.reload()).medicalAllowanceAmount), 3000);
 });
 test('fractional attendance remains supported; historical money is not rewritten by unrelated edits', async () => {
   const employee = await Employee.create({ organizationId: org.id, empCode: 'T1', name: 'Test', postCadreId: post.id, doj: '2020-01-01', currentBasicPay: 123.1 });
-  assert.equal(Number(employee.currentBasicPay), 124);
+  assert.equal(Number(employee.currentBasicPay), 123);
   const attendance = await EmployeeAttendance.create({ employeeId: employee.id, year: 2026, month: 1, lopDays: 0.5 });
   assert.equal(Number(attendance.lopDays), 0.5);
   await sequelize.query('UPDATE employee SET current_basic_pay = 123.45 WHERE id = :id', { replacements: { id: employee.id } });
@@ -45,6 +45,10 @@ test('festival recovery uses whole instalments and an exact final balance', () =
   assert.equal(rows.reduce((s, r) => s + r.dueThisMonth, 0), 1000);
   assert.equal(scheduleStatus(record, new Date('2026-04-01')).balanceRemaining, 0);
 });
+
+test('loan EMI cannot round below the amount needed to repay principal', () => {
+  assert.equal(housingLoanEmi({ totalLoanAmount: 1000, interestRatePercent: 0, periodMonths: 3 }), 334);
+});
 test('custom allowance displayed rows sum to their total and gross earnings', () => {
   const settings = { daPercent: 0, hraPercent: 0, pfEmployeePercent: 0, pfEmployerPercent: 0, medicalAllowanceMonth: 12, bonusMonth: 12 };
   const payslip = computePayslip({ currentBasicPay: 10000, daType: 'VARIABLE', gsliOptIn: false }, settings, 1, {}, null, [{ id: 1, name: 'One', amount: 1.5 }, { id: 2, name: 'Two', amount: 1.5 }]);
@@ -52,15 +56,28 @@ test('custom allowance displayed rows sum to their total and gross earnings', ()
   assert.equal(payslip.earnings.grossEarnings, 10004);
 });
 
-test('upward rupee conversion preserves percentage precision before rounding', () => {
-  const { toPaise, toRupees, percentOf } = require('../src/utils/money');
-  assert.equal(toRupees(toPaise(100.01)), 101);
+test('rupee conversion rounds at fifty paise and preserves percentage precision', () => {
+  const { toPaise, toRupees, roundRupees, percentOf } = require('../src/utils/money');
+  assert.equal(roundRupees(140.4), 140);
+  assert.equal(roundRupees(140.5), 141);
+  assert.equal(roundRupees(-140.5), -141);
+  assert.equal(toRupees(toPaise(140.4)), 140);
+  assert.equal(toRupees(toPaise(140.5)), 141);
+  assert.equal(toRupees(toPaise(140.99)), 141);
   assert.equal(toRupees(percentOf(toPaise(10001), 12.345)), 1235);
   assert.equal(toRupees(toPaise(100)), 100);
-  assert.equal(toRupees(percentOf(toPaise(1), 0.1)), 1);
+  assert.equal(percentOf(toPaise(1), 0.1), 0);
+  assert.equal(toRupees(percentOf(toPaise(1), 0.1)), 0);
 });
 
-test('arrears instalments preserve the total after upward rounding', async () => {
+test('payslip rounds displayed earnings at fifty paise', () => {
+  const settings = { daPercent: 0, hraPercent: 0, pfEmployeePercent: 0, pfEmployerPercent: 0, medicalAllowanceMonth: 12, bonusMonth: 12 };
+  const payslip = computePayslip({ currentBasicPay: 140.4, daType: 'VARIABLE', gsliOptIn: false }, settings, 1, {});
+  assert.equal(payslip.earnings.basic, 140);
+  assert.equal(payslip.earnings.grossEarnings, 140);
+});
+
+test('arrears instalments preserve the total with an exact final remainder', async () => {
   const { DaRevision, ArrearsCase, ArrearsInstallment } = require('../src/models');
   const { setInstallments } = require('../src/services/arrears');
   const employee = await Employee.findOne();

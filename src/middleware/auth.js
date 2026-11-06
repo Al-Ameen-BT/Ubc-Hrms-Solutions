@@ -35,7 +35,7 @@ async function authenticate(req, res, next) {
         return res.status(403).json({ status: 'error', code: access.code, message: access.message });
       }
     }
-    req.user = { id: user.id, role: user.role, organizationId: user.organizationId, email: user.email, name: user.name };
+    req.user = { id: user.id, role: user.role, organizationId: user.organizationId, employeeId: user.employeeId, email: user.email, name: user.name };
     next();
   } catch (err) {
     return res.status(401).json({ status: 'error', message: 'Invalid or expired token' });

@@ -32,6 +32,7 @@ const { toCsv } = require('../services/csv');
 const engine = require('../services/payrollEngine');
 const { buildPayslipPdf } = require('../services/payslipPdf');
 const { sendPayslipForLine } = require('../services/payslipEmail');
+const { roundRupees } = require('../utils/money');
 
 const router = express.Router({ mergeParams: true });
 
@@ -235,8 +236,8 @@ const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
 
 function fmtAmount(v) {
   if (v === null || v === undefined || v === '') return '0';
-  const num = Math.ceil(Number(v));
-  return isNaN(num) ? '0' : String(num);
+  const num = roundRupees(v);
+  return String(num);
 }
 
 const REGISTER_COLUMNS = [

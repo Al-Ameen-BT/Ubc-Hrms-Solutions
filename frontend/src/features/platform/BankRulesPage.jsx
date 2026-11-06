@@ -12,7 +12,7 @@ import './BankRulesPage.css';
 
 const emptyDraft = (bankClass) => ({ name: '', bankClass, orderNumber: '', issuingAuthority: '', orderDate: '', effectiveDate: '', sourceUrl: '', notes: '', posts: [], rules: [], payrollDefaults: {}, supersedesId: null });
 const statusVariant = (status) => status === 'PUBLISHED' ? 'success' : status === 'DRAFT' ? 'warning' : 'default';
-const fieldLabel = (key) => key === 'odMultiplier' ? 'OD eligibility (% of Basic + DA)' : key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).replace(/\b(Da|Hra|Pf|Gsli|Pt|Od|Cca)\b/g, s => s.toUpperCase());
+const fieldLabel = (key) => key === 'odMultiplier' ? 'OD eligibility (% of Basic + DA)' : /^bonus(Profit|Loss)MaxAmount$/.test(key) ? 'Legacy bonus cap (unused)' : key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).replace(/\b(Da|Hra|Pf|Gsli|Pt|Od|Cca)\b/g, s => s.toUpperCase());
 
 function SelectField({ id, label, children, ...props }) {
   return <div className="field"><label className="field-label" htmlFor={id}>{label}</label><select id={id} className="input" {...props}>{children}</select></div>;
@@ -152,7 +152,7 @@ function CatalogueEditor({ initial, metadata }) {
       </Card>}
       {tab === 'payroll' && <Card title="Class-wise payroll setup">
         <p className="form-note">Declare the rates and settings covered by this order. Unspecified settings remain bank-managed. Publication stores this template without changing a bank’s active payroll settings. Recoverable advances, earnings and pay progression are separate settings; new salary payments are managed under Allowances.</p>
-        {editable && <div className="bank-payroll-add"><SelectField id="add-payroll-setting" label="Add a payroll setting" value={settingKey} disabled={busy} onChange={e => setSettingKey(e.target.value)}><option value="">Choose a setting…</option>{[...new Set(metadata.payrollFields.map(f => f.category))].map(category => <optgroup label={category} key={category}>{metadata.payrollFields.filter(f => f.category === category && !Object.hasOwn(form.payrollDefaults, f.key)).map(f => <option key={f.key} value={f.key}>{fieldLabel(f.key)}</option>)}</optgroup>)}</SelectField><Button variant="secondary" disabled={!settingKey || busy} onClick={() => {
+        {editable && <div className="bank-payroll-add"><SelectField id="add-payroll-setting" label="Add a payroll setting" value={settingKey} disabled={busy} onChange={e => setSettingKey(e.target.value)}><option value="">Choose a setting…</option>{[...new Set(metadata.payrollFields.map(f => f.category))].map(category => <optgroup label={category} key={category}>{metadata.payrollFields.filter(f => f.category === category && !/^bonus(Profit|Loss)MaxAmount$/.test(f.key) && !Object.hasOwn(form.payrollDefaults, f.key)).map(f => <option key={f.key} value={f.key}>{fieldLabel(f.key)}</option>)}</optgroup>)}</SelectField><Button variant="secondary" disabled={!settingKey || busy} onClick={() => {
           const f = metadata.payrollFields.find(item => item.key === settingKey);
           setPayroll(settingKey, f.type === 'BOOLEAN' ? false : f.type === 'ENUM' ? f.options[0] : ''); setSettingKey('');
         }}>Add setting</Button></div>}

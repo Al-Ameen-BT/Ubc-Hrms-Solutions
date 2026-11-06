@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { version } from '../../../package.json';
 
 /* Navigation is grouped by section. `roles` gates an item the same way the
    backend route does — see AuthContext.can(). */
@@ -185,6 +186,7 @@ export function Sidebar({ collapsed }) {
 
       {!collapsed && (
         <div className="sidebar-footer">
+          <span className="app-version">Version {version}</span>
           <span className="sidebar-footer-powered">Powered By</span>
           <img src="/banihal-logo.png" alt="Banihal Technologies" className="sidebar-footer-logo" />
         </div>
