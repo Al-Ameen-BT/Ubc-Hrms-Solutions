@@ -5,9 +5,8 @@ import { useAuth } from '../auth/AuthContext';
 
 const SCREENS = [
   { label: 'Overview', to: '/' },
-  { label: 'Employees', to: '/employees' },
+  { label: 'People', to: '/people' },
   { label: 'Payroll', to: '/payroll' },
-  { label: 'Users', to: '/users' },
   { label: 'Organisations', to: '/organisations' },
   { label: 'Government Orders', to: '/government-orders' },
   { label: 'KSR Rules', to: '/ksr-rules' },
@@ -59,7 +58,7 @@ export function CommandPalette() {
       .then((data) => {
         if (cancelled) return;
         const people = (data.rows || []).map((e) => ({
-          group: 'Employees', label: `${e.name} · ${e.code}`, action: () => navigate(`/employees/${e.id}`),
+          group: 'People', label: `${e.name} · ${e.code}`, action: () => navigate(`/employees/${e.id}`),
         }));
         setResults([...screenHits, ...people]);
       })

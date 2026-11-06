@@ -11,6 +11,7 @@ const SECTIONS = [
   ['/platform-users', 'Platform'],
   ['/platform-settings', 'Platform'],
   ['/employees', 'Establishment'],
+  ['/people', 'Establishment'],
   ['/posts', 'Establishment'],
   ['/pay-scales', 'Pay Structure'],
   ['/payroll', 'Payroll Cycle'],

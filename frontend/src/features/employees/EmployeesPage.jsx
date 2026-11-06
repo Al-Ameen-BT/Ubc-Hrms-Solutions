@@ -7,7 +7,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { useNavigate } from 'react-router-dom';
 
-export function EmployeesPage() {
+export function EmployeesPage({ embedded = false }) {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
 
@@ -43,11 +43,11 @@ export function EmployeesPage() {
   ];
 
   return (
-    <div className="page">
-      <header className="page-header">
+    <div className={embedded ? 'people-view' : 'page'}>
+      {!embedded && <header className="page-header">
         <h1>Employees</h1>
         <p>Manage employee records and service books</p>
-      </header>
+      </header>}
 
       <Card noPadding>
         <div className="table-toolbar">

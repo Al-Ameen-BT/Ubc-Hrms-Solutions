@@ -25,8 +25,7 @@ const NAV = {
     {
       label: 'Establishment',
       items: [
-        { to: '/users', label: 'Users', icon: 'users', roles: ['ORG_ADMIN', 'HR_ADMIN'] },
-        { to: '/employees', label: 'Employees', icon: 'employees' },
+        { to: '/people', label: 'People', icon: 'employees' },
         { to: '/posts', label: 'Posts & Cadres', icon: 'posts', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
         { to: '/pay-scales', label: 'Pay Scales', icon: 'scales', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
         { to: '/pay-revisions', label: 'Pay Revisions', icon: 'scales', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
@@ -149,7 +148,7 @@ export function Sidebar({ collapsed }) {
                   key={item.to}
                   to={item.to}
                   end={item.to === '/'}
-                  className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+                  className={({ isActive }) => `sidebar-item ${isActive || (item.to === '/people' && location.pathname.startsWith('/employees/')) ? 'active' : ''}`}
                   title={collapsed ? item.label : undefined}
                 >
                   <span className="sidebar-item-icon">

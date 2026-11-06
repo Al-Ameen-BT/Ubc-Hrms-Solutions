@@ -149,8 +149,8 @@ export function EmployeeDetailPage() {
     <div className="page">
       <div className="employee-header-section">
         <div className="employee-breadcrumbs">
-          <button type="button" className="employee-breadcrumb-btn" onClick={() => navigate('/employees')}>
-            ← Employees
+          <button type="button" className="employee-breadcrumb-btn" onClick={() => navigate('/people')}>
+            ← People
           </button>
           <span className="employee-breadcrumb-sep">/</span>
           <span>{employee.name}</span>
@@ -188,7 +188,7 @@ export function EmployeeDetailPage() {
           <div className="employee-profile-actions">
             <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>
             {employee.directPay ? <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(employee.currentBasicPay || ''), reason: '' }); setError(''); setSalaryModalOpen(true); }}>Edit Salary</Button> : <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>}
-            <Button variant="secondary" onClick={() => navigate('/employees')}>Back</Button>
+            <Button variant="secondary" onClick={() => navigate('/people')}>Back</Button>
           </div>
         </div>
       </div>

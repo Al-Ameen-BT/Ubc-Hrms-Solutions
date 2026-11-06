@@ -13,7 +13,7 @@ import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 
 const ROLES = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'EMPLOYEE'];
 
-export function UsersPage() {
+export function UsersPage({ embedded = false }) {
   const { user } = useAuth();
   const orgId = user?.organizationId;
   const queryClient = useQueryClient();
@@ -95,11 +95,11 @@ export function UsersPage() {
   ];
 
   return (
-    <div className="page">
-      <header className="page-header">
+    <div className={embedded ? 'people-view' : 'page'}>
+      {!embedded && <header className="page-header">
         <h1>Users</h1>
         <p>Manage bank users and their access</p>
-      </header>
+      </header>}
 
       <Card noPadding>
         <div className="table-toolbar">

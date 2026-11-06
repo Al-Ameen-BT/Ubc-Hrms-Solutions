@@ -79,7 +79,7 @@ export function BulkImportPage() {
             <p>Create many employees at once from a CSV. Posts and pay scales are referenced by their codes.</p>
           </div>
           <div className="page-header-actions">
-            <Button variant="secondary" onClick={() => navigate('/employees')}>Back</Button>
+            <Button variant="secondary" onClick={() => navigate('/people')}>Back</Button>
           </div>
         </div>
       </header>

@@ -47,7 +47,7 @@ function AlertIcon() {
 }
 
 /** Map API failures to messages that are useful without exposing account facts. */
-function describeLoginError(err) {
+function describeLoginError(err, isOrg) {
   const code = err?.body?.code;
   const status = err?.status;
 
@@ -88,18 +88,18 @@ function describeLoginError(err) {
   if (status === 401 || status === 400) {
     return {
       title: 'We couldn’t sign you in',
-      body: 'Check your work email and password, then try again. If you still can’t get in, ask your HR administrator.',
+      body: `Check your work email and password, then try again. If you still can’t get in, ask your ${isOrg ? 'HR' : 'platform'} administrator.`,
     };
   }
   if (status >= 500) {
     return {
       title: 'Something went wrong',
-      body: 'Please try again in a moment. If it keeps happening, contact your HR administrator.',
+      body: `Please try again in a moment. If it keeps happening, contact your ${isOrg ? 'HR' : 'platform'} administrator.`,
     };
   }
   return {
     title: 'We couldn’t sign you in',
-    body: 'Please try again. If this keeps happening, contact your HR administrator.',
+    body: `Please try again. If this keeps happening, contact your ${isOrg ? 'HR' : 'platform'} administrator.`,
   };
 }
 
@@ -139,7 +139,7 @@ export function LoginPage() {
     const next = {};
     if (!trimmedEmail) next.email = 'Enter your work email.';
     else if (!EMAIL_RE.test(trimmedEmail)) {
-      next.email = 'Enter a valid work email, like name@bank.in.';
+      next.email = 'Enter a valid work email address.';
     }
     if (!password) next.password = 'Enter your password.';
 
@@ -160,7 +160,7 @@ export function LoginPage() {
         navigate('/');
       }
     } catch (err) {
-      setFormError(describeLoginError(err));
+      setFormError(describeLoginError(err, Boolean(orgCode)));
     } finally {
       setLoading(false);
     }
@@ -209,7 +209,7 @@ export function LoginPage() {
             className={`login-input ${fieldErrors.email ? 'is-invalid' : ''}`}
             value={email}
             onChange={(e) => updateEmail(e.target.value)}
-            placeholder="name@bank.in"
+            placeholder={orgCode ? 'name@bank.in' : 'you@company.com'}
             autoComplete="username"
             autoCapitalize="none"
             inputMode="email"

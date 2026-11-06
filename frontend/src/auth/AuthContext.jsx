@@ -7,16 +7,11 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [branding, setBranding] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [orgCode, setOrgCode] = useState(null);
-  const [flash, setFlash] = useState(null);
-
-  /* Detect org code from path: /o/:code */
-  useEffect(() => {
+  const [orgCode, setOrgCode] = useState(() => {
     const match = window.location.pathname.match(/^\/o\/([^/]+)/);
-    if (match) {
-      setOrgCode(decodeURIComponent(match[1]));
-    }
-  }, []);
+    return match ? decodeURIComponent(match[1]) : null;
+  });
+  const [flash, setFlash] = useState(null);
 
   /* Load branding based on entry point */
   useEffect(() => {

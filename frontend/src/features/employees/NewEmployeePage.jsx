@@ -51,7 +51,7 @@ export function NewEmployeePage() {
     mutationFn: (payload) => masterDataApi.createEmployee({ ...payload, organizationId: user?.organizationId }),
     onSuccess: () => {
       toast.add('Employee created.', 'success');
-      navigate('/employees');
+      navigate('/people');
     },
     onError: (err) => setError(err.message || 'Could not create employee.'),
   });
@@ -205,7 +205,7 @@ export function NewEmployeePage() {
         )}
 
         <div className="card-actions stepper-actions">
-          <Button variant="secondary" onClick={() => navigate('/employees')}>Cancel</Button>
+          <Button variant="secondary" onClick={() => navigate('/people')}>Cancel</Button>
           {step > 0 && <Button variant="secondary" onClick={back}>Back</Button>}
           {step < STEPS.length - 1 ? (
             <Button onClick={next} disabled={!canAdvance()}>Next</Button>

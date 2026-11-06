@@ -17,14 +17,13 @@ import { PlatformUsersPage } from './features/platform/PlatformUsersPage';
 import { PlatformSettingsPage } from './features/platform/PlatformSettingsPage';
 import { BankRulesPage } from './features/platform/BankRulesPage';
 import { OrgDashboard } from './features/org/OrgDashboard';
-import { EmployeesPage } from './features/employees/EmployeesPage';
 import { BulkImportPage } from './features/employees/BulkImportPage';
 import { NewEmployeePage } from './features/employees/NewEmployeePage';
 import { EmployeeDetailPage } from './features/employees/EmployeeDetailPage';
 import { PayrollPage } from './features/payroll/PayrollPage';
 import { NewPayrollRunPage } from './features/payroll/NewPayrollRunPage';
 import { PayrollRunPage } from './features/payroll/PayrollRunPage';
-import { UsersPage } from './features/org/UsersPage';
+import { PeoplePage } from './features/people/PeoplePage';
 import { OrganisationsPage } from './features/org/OrganisationsPage';
 import { NewOrganisationPage } from './features/org/NewOrganisationPage';
 import { OrganisationDetailPage } from './features/org/OrganisationDetailPage';
@@ -90,11 +89,12 @@ function AppRoutes() {
         <Route path="bank-rules" element={user?.role === 'SUPER_ADMIN' ? <BankRulesPage /> : <Navigate to="/" replace />} />
         <Route path="bank-rules/:id" element={user?.role === 'SUPER_ADMIN' ? <BankRulesPage /> : <Navigate to="/" replace />} />
 
-        <Route path="employees" element={<EmployeesPage />} />
+        <Route path="people" element={<PeoplePage />} />
+        <Route path="employees" element={<Navigate to="/people" replace />} />
         <Route path="employees/new" element={<NewEmployeePage />} />
         <Route path="employees/import" element={<BulkImportPage />} />
         <Route path="employees/:id" element={<EmployeeDetailPage />} />
-        <Route path="users" element={<UsersPage />} />
+        <Route path="users" element={<Navigate to="/people?view=access" replace />} />
         <Route path="payroll" element={<PayrollPage />} />
         <Route path="payroll/new" element={<NewPayrollRunPage />} />
         <Route path="payroll/:id" element={<PayrollRunPage />} />
