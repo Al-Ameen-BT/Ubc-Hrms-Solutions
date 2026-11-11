@@ -13,7 +13,7 @@
  */
 
 const express = require('express');
-const { User, Organization } = require('../models');
+const { sequelize, User, Organization } = require('../models');
 const { authenticate, requireRole } = require('../middleware/auth');
 const users = require('../services/userAdmin');
 
@@ -75,13 +75,14 @@ router.post('/', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-// PUT /:userId — name / role / status (not email, not password)
+// PUT /:userId — name / role / status / employee link (not email, not password)
 router.put('/:userId', async (req, res) => {
   try {
     const user = await loadUserInOrgOr404(req, res);
     if (!user) return;
-    const { name, role, status } = req.body || {};
+    const { name, role, status, employeeId } = req.body || {};
     const isSelf = user.id === req.user.id;
+    const accessChanged = (employeeId !== undefined && String(employeeId || '') !== String(user.employeeId || '')) || (role !== undefined && role !== user.role);
     if (role !== undefined && role !== user.role) {
       if (!MANAGEABLE_ROLES.includes(role)) {
         return res.status(400).json({ status: 'error', message: `role must be one of: ${MANAGEABLE_ROLES.join(', ')}` });
@@ -93,12 +94,26 @@ router.put('/:userId', async (req, res) => {
     }
     if (status !== undefined) await users.setStatus(req, user, status);
     let changed = false;
+    if (employeeId !== undefined && String(employeeId || '') !== String(user.employeeId || '')) {
+      if (employeeId) {
+        await users.withEmployeeLink(user.organizationId, employeeId, user.id, async transaction => {
+          user.employeeId = employeeId;
+          await user.save({ transaction });
+        });
+      } else {
+        user.employeeId = null;
+      }
+      changed = true;
+    }
     if (name !== undefined && String(name).trim()) { user.name = String(name).trim(); changed = true; }
     if (role !== undefined && role !== user.role) { user.role = role; changed = true; }
     if (changed) {
-      await user.save();
+      await sequelize.transaction(async transaction => {
+        await user.save({ transaction });
+        if (accessChanged) await users.revokeEmployeeDevices(user.id, transaction);
+      });
       await require('../services/audit').audit(req, 'user.update', {
-        organizationId: user.organizationId, targetType: 'user', targetId: user.id, details: { name: user.name, role: user.role },
+        organizationId: user.organizationId, targetType: 'user', targetId: user.id, details: { name: user.name, role: user.role, employeeId: user.employeeId },
       });
     }
     res.json({ data: publicUser(user) });

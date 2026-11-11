@@ -195,6 +195,8 @@ router.post('/:id/approve', async (req, res) => {
   if (!APPROVERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot approve payroll.' });
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
+    const monthEnd = new Date(Date.UTC(run.year, run.month, 0)).toISOString().slice(0, 10);
+    if (await require('../services/catalogueAdoption').adoptionForDate(run.organizationId, monthEnd) && req.user.role !== 'APPROVING_AUTHORITY') return res.status(403).json({ status: 'error', message: 'An Approving Authority must sign off this bank payroll.' });
     await engine.approveRun(run, req.user.id);
     await audit(req, 'payroll.run.approved', { organizationId: run.organizationId, targetType: 'payroll_run', targetId: run.id, details: { year: run.year, month: run.month } });
     res.json({ data: run });

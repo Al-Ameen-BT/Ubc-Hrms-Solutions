@@ -3,8 +3,7 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/sequelize');
 
 /**
- * A leave application — filed by HR on the employee's behalf (this product
- * has no employee self-service login), decided by an approver. See
+ * A leave application — filed by HR or the employee, decided by an approver. See
  * services/leave.js. `days` is the inclusive calendar-day span
  * (toDate - fromDate + 1); half-day/working-day-only granularity is not
  * modelled in this first slice.

@@ -47,6 +47,8 @@ const COLUMN_STEPS = [
   ['organization', 'website', { type: DataTypes.STRING(255), allowNull: true }],
   // Slice: bank class + pay scale library, part-time contingent employment type
   ['organization', 'bank_class', { type: DataTypes.ENUM('SPECIAL_GRADE', 'CLASS_I', 'CLASS_II', 'CLASS_III', 'CLASS_IV', 'CLASS_V'), allowNull: true }],
+  ['organization', 'requires_catalogue_adoption', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
+  ['payroll_run', 'input_fingerprint', { type: DataTypes.STRING(64), allowNull: true }],
   ['employee', 'employment_type', { type: DataTypes.ENUM('REGULAR', 'PART_TIME_CONTINGENT'), allowNull: false, defaultValue: 'REGULAR' }],
   ['employee', 'direct_pay', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
   // Slice: payroll salary structure & deductions (Phase 1). Note:

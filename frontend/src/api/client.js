@@ -55,7 +55,7 @@ async function request(method, path, body, { raw = false } = {}) {
   // the user. Mirrors the incumbent's isAuthCall check (core.js:147).
   const isAuthCall = /^\/auth\/(login|mfa\/verify-login|forgot-password|reset-password|change-password|mfa\/disable)/.test(path);
 
-  if (res.status === 401 && !isAuthCall) {
+  if (res.status === 401 && !isAuthCall && data?.code !== 'INVALID_CURRENT_PASSWORD') {
     const msg = 'Your session has ended. Please sign in again.';
     forceLogout(msg, 'warn');
     throw new ApiError(msg, 401, data);
@@ -201,6 +201,8 @@ export const platformApi = {
   updatePlatformUser: (id, data) => api.put(`/admin/platform-users/${id}`, data),
   settings: () => api.get('/admin/settings'),
   updateSettings: (data) => api.put('/admin/settings', data),
+  uploadBrandAsset: (kind, dataUrl) => api.put(`/admin/settings/${kind}`, { dataUrl }),
+  deleteBrandAsset: (kind) => api.delete(`/admin/settings/${kind}`),
   smtp: () => api.get('/admin/settings/smtp'),
   updateSmtp: (data) => api.put('/admin/settings/smtp', data),
   uploadPlatformLogo: (type, formData) => {
@@ -226,6 +228,8 @@ export const orgApi = {
   updatePayrollSettings: (data) => api.put('/org/settings/payroll', data),
   uploadLogo: (dataUrl) => api.put('/org/settings/logo', { dataUrl }),
   deleteLogo: () => api.delete('/org/settings/logo'),
+  uploadFavicon: (dataUrl) => api.put('/org/settings/favicon', { dataUrl }),
+  deleteFavicon: () => api.delete('/org/settings/favicon'),
   testSmtp: (data) => api.post('/org/settings/smtp/test', data),
   audit: (params) => api.getRaw(`/org/audit?${new URLSearchParams(params)}`),
 

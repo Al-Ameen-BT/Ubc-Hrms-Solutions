@@ -7,7 +7,7 @@ import { UsersPage } from '../org/UsersPage';
 export function PeoplePage() {
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
-  const canManageAccess = can('ORG_ADMIN', 'HR_ADMIN');
+  const canManageAccess = can('ORG_ADMIN');
   const view = canManageAccess && params.get('view') === 'access' ? 'access' : 'staff';
 
   return (

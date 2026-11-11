@@ -29,6 +29,8 @@ const {
 const documents = require('../services/documents');
 const attachments = require('../services/attachments');
 const attendance = require('../services/attendance');
+const compensation = require('../services/compensationResolver');
+const { todayIST } = require('../services/orgAccess');
 
 const router = express.Router();
 const HR_RECORDERS = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
@@ -171,6 +173,7 @@ router.post('/bulk-import', authenticate, async (req, res) => {
       PostCadre.findAll({ where: { organizationId } }),
       PayScale.findAll({ where: { organizationId } }),
     ]);
+    const importingOrg = await Organization.findByPk(organizationId);
     const postByCode = {}; posts.forEach((p) => { postByCode[p.code] = p; });
     const scaleByCode = {}; scales.forEach((s) => { scaleByCode[s.code] = s; });
 
@@ -190,6 +193,7 @@ router.post('/bulk-import', authenticate, async (req, res) => {
       if (!r.postCode) rowErrors.push('postCode is required'); else if (!post) rowErrors.push(`postCode "${r.postCode}" not found in this organisation`);
       let scale = null;
       if (r.payScaleCode) { scale = scaleByCode[r.payScaleCode]; if (!scale) rowErrors.push(`payScaleCode "${r.payScaleCode}" not found in this organisation`); }
+      if (importingOrg?.requiresCatalogueAdoption && [r.payScaleCode, r.currentBasicPay, r.riskAllowance, r.otherAllowance, r.vpfPercent, r.welfareFundAmount, r.welfareFundOptIn, r.gsliOptIn, r.gsliAmount, r.ptAmount, r.taxOtherDeductions, r.taxRegime === 'OLD' ? r.taxRegime : ''].some(Boolean)) rowErrors.push('Salary and payroll inputs require separate approval in a catalogue bank');
       const welfareFundOptIn = r.welfareFundOptIn ? parseBoolCell(r.welfareFundOptIn, 'welfareFundOptIn', rowErrors) : false;
 
       if (rowErrors.length) { results.push({ row: rowNo, empCode: r.empCode, status: 'error', message: rowErrors.join('; ') }); continue; }
@@ -262,22 +266,31 @@ const employeeCrud = crudRouter(Employee, {
     },
     beforeCreate: async (req, payload) => {
       if (payload.directPay !== undefined && typeof payload.directPay !== 'boolean') throw Object.assign(new Error('directPay must be true or false.'), { status: 400 });
+      const org = await Organization.findByPk(payload.organizationId);
+      if (org?.requiresCatalogueAdoption) {
+        const disallowed = ['currentPayScaleId', 'currentStageId', 'currentBasicPay', 'riskAllowance', 'otherAllowance', 'vpfPercent', 'welfareFundAmount', 'gsliAmount', 'ptAmount', 'taxOtherDeductions', 'fixedDaAmount', 'fixedHraAmount', 'ccaAmount', 'conveyanceAmount'];
+        if (disallowed.some(key => payload[key] !== undefined && payload[key] !== null && payload[key] !== '') || payload.welfareFundOptIn === true || payload.gsliOptIn != null || payload.taxRegime === 'OLD' || payload.daType === 'FIXED' || payload.daType === 'BOTH' || payload.hraType === 'FIXED' || payload.ccaOptIn === true || payload.conveyanceOptIn === true) throw Object.assign(new Error('Create the employee without pay, then propose a salary assignment for separate approval.'), { status: 409 });
+      }
       if (payload.directPay) {
         if (payload.currentPayScaleId || payload.currentStageId) throw Object.assign(new Error('Direct-pay staff cannot be assigned a government pay scale or stage.'), { status: 400 });
-        if (!(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
+        if (!org?.requiresCatalogueAdoption && !(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
       }
       if (payload.status !== 'INACTIVE') await assertCanAddEmployee(payload.organizationId);
-      const org = await Organization.findByPk(payload.organizationId);
       orgFields.validateEmployeeMandatoryFields(org, payload);
     },
     beforeUpdate: async (req, row, payload) => {
+      const monetaryFields = ['currentPayScaleId', 'currentStageId', 'currentBasicPay', 'incrementPolicyId', 'payFixationPolicyId', 'riskAllowance', 'otherAllowance', 'vpfPercent', 'welfareFundOptIn', 'welfareFundAmount', 'gsliOptIn', 'gsliAmount', 'ptAmount', 'taxRegime', 'taxOtherDeductions', 'stagnationStagesGranted', 'daType', 'fixedDaAmount', 'hraType', 'fixedHraAmount', 'ccaOptIn', 'ccaAmount', 'conveyanceOptIn', 'conveyanceAmount'];
+      const org = await Organization.findByPk(row.organizationId);
+      if (monetaryFields.some(key => Object.hasOwn(payload, key) && String(payload[key] ?? '') !== String(row[key] ?? '')) &&
+          (org?.requiresCatalogueAdoption || await require('../models').EmployeeCompensationAssignment.count({ where: { employeeId: row.id, status: 'APPROVED' } }))) {
+        throw Object.assign(new Error('Salary and allowance changes for catalogue-linked staff require financial approval.'), { status: 409 });
+      }
       if (payload.directPay !== undefined && typeof payload.directPay !== 'boolean') throw Object.assign(new Error('directPay must be true or false.'), { status: 400 });
       if (payload.directPay !== undefined && payload.directPay !== row.directPay) throw Object.assign(new Error('Payroll type cannot be changed after creation.'), { status: 400 });
       if (row.directPay && (payload.currentPayScaleId || payload.currentStageId)) throw Object.assign(new Error('Direct-pay staff cannot be assigned a government pay scale or stage.'), { status: 400 });
       if (row.directPay && payload.currentBasicPay !== undefined && !(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
       if (row.directPay && payload.currentBasicPay !== undefined && Number(payload.currentBasicPay) !== Number(row.currentBasicPay)) throw Object.assign(new Error('Use the direct-pay salary change action to record the Service Book entry.'), { status: 400 });
       if (payload.status === 'ACTIVE' && row.status !== 'ACTIVE') await assertCanAddEmployee(row.organizationId);
-      const org = await Organization.findByPk(row.organizationId);
       const effective = Object.assign({}, row.toJSON(), payload);
       orgFields.validateEmployeeMandatoryFields(org, effective);
     },
@@ -286,6 +299,11 @@ const employeeCrud = crudRouter(Employee, {
 router.put('/:id/direct-pay-salary', authenticate, async (req, res) => {
   if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can set direct-pay salary.' });
   try {
+    const bank = await Organization.findByPk(req.user.organizationId);
+    if (bank?.requiresCatalogueAdoption) return res.status(409).json({ status: 'error', message: 'Propose a direct-pay salary assignment for separate approval.' });
+    if (await require('../models').EmployeeCompensationAssignment.count({ where: { employeeId: req.params.id, organizationId: req.user.organizationId, status: 'APPROVED' } })) {
+      return res.status(409).json({ status: 'error', message: 'Propose a direct-pay salary assignment for separate approval.' });
+    }
     const inputAmount = Number(req.body?.amount);
     const amount = require('../utils/money').roundRupees(inputAmount);
     const reason = String(req.body?.reason || '').trim();
@@ -367,6 +385,7 @@ router.get('/:id/service-book', authenticate, async (req, res) => {
     const orgSettings = await require('../services/payrollSettings').getSettings(employee.organizationId);
     const retirementDateObj = loans.retirementDate(employee, orgSettings);
     const effectiveRetirementDate = retirementDateObj ? retirementDateObj.toISOString().slice(0, 10) : null;
+    const effectiveCompensation = await compensation.resolveCompensation(employee, todayIST());
 
     res.json({
       data: {
@@ -375,6 +394,7 @@ router.get('/:id/service-book', authenticate, async (req, res) => {
         timelineCount: timeline.length,
         payslips,
         effectiveRetirementDate,
+        effectiveCompensation,
       },
     });
   } catch (err) {
@@ -487,15 +507,23 @@ router.get('/:id/payslip', authenticate, async (req, res) => {
     }
     const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
     const month = req.query.month ? Number(req.query.month) : undefined;
-    const asOf = loans.asOfForMonth(month);
     const resolvedMonth = month || (new Date().getMonth() + 1);
     const resolvedYear = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    const asOf = loans.asOfForMonth(resolvedMonth, resolvedYear);
     const [activeLoans, attendanceRow, customAllowances] = await Promise.all([
       loans.loadActiveLoans(employee.id, asOf),
       attendance.getForMonth(employee.id, month),
       require('../services/allowances').applicableAllowancesFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
     ]);
-    const payslip = require('../services/payslip').computePayslip(employee, settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances);
+    const segments = await require('../services/compensationResolver').segmentsForMonth(employee, resolvedYear, resolvedMonth);
+    const currentSegment = segments.at(-1);
+    if (currentSegment?.source === 'CATALOGUE') {
+      const post = await PostCadre.findOne({ where: { organizationId: employee.organizationId, code: currentSegment.postCode } });
+      if (post) customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+    }
+    const catalogueSegments = segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? segments : null;
+    const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
+    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear);
     res.json({ data: payslip });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });
@@ -520,15 +548,23 @@ router.get('/:id/payslip.pdf', authenticate, async (req, res) => {
     }
     const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
     const month = req.query.month ? Number(req.query.month) : undefined;
-    const asOf = loans.asOfForMonth(month);
     const resolvedMonth = month || (new Date().getMonth() + 1);
     const resolvedYear = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    const asOf = loans.asOfForMonth(resolvedMonth, resolvedYear);
     const [activeLoans, attendanceRow, customAllowances] = await Promise.all([
       loans.loadActiveLoans(employee.id, asOf),
       attendance.getForMonth(employee.id, month),
       require('../services/allowances').applicableAllowancesFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
     ]);
-    const payslip = require('../services/payslip').computePayslip(employee, settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances);
+    const segments = await require('../services/compensationResolver').segmentsForMonth(employee, resolvedYear, resolvedMonth);
+    const currentSegment = segments.at(-1);
+    if (currentSegment?.source === 'CATALOGUE') {
+      const post = await PostCadre.findOne({ where: { organizationId: employee.organizationId, code: currentSegment.postCode } });
+      if (post) customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+    }
+    const catalogueSegments = segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? segments : null;
+    const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
+    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear);
     const org = await Organization.findByPk(employee.organizationId, { attributes: ['id', 'name', 'shortName'] });
     const { buildPayslipPdf } = require('../services/payslipPdf');
     const pdf = await buildPayslipPdf({
@@ -717,8 +753,10 @@ router.post('/:id/festival-advances', authenticate, async (req, res) => {
     if (existing.some((r) => !loans.scheduleStatus(r, today).fullyRepaid)) {
       return res.status(400).json({ status: 'error', message: 'This employee already has an unrepaid Festival Advance. A new one is only allowed once the current one is fully repaid.' });
     }
-    const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
-    const basic = Number(employee.currentBasicPay) || 0;
+    const bankSettings = await require('../services/payrollSettings').getSettings(employee.organizationId);
+    const salary = await compensation.resolveCompensation(employee, b.availedDate || todayIST());
+    const settings = await compensation.effectiveSettingsForDate(employee, b.availedDate || todayIST(), bankSettings, salary);
+    const basic = salary.basicPay;
     const da = loans.round2(basic * (Number(settings.daPercent) || 0) / 100);
     const maxAmount = loans.round2(basic + da);
     const amount = Number(b.amount);
@@ -762,11 +800,13 @@ router.get('/:id/overdrafts', authenticate, async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeOverdraft.findAll({ where: { employeeId: employee.id }, order: [['availedDate', 'DESC']] });
-    const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
+    const bankSettings = await require('../services/payrollSettings').getSettings(employee.organizationId);
+    const salary = await compensation.resolveCompensation(employee, todayIST());
+    const settings = await compensation.effectiveSettingsForDate(employee, todayIST(), bankSettings, salary);
     const today = new Date();
     res.json({
       data: rows.map((r) => ({ ...r.toJSON(), ...loans.scheduleStatus(r, today) })),
-      eligibility: loans.overdraftEligibility(employee, settings),
+      eligibility: loans.overdraftEligibility({ ...employee.toJSON(), currentBasicPay: salary.basicPay }, settings),
       maxRepayMonths: loans.overdraftMaxRepayMonths(employee, settings, today),
       retirementDate: loans.retirementDate(employee, settings),
     });

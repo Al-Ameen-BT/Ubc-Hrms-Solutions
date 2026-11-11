@@ -52,6 +52,17 @@ const EmployeeLeaveBalance = require('./employeeLeaveBalance');
 const LeaveApplication = require('./leaveApplication');
 const EmployeeBankAccount = require('./employeeBankAccount');
 const BankRuleCatalogue = require('./bankRuleCatalogue');
+const OrganizationCatalogueAdoption = require('./organizationCatalogueAdoption');
+const EmployeeCompensationAssignment = require('./employeeCompensationAssignment');
+const EmployeePolicy = require('./employeePolicy');
+const EmployeePolicyAcknowledgement = require('./employeePolicyAcknowledgement');
+const OrganizationHoliday = require('./organizationHoliday');
+const EmployeeTimeEntry = require('./employeeTimeEntry');
+const ExpenseClaim = require('./expenseClaim');
+const ExpenseReceipt = require('./expenseReceipt');
+const FinancialChangeProposal = require('./financialChangeProposal');
+const EmployeeMobileDevice = require('./employeeMobileDevice');
+const EmployeeDeviceLink = require('./employeeDeviceLink');
 
 // ----------------------------------------------------------------------------
 // Associations — this is the literal implementation of the required chain:
@@ -149,6 +160,10 @@ EmployeeServiceHistory.belongsTo(GovernmentOrder, { foreignKey: 'governmentOrder
 Organization.hasMany(User, { foreignKey: 'organizationId' });
 User.belongsTo(Organization, { foreignKey: 'organizationId' });
 User.belongsTo(Employee, { foreignKey: 'employeeId' });
+User.hasMany(EmployeeMobileDevice, { foreignKey: 'userId' });
+EmployeeMobileDevice.belongsTo(User, { foreignKey: 'userId' });
+User.hasMany(EmployeeDeviceLink, { foreignKey: 'userId' });
+EmployeeDeviceLink.belongsTo(User, { foreignKey: 'userId' });
 
 // Branding, mail and security records. organizationId NULL on BrandAsset /
 // SmtpConfig / AuditLog means platform-level. constraints:false because
@@ -275,8 +290,34 @@ Employee.belongsTo(EmployeeBankAccount, { as: 'SalaryCreditAccount', foreignKey:
 EmployeeOverdraft.belongsTo(EmployeeBankAccount, { as: 'Account', foreignKey: 'accountId' });
 EmployeeRecurringDeposit.belongsTo(EmployeeBankAccount, { as: 'Account', foreignKey: 'accountId' });
 
+Organization.hasMany(EmployeePolicy, { foreignKey: 'organizationId' });
+EmployeePolicy.belongsTo(Organization, { foreignKey: 'organizationId' });
+EmployeePolicy.hasMany(EmployeePolicyAcknowledgement, { foreignKey: 'policyId' });
+EmployeePolicyAcknowledgement.belongsTo(EmployeePolicy, { foreignKey: 'policyId' });
+Organization.hasMany(OrganizationHoliday, { foreignKey: 'organizationId' });
+OrganizationHoliday.belongsTo(Organization, { foreignKey: 'organizationId' });
+Employee.hasMany(EmployeeTimeEntry, { foreignKey: 'employeeId' });
+EmployeeTimeEntry.belongsTo(Employee, { foreignKey: 'employeeId' });
+Employee.hasMany(ExpenseClaim, { foreignKey: 'employeeId' });
+ExpenseClaim.belongsTo(Employee, { foreignKey: 'employeeId' });
+ExpenseClaim.hasOne(ExpenseReceipt, { foreignKey: 'claimId' });
+ExpenseReceipt.belongsTo(ExpenseClaim, { foreignKey: 'claimId' });
+Organization.hasMany(OrganizationCatalogueAdoption, { foreignKey: 'organizationId' });
+OrganizationCatalogueAdoption.belongsTo(Organization, { foreignKey: 'organizationId' });
+OrganizationCatalogueAdoption.belongsTo(BankRuleCatalogue, { foreignKey: 'catalogueId' });
+Organization.hasMany(FinancialChangeProposal, { foreignKey: 'organizationId' });
+FinancialChangeProposal.belongsTo(Organization, { foreignKey: 'organizationId' });
+Employee.hasMany(EmployeeCompensationAssignment, { foreignKey: 'employeeId' });
+EmployeeCompensationAssignment.belongsTo(Employee, { foreignKey: 'employeeId' });
+EmployeeCompensationAssignment.belongsTo(BankRuleCatalogue, { foreignKey: 'catalogueId' });
+
 module.exports = {
+  EmployeeMobileDevice,
+  EmployeeDeviceLink,
+  FinancialChangeProposal,
   BankRuleCatalogue,
+  OrganizationCatalogueAdoption,
+  EmployeeCompensationAssignment,
   sequelize,
   Organization,
   GovernmentOrder,
@@ -327,4 +368,10 @@ module.exports = {
   EmployeeLeaveBalance,
   LeaveApplication,
   EmployeeBankAccount,
+  EmployeePolicy,
+  EmployeePolicyAcknowledgement,
+  OrganizationHoliday,
+  EmployeeTimeEntry,
+  ExpenseClaim,
+  ExpenseReceipt,
 };

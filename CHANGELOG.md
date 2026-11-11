@@ -4,6 +4,16 @@ This project uses [Semantic Versioning](https://semver.org/). Record user-visibl
 
 ## Unreleased
 
+### Added
+
+- Add portal-confirmed QR onboarding for the employee mobile app, with revocable linked devices, rotating mobile sessions, and bank branding inside the app.
+- Add a separate Expo Android/iOS employee self-service app for payslips, leave, policies, calendar, workplace, time, reimbursement claims and profile/password management.
+- Let platform and organisation administrators upload separate banner and icon logos; serve each organisation's icon as its custom-domain favicon.
+
+### Changed
+
+- Use QR-only mobile sign-in; employees approve a phone by entering its six-digit code in their web self-service portal. The first release keeps the generic installed app icon.
+
 ## 0.2.0-alpha.1 — 2026-11-06
 
 ### Added

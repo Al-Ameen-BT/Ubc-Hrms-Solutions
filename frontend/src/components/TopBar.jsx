@@ -20,7 +20,7 @@ export function TopBar({ theme, onToggleTheme, onToggleSidebar }) {
         <div className="topbar-brand">
           {isPlatform ? (
             <Link to="/" className="topbar-brand-link" title="Return to Overview">
-              <img src="/alert.png" alt="Banihal" className="topbar-logo topbar-logo-round" />
+              <img src={branding?.logoUrl || '/alert.png'} alt="" className={`topbar-logo${!branding?.logoUrl || branding.logoUrl === '/alert.png' ? ' topbar-logo-round' : ''}`} />
               <span className="topbar-platform-name">{platformName}</span>
             </Link>
           ) : (

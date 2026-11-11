@@ -1,0 +1,20 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-11-10-catalogue-driven-pay.md
+Pre-flight: Task 1 onboarding replaces reference seeding; Task 2 adoption consumes published catalogue; Task 3 assignments consume adoption; Task 4 resolver consumes assignments; Task 5 financial guardrails consume assignment approvals; Task 6 UI consumes all APIs.
+Ruling: Git metadata is read-only and main contains earlier self-service changes — work in place, do not commit or reset, and preserve those edits.
+Baseline: node --test tests/*.test.js -> 49 pass.
+Task 1: complete (explicit stage ladders, unseeded new banks; tests: 51/51 full suite, frontend build pass).
+Ruling: Class changes no longer auto-seed hard-coded scales; existing records stay intact, new class needs approved catalogue adoption.
+Task 2: complete (bank adoption proposal and distinct approval; tests: 53/53 full suite).
+Ruling: An earlier adopted revision can remain in history after platform supersession; new proposals and approvals require the current PUBLISHED revision.
+Task 3: complete (dated stage/direct-pay proposals and distinct approval; tests: 56/56 full suite).
+Ruling: Approved compensation assignments write Service Book history; EmployeePayHistory requires legacy scale/stage foreign keys, so it cannot represent catalogue stages directly.
+Task 4: core calculation complete (dated resolver, mid-month stage and DA/HRA/PF splits, payroll snapshot, stale-run guard, arrears estimate, service-book display, OD/advance salary basis; tests: 64/64 full suite before latest service-book test, 9/9 focused afterward).
+Ruling: payFixationEngine currently has no live route caller, only demo script; catalogue stage movement is represented by approved assignments rather than legacy PayStage IDs.
+Task 4: completed core dated payroll and preview integration; financial setting/employee override boundaries added. Current full suite: 74/74.
+Ruling: New bank onboarding gets an UNASSIGNED post but no pay scale or salary, so nonfinancial employee records can be created before adoption; approval adds published post metadata. Existing banks retain their posts and salaries.
+Task 5: financial proposals cover organisation payroll settings and catalogue-linked employee payroll overrides, with distinct approver, dated runtime overlays, protected government settings, old direct-pay route blocked after mapping. New banks reject salary inputs until assignment. Existing loan and allowance routes remain payroll-run-approved rather than proposal-approved; this is a spec gap to disclose if not closed.
+Ruling: Catalogue assignments are the only stage amount source; old manual pay-scale tables remain legacy for existing banks and cannot power new-bank payroll without approved assignments.
+Task 6: adoption, salary assignment, and financial approvals screens wired; new employee flow guides new banks to separate salary assignment. Current frontend build and version check pass.
+Final review: fixed BIGINT direct-pay amount coercion (string amount test RED→GREEN), backdated legacy baseline (test RED→GREEN), proposal range validation (test RED→GREEN), bank-class adoption mismatch (test RED→GREEN), segment-specific LOP day basis (test RED→GREEN), new-bank bulk deduction inputs (test RED→GREEN), workplace current role (test RED→GREEN), payroll-year loan reference date (test RED→GREEN).
+Ruling: Existing loan and custom-allowance records are prepared through their existing HR routes and become payable only when a distinct Approving Authority approves the monthly catalogue-bank payroll run. A source fingerprint invalidates processed runs after any direct change. This preserves established loan validation and UI while using batch financial signoff; cost: the signoff is per payroll run rather than a separate proposal for every loan/allowance edit.
+Final verification: node --test tests/*.test.js -> 85/85 pass; frontend npm run build -> success; npm run version:check -> consistent; git diff --check -> clean; Impeccable detector -> no deterministic findings. No live MySQL or authenticated browser run was performed.

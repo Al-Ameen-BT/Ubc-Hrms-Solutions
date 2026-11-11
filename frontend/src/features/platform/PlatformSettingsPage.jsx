@@ -5,6 +5,7 @@ import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { BrandAssetUpload } from '../../components/BrandAssetUpload';
 
 /* GET /admin/settings -> { settings, logo, favicon, smtp, limits } */
 export function PlatformSettingsPage() {
@@ -72,6 +73,12 @@ export function PlatformSettingsPage() {
     onError: (err) => toast.add(err.message || 'SMTP test failed.', 'error'),
   });
 
+  const refreshBranding = () => {
+    queryClient.invalidateQueries({ queryKey: ['platform-settings'] });
+    window.dispatchEvent(new Event('ucb:branding-changed'));
+    toast.add('Branding updated.', 'success');
+  };
+
   if (isLoading || !general || !smtp) {
     return <div className="page"><p>Loading settings…</p></div>;
   }
@@ -100,14 +107,8 @@ export function PlatformSettingsPage() {
 
       <Card title="Branding">
         <div className="form-grid">
-          <div className="field">
-            <label className="field-label">Main Logo</label>
-            <div className="upload-placeholder">{data?.logo ? `Uploaded (v${data.logo.version ?? '—'})` : 'PNG, JPEG, or WebP · upload from the backend'}</div>
-          </div>
-          <div className="field">
-            <label className="field-label">Favicon</label>
-            <div className="upload-placeholder">{data?.favicon ? 'Uploaded' : 'PNG or ICO · browser tab icon'}</div>
-          </div>
+          <BrandAssetUpload id="platform-banner" label="Banner logo" hint="Wide platform logo for sign-in and navigation." asset={data?.logo} limitBytes={data?.limits?.LOGO || 512 * 1024} src={`/assets/platform/logo?v=${data?.logo?.version}`} accept=".png,.jpg,.jpeg,.webp" onUpload={dataUrl => platformApi.uploadBrandAsset('logo', dataUrl)} onDelete={() => platformApi.deleteBrandAsset('logo')} onChanged={refreshBranding} />
+          <BrandAssetUpload id="platform-icon" label="Icon logo" hint="Square platform mark used as the browser favicon." asset={data?.favicon} limitBytes={data?.limits?.FAVICON || 128 * 1024} src={`/assets/platform/favicon?v=${data?.favicon?.version}`} accept=".png,.jpg,.jpeg,.webp,.ico" onUpload={dataUrl => platformApi.uploadBrandAsset('favicon', dataUrl)} onDelete={() => platformApi.deleteBrandAsset('favicon')} onChanged={refreshBranding} />
         </div>
       </Card>
 

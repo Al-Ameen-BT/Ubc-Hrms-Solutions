@@ -13,7 +13,7 @@
  */
 
 const { estimateAnnualTax } = require('./incomeTax');
-const { scheduleStatus, licStatus, housingLoanStatus, vehicleLoanStatus } = require('./loans');
+const { scheduleStatus, licStatus, housingLoanStatus, vehicleLoanStatus, asOfForMonth } = require('./loans');
 const { toPaise, toRupees, add, subtract, multiply, divide, percentOf, min, max, round, clamp, sum } = require('../utils/money');
 
 const SCALE = 100;
@@ -31,61 +31,86 @@ function attendanceFraction(lopDays, payableDays) {
   return { num: paidDays, den: payableDays };
 }
 
-function computePayslip(employee, settings, forMonth, loans, attendance, customAllowances) {
+function computePayslip(employee, settings, forMonth, loans, attendance, customAllowances, compensationSegments, forYear) {
   const month = forMonth || (new Date().getMonth() + 1);
   loans = loans || {};
-  const asOf = new Date(); asOf.setUTCFullYear(asOf.getUTCFullYear(), month - 1, 1);
-  const basicFullPaise = toPaise(employee.currentBasicPay);
+  const year = forYear || Number(compensationSegments?.[0]?.fromDate.slice(0, 4)) || new Date().getUTCFullYear();
+  const asOf = asOfForMonth(month, year);
+  const calendarDays = compensationSegments?.length ? new Date(Date.UTC(Number(compensationSegments[0].fromDate.slice(0, 4)), month, 0)).getUTCDate() : null;
+  const weightedPaise = fn => Math.round(compensationSegments.reduce((total, segment) => {
+    const days = Math.round((Date.parse(segment.toDate) - Date.parse(segment.fromDate)) / 86400000) + 1;
+    return total + fn(segment) * days / calendarDays;
+  }, 0));
+  const basicFullPaise = compensationSegments?.length ? weightedPaise(segment => toPaise(segment.basicPay)) : toPaise(employee.currentBasicPay);
   const directPay = employee.directPay === true;
 
   // ---- Attendance / Loss of Pay ----
-  const payScale = directPay ? null : employee.CurrentPayScale || null;
+  const lastSegment = compensationSegments?.at(-1);
+  const payScale = directPay ? null : lastSegment?.source === 'CATALOGUE'
+    ? { name: lastSegment.postName, code: lastSegment.postCode, scaleExpression: lastSegment.scaleExpression, payableDays: lastSegment.payableDays, monthDays: lastSegment.monthDays }
+    : employee.CurrentPayScale || null;
   const payableDays = payScale && Number(payScale.payableDays) > 0 ? Number(payScale.payableDays) : 30;
   const lopDays = Math.max(0, Math.min(payableDays, Number(attendance && attendance.lopDays) || 0));
   const { num: attNum, den: attDen } = attendanceFraction(lopDays, payableDays);
   function proRate(paise) { return toPaise(toRupees(proRatePaise(paise, attNum, attDen))); }
+  const weightedPaidPaise = fn => Math.round(compensationSegments.reduce((total, segment) => {
+    const days = Math.round((Date.parse(segment.toDate) - Date.parse(segment.fromDate)) / 86400000) + 1;
+    const basis = Number(segment.payableDays) > 0 ? Number(segment.payableDays) : 30;
+    const segmentLop = lopDays * days / calendarDays;
+    return total + fn(segment) * days / calendarDays * Math.max(0, 1 - segmentLop / basis);
+  }, 0));
 
   // ---- Earnings ----
   // DA: VARIABLE = org's daPercent x Basic; FIXED = employee's fixedDaAmount; BOTH = VARIABLE + FIXED
-  const daVariableFullPaise = directPay ? 0 : percentOf(basicFullPaise, settings.daPercent);
-  const daFixedFullPaise = directPay ? 0 : toPaise(employee.fixedDaAmount);
-  const daFullPaise = employee.daType === 'FIXED' ? daFixedFullPaise
-    : employee.daType === 'BOTH' ? add(daVariableFullPaise, daFixedFullPaise)
-    : daVariableFullPaise;
+  const daVariableFullPaise = directPay ? 0 : compensationSegments?.length
+    ? weightedPaise(segment => percentOf(toPaise(segment.basicPay), (segment.settings || settings).daPercent))
+    : percentOf(basicFullPaise, settings.daPercent);
+  const daFixedFullPaise = directPay ? 0 : compensationSegments?.length ? weightedPaise(segment => toPaise(segment.employeeFields?.fixedDaAmount)) : toPaise(employee.fixedDaAmount);
+  const daFullPaise = compensationSegments?.length ? weightedPaise(segment => {
+    const worker = segment.employeeFields || employee;
+    const variable = directPay ? 0 : percentOf(toPaise(segment.basicPay), (segment.settings || settings).daPercent);
+    const fixed = directPay ? 0 : toPaise(worker.fixedDaAmount);
+    return worker.daType === 'FIXED' ? fixed : worker.daType === 'BOTH' ? add(variable, fixed) : variable;
+  }) : employee.daType === 'FIXED' ? daFixedFullPaise
+    : employee.daType === 'BOTH' ? add(daVariableFullPaise, daFixedFullPaise) : daVariableFullPaise;
 
   // HRA: employee fixedHraAmount, or org hraFixedAmount, or % of basic; subject to hraMaxAmount
-  let hraCalculatedFullPaise;
-  if (employee.hraType === 'FIXED' && employee.fixedHraAmount != null && Number(employee.fixedHraAmount) >= 0) {
-    hraCalculatedFullPaise = toPaise(employee.fixedHraAmount);
-  } else if (settings.hraType === 'FIXED') {
-    hraCalculatedFullPaise = toPaise(settings.hraFixedAmount);
-  } else {
-    hraCalculatedFullPaise = percentOf(basicFullPaise, settings.hraPercent);
+  function hraFor(basic, ruleSettings, worker = employee) {
+    let amount = worker.hraType === 'FIXED' && worker.fixedHraAmount != null && Number(worker.fixedHraAmount) >= 0
+      ? toPaise(worker.fixedHraAmount)
+      : ruleSettings.hraType === 'FIXED' ? toPaise(ruleSettings.hraFixedAmount) : percentOf(basic, ruleSettings.hraPercent);
+    if (ruleSettings.hraMaxAmount != null && Number(ruleSettings.hraMaxAmount) > 0) amount = min(amount, toPaise(ruleSettings.hraMaxAmount));
+    return amount;
   }
-  if (settings.hraMaxAmount != null && Number(settings.hraMaxAmount) > 0) {
-    hraCalculatedFullPaise = min(hraCalculatedFullPaise, toPaise(settings.hraMaxAmount));
-  }
+  const hraCalculatedFullPaise = compensationSegments?.length
+    ? weightedPaise(segment => hraFor(toPaise(segment.basicPay), segment.settings || settings, segment.employeeFields || employee))
+    : hraFor(basicFullPaise, settings);
   const hraFullPaise = directPay ? 0 : hraCalculatedFullPaise;
-  const riskFullPaise = directPay ? 0 : toPaise(employee.riskAllowance);
-  const otherFullPaise = directPay ? 0 : toPaise(employee.otherAllowance);
+  const riskFullPaise = directPay ? 0 : compensationSegments?.length ? weightedPaise(segment => toPaise(segment.employeeFields?.riskAllowance)) : toPaise(employee.riskAllowance);
+  const otherFullPaise = directPay ? 0 : compensationSegments?.length ? weightedPaise(segment => toPaise(segment.employeeFields?.otherAllowance)) : toPaise(employee.otherAllowance);
 
   // CCA / Conveyance
   const ccaEligible = employee.ccaOptIn !== false;
-  const ccaFullPaise = directPay ? 0 : ccaEligible ? toPaise(employee.ccaAmount != null ? employee.ccaAmount : settings.ccaAmount) : 0;
+  const ccaFullPaise = directPay ? 0 : compensationSegments?.length ? weightedPaise(segment => segment.employeeFields?.ccaOptIn === false ? 0 : toPaise(segment.employeeFields?.ccaAmount != null ? segment.employeeFields.ccaAmount : segment.settings?.ccaAmount)) : ccaEligible ? toPaise(employee.ccaAmount != null ? employee.ccaAmount : settings.ccaAmount) : 0;
   const conveyanceEligible = employee.conveyanceOptIn !== false;
-  const conveyanceFullPaise = directPay ? 0 : conveyanceEligible ? toPaise(employee.conveyanceAmount != null ? employee.conveyanceAmount : settings.conveyanceAmount) : 0;
+  const conveyanceFullPaise = directPay ? 0 : compensationSegments?.length ? weightedPaise(segment => segment.employeeFields?.conveyanceOptIn === false ? 0 : toPaise(segment.employeeFields?.conveyanceAmount != null ? segment.employeeFields.conveyanceAmount : segment.settings?.conveyanceAmount)) : conveyanceEligible ? toPaise(employee.conveyanceAmount != null ? employee.conveyanceAmount : settings.conveyanceAmount) : 0;
 
   // "Actual Basic" — full sanctioned Basic before LOP
   const actualBasicPaise = basicFullPaise;
-  const basicPaise = proRate(basicFullPaise);
-  const daVariablePaise = proRate(daVariableFullPaise);
-  const daFixedPaise = proRate(daFixedFullPaise);
-  const daPaise = proRate(daFullPaise);
-  const hraPaise = proRate(hraFullPaise);
-  const riskPaise = proRate(riskFullPaise);
-  const otherPaise = proRate(otherFullPaise);
-  const ccaPaise = proRate(ccaFullPaise);
-  const conveyancePaise = proRate(conveyanceFullPaise);
+  const basicPaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => toPaise(segment.basicPay)))) : proRate(basicFullPaise);
+  const daVariablePaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => directPay ? 0 : percentOf(toPaise(segment.basicPay), segment.settings?.daPercent)))) : proRate(daVariableFullPaise);
+  const daFixedPaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => directPay ? 0 : toPaise(segment.employeeFields?.fixedDaAmount)))) : proRate(daFixedFullPaise);
+  const daPaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => {
+    const worker = segment.employeeFields || employee;
+    const variable = directPay ? 0 : percentOf(toPaise(segment.basicPay), segment.settings?.daPercent);
+    const fixed = directPay ? 0 : toPaise(worker.fixedDaAmount);
+    return worker.daType === 'FIXED' ? fixed : worker.daType === 'BOTH' ? add(variable, fixed) : variable;
+  }))) : proRate(daFullPaise);
+  const hraPaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => directPay ? 0 : hraFor(toPaise(segment.basicPay), segment.settings, segment.employeeFields)))) : proRate(hraFullPaise);
+  const riskPaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => directPay ? 0 : toPaise(segment.employeeFields?.riskAllowance)))) : proRate(riskFullPaise);
+  const otherPaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => directPay ? 0 : toPaise(segment.employeeFields?.otherAllowance)))) : proRate(otherFullPaise);
+  const ccaPaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => directPay || segment.employeeFields?.ccaOptIn === false ? 0 : toPaise(segment.employeeFields?.ccaAmount != null ? segment.employeeFields.ccaAmount : segment.settings?.ccaAmount)))) : proRate(ccaFullPaise);
+  const conveyancePaise = compensationSegments?.length ? toPaise(toRupees(weightedPaidPaise(segment => directPay || segment.employeeFields?.conveyanceOptIn === false ? 0 : toPaise(segment.employeeFields?.conveyanceAmount != null ? segment.employeeFields.conveyanceAmount : segment.settings?.conveyanceAmount)))) : proRate(conveyanceFullPaise);
 
   // Medical Allowance — flat amount in configured month
   const medicalAllowancePaise = !directPay && month === Number(settings.medicalAllowanceMonth) ? toPaise(settings.medicalAllowanceAmount) : 0;
@@ -113,9 +138,24 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
 
   // ---- Provident Fund ----
   const pfBasePaise = settings.pfCalculationBase === 'BASIC_PLUS_DA' ? add(basicPaise, daPaise) : basicPaise;
-  const pfEmployeePaise = percentOf(pfBasePaise, settings.pfEmployeePercent);
-  const pfEmployerPaise = percentOf(pfBasePaise, settings.pfEmployerPercent); // informational
-  const vpfPaise = employee.vpfPercent ? percentOf(pfBasePaise, employee.vpfPercent) : 0;
+  function segmentPfBase(segment) {
+    const rule = segment.settings || settings;
+    const basic = toPaise(segment.basicPay);
+    const variableDa = directPay ? 0 : percentOf(basic, rule.daPercent);
+    const worker = segment.employeeFields || employee;
+    const fixedDa = directPay ? 0 : toPaise(worker.fixedDaAmount);
+    const da = worker.daType === 'FIXED' ? fixedDa : worker.daType === 'BOTH' ? add(variableDa, fixedDa) : variableDa;
+    return rule.pfCalculationBase === 'BASIC_PLUS_DA' ? add(basic, da) : basic;
+  }
+  const pfEmployeePaise = compensationSegments?.length
+    ? toPaise(toRupees(weightedPaidPaise(segment => percentOf(segmentPfBase(segment), (segment.settings || settings).pfEmployeePercent))))
+    : percentOf(pfBasePaise, settings.pfEmployeePercent);
+  const pfEmployerPaise = compensationSegments?.length
+    ? toPaise(toRupees(weightedPaidPaise(segment => percentOf(segmentPfBase(segment), (segment.settings || settings).pfEmployerPercent))))
+    : percentOf(pfBasePaise, settings.pfEmployerPercent); // informational
+  const vpfPaise = compensationSegments?.length
+    ? toPaise(toRupees(weightedPaidPaise(segment => percentOf(segmentPfBase(segment), segment.employeeFields?.vpfPercent || 0))))
+    : employee.vpfPercent ? percentOf(pfBasePaise, employee.vpfPercent) : 0;
 
   // ---- Welfare Fund ----
   const welfarePaise = employee.welfareFundOptIn ? toPaise(employee.welfareFundAmount) : 0;
@@ -207,6 +247,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
     forMonth: month,
     directPay,
     grade,
+    compensationSegments: compensationSegments?.map(({ employeeFields, ...segment }) => segment) || null,
     attendance: { payableDays, lopDays, paidDays: payableDays - lopDays },
     earnings: {
       actualBasic: toRupees(actualBasicPaise),

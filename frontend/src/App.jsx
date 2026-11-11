@@ -44,6 +44,11 @@ import { PayrollSettingsPage } from './features/org/PayrollSettingsPage';
 import { MandatoryFieldsPage } from './features/org/MandatoryFieldsPage';
 import { SettingsPage } from './features/org/SettingsPage';
 import { EmployeePortalPage } from './features/employee/EmployeePortalPage';
+import { EmployeeServicesPage } from './features/employee/EmployeeServicesPage';
+import { EmployeeServicesAdminPage } from './features/org/EmployeeServicesAdminPage';
+import { CatalogueAdoptionPage } from './features/org/CatalogueAdoptionPage';
+import { CompensationPage } from './features/employees/CompensationPage';
+import { FinancialApprovalsPage } from './features/org/FinancialApprovalsPage';
 
 function AppRoutes() {
   const { isAuthenticated, loading, user } = useAuth();
@@ -94,6 +99,7 @@ function AppRoutes() {
         <Route path="employees/new" element={<NewEmployeePage />} />
         <Route path="employees/import" element={<BulkImportPage />} />
         <Route path="employees/:id" element={<EmployeeDetailPage />} />
+        <Route path="employees/:id/compensation" element={<CompensationPage />} />
         <Route path="users" element={<Navigate to="/people?view=access" replace />} />
         <Route path="payroll" element={<PayrollPage />} />
         <Route path="payroll/new" element={<NewPayrollRunPage />} />
@@ -115,9 +121,14 @@ function AppRoutes() {
         <Route path="org-profile" element={<OrgProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="payroll-settings" element={<PayrollSettingsPage />} />
+        <Route path="catalogue-adoption" element={<CatalogueAdoptionPage />} />
+        <Route path="financial-changes" element={<FinancialApprovalsPage />} />
         <Route path="mandatory-fields" element={<MandatoryFieldsPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="account" element={<MyAccountPage />} />
+        <Route path="my/:section" element={user?.role === 'EMPLOYEE' ? <EmployeeServicesPage /> : <Navigate to="/" replace />} />
+        <Route path="employee-services/:section" element={user?.role !== 'EMPLOYEE' && user?.role !== 'SUPER_ADMIN' ? <EmployeeServicesAdminPage /> : <Navigate to="/" replace />} />
+        <Route path="employee-services" element={<Navigate to={user?.role === 'HR_OFFICER' ? '/employee-services/time' : '/employee-services/expenses'} replace />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

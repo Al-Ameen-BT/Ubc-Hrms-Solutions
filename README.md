@@ -2,11 +2,11 @@
 
 ## Application version and releases
 
-The root `package.json` is the application version shown on the sign-in screen and in the sidebar. The backend health response at `/healthz` reports the same version. The frontend package and both lockfiles must match; `npm run version:check` checks this in CI.
+The root `package.json` is the application version shown on the sign-in screen and in the sidebar. The mobile app shows its matching package version on the profile screen. The backend health response at `/healthz` reports the same version. Both frontend and mobile packages and their lockfiles must match; `npm run version:check` checks this in CI.
 
 Use Semantic Versioning: patch for compatible fixes, minor for compatible features, and major for breaking changes. For each release:
 
-1. Choose the new version and update both packages and lockfiles with `npm version <version> --no-git-tag-version` in the repository root and in `frontend/`.
+1. Choose the new version and update all three packages and lockfiles with `npm version <version> --no-git-tag-version` in the repository root, `frontend/`, and `mobile/`. Set `mobile/app.json`'s numeric version to the release's `major.minor.patch`.
 2. Move the relevant entries from `CHANGELOG.md`'s **Unreleased** section into a dated section for that version.
 3. Run `npm run version:check`, the frontend build, and the normal CI checks. Review database migration and deployment impact before releasing.
 4. Commit the release changes, then create an annotated `v<version>` tag on that commit. Deploy the tagged commit. Do not reuse a tag for later changes.
@@ -68,7 +68,12 @@ public/         The web console — plain HTML/CSS/JS, no build step
   index.html    App shell
   css/app.css   All styling
   js/app.js     Hash-routed views + API client
+mobile/         Expo Android/iOS employee-only self-service app (see mobile/README.md)
 ```
+
+## Employee mobile app
+
+The separate [mobile app](mobile/README.md) uses the same employee-only API. Configure its HTTPS server origin, then run it with Expo. An employee links the phone by scanning a two-minute QR from **My Account → Linked devices** in their signed-in bank portal and entering the phone's code in the portal. They can revoke a linked device there at any time. The organisation's uploaded logo appears inside the app; the first native release retains a generic home-screen icon. Android/iOS store builds require app identifiers, signing credentials, release-quality icon artwork, and device QA.
 
 ## Web console
 
@@ -223,9 +228,9 @@ All JSON under `/api/v1`; `GET /api` lists every route. Main groups:
 | Public | `GET /public/branding` (resolves the tenant from the request `Host`, else the platform), `GET /public/org/:code` | anyone (branding only) |
 | Auth | `POST /auth/login {email,password,orgCode?}`, `POST /auth/mfa/verify-login`, `GET /auth/me`, `POST /auth/change-password`, `POST /auth/forgot-password`, `POST /auth/reset-password`, `GET /auth/mfa/setup`, `POST /auth/mfa/confirm`, `POST /auth/mfa/disable` | — |
 | Platform | `/admin/dashboard`, `/admin/organizations[/:id]` (GET/POST/PUT — `customDomain` field), `/admin/organizations/:id/domain` (GET the CNAME record), `/admin/organizations/:id/verify-domain` (POST live DNS check), `/admin/organizations/:id/admin-users`, `/admin/organizations/:id/logo`, `/admin/platform-users[/:id]` (+ `/reset-password`, `/reset-mfa`), `/admin/settings`, `/admin/settings/{logo,favicon,smtp}`, `/admin/settings/smtp/test`, `/admin/audit` | Super Admin |
-| Bank admin | `/org/settings`, `/org/settings/{logo,smtp}`, `/org/settings/smtp/test`, `/org/audit`, `/organizations/:orgId/users[/:id]` (+ `/reset-password`, `/reset-mfa`) | Org Admin (users: also Super Admin) |
+| Bank admin | `/org/settings`, `/org/settings/{logo,favicon,smtp}`, `/org/settings/smtp/test`, `/org/audit`, `/organizations/:orgId/users[/:id]` (+ `/reset-password`, `/reset-mfa`) | Org Admin (users: also Super Admin) |
 | Establishment | `/post-cadres`, `/government-orders`, `/ksr-rules`, `/pay-revisions`, `/pay-scales`, `/pay-scales/:id/stages` (GET/PUT), `/employees`, `/employees/:id/service-book`, `POST /employees/:id/service-book/events` | bank staff, per role table above |
-| Images | `/assets/platform/logo`, `/assets/platform/favicon` (also `/favicon.ico`), `/assets/org/:code/logo` | anyone |
+| Images | `/assets/platform/logo`, `/assets/platform/favicon`, `/assets/org/:code/logo`, `/assets/org/:code/favicon`; `/favicon.ico` resolves the custom-domain bank icon | anyone |
 
 `DELETE` on establishment data is always a soft delete (deactivate /
 supersede). Pay stages can be added but never removed, and a stage already

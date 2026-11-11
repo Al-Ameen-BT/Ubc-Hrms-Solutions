@@ -58,7 +58,7 @@ test('service book exposes approved and paid snapshots only to the linked employ
   assert.equal((await getBook(employee.id, otherToken)).status, 404);
   assert.equal((await fetch(`${base}/employees`, { headers: { Authorization: `Bearer ${ownToken}` } })).status, 403);
 });
-test('direct-pay staff have bank-set salary without a scale and cannot receive self-service accounts', async () => {
+test('direct-pay staff have bank-set salary without a scale and can receive self-service accounts', async () => {
   const response = await fetch(`${base}/employees`, { method: 'POST', headers: { Authorization: `Bearer ${hrToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId: orgId, empCode: 'S1', name: 'Security Staff', doj: '2026-01-01', dob: '1995-01-01', postCadreId: employee.postCadreId, directPay: true, currentBasicPay: 14000, panNumber: 'AAAAA1234A', aadhaarNumber: '123456789012', personalEmail: 'security@test.invalid', designation: 'Security', bankName: 'Bank', bankAccountNumber: '1234567890', bankIfsc: 'TEST0000001', gender: 'MALE' }) });
   const body = await response.json();
   assert.equal(response.status, 201, JSON.stringify(body));
@@ -66,7 +66,7 @@ test('direct-pay staff have bank-set salary without a scale and cannot receive s
   assert.equal(body.data.directPay, true);
   assert.equal(body.data.currentPayScaleId == null, true);
   const account = await fetch(`${base}/organizations/${orgId}/users`, { method: 'POST', headers: { Authorization: `Bearer ${orgAdminToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'security@test.invalid', name: 'Security Staff', role: 'EMPLOYEE', employeeId: body.data.id }) });
-  assert.equal(account.status, 400);
+  assert.equal(account.status, 201);
   const genericChange = await fetch(`${base}/employees/${body.data.id}`, { method: 'PUT', headers: { Authorization: `Bearer ${hrToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ currentBasicPay: 15000 }) });
   assert.equal(genericChange.status, 400);
   const salaryChange = await fetch(`${base}/employees/${body.data.id}/direct-pay-salary`, { method: 'PUT', headers: { Authorization: `Bearer ${hrToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 15000, reason: 'Annual bank salary revision' }) });

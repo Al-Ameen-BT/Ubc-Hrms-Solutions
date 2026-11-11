@@ -9,7 +9,7 @@ const sequelize = require('../config/sequelize');
  * survives deploys and moves with it to the production server.
  *
  * organizationId NULL = platform (Banihal) asset: kind LOGO or FAVICON.
- * organizationId set   = that bank's LOGO.
+ * organizationId set   = that bank's LOGO or FAVICON.
  * At most one row per (organizationId, kind) — enforced in
  * services/brandAssets.js (a unique index can't do it in MySQL because
  * NULLs don't collide).

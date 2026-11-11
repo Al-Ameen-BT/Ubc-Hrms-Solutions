@@ -65,7 +65,8 @@ app.use(helmet({
   referrerPolicy: { policy: 'same-origin' },
 }));
 
-app.use(express.json({ limit: '1mb' }));
+// A 5 MB receipt becomes about 6.7 MB when sent as a base64 data URL.
+app.use(express.json({ limit: '8mb' }));
 
 /**
  * Brute-force protection on the login endpoint: per IP, counting only
@@ -116,6 +117,14 @@ const resetLimiter = rateLimit({
 app.use('/api/v1/auth/forgot-password', resetLimiter);
 app.use('/api/v1/auth/reset-password', mfaLimiter);
 
+const deviceLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-link') || undefined });
+const devicePollLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-poll') || undefined });
+app.post('/api/v1/me/devices/link', deviceLinkLimiter);
+app.post('/api/v1/mobile/link/claim', deviceLinkLimiter);
+app.post('/api/v1/me/devices/link/:id/approve', rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-approve') || undefined }));
+app.post('/api/v1/mobile/link/status', devicePollLimiter);
+app.post('/api/v1/mobile/session/refresh', devicePollLimiter);
+
 // Wider limiter for the one-time setup endpoints — they're token-gated, but
 // a limiter means the token itself can't be brute-forced either.
 const setupLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('setup') || undefined, passOnStoreError: true });
@@ -139,8 +148,8 @@ const apiLimiter = rateLimit({
 app.use('/api/v1', apiLimiter);
 
 // Master-data CRUD + Service Book + Auth + multi-tenant admin routes.
-// /api/v1/auth/login is the only public route under here; every other
-// route requires a Bearer token (see middleware/auth.js) and is tenant-scoped.
+// Public branding/auth and the single-purpose mobile link/refresh routes are
+// unauthenticated; employee device links still require portal approval.
 app.use('/api/v1', apiRoutes);
 
 // ------------------------------------------------------------ web console root
@@ -161,6 +170,13 @@ const { findOrgByCode } = require('./routes/public');
 
 app.get(['/assets/platform/favicon', '/favicon.ico'], async (req, res, next) => {
   try {
+    if (req.path === '/favicon.ico') {
+      const org = await require('./services/orgDomains').findOrgByDomain(req.get('host'));
+      if (org) {
+        const icon = await brand.find(org.id, 'FAVICON') || await brand.find(org.id, 'LOGO');
+        if (icon) return brand.send(res, icon);
+      }
+    }
     const row = await brand.find(null, 'FAVICON');
     // No upload yet: serve the Banihal round favicon directly
     if (!row) {
@@ -397,6 +413,8 @@ app.get('/api', (req, res) => {
         'POST /api/v1/auth/change-password', 'POST /api/v1/auth/forgot-password', 'POST /api/v1/auth/reset-password',
         'GET /api/v1/auth/mfa/setup', 'POST /api/v1/auth/mfa/confirm', 'POST /api/v1/auth/mfa/disable',
       ],
+      employeeDevices: ['GET /api/v1/me/devices', 'POST /api/v1/me/devices/link', 'POST /api/v1/me/devices/link/:id/approve', 'POST /api/v1/me/devices/:id/revoke'],
+      mobile: ['POST /api/v1/mobile/link/claim', 'POST /api/v1/mobile/link/status', 'POST /api/v1/mobile/session/refresh', 'POST /api/v1/mobile/session/revoke'],
       superAdmin: [
         '/api/v1/admin/dashboard', '/api/v1/admin/organizations[/:id]', '/api/v1/admin/organizations/:id/admin-users',
         '/api/v1/admin/organizations/:id/logo', '/api/v1/admin/platform-users[/:id]', '/api/v1/admin/settings',

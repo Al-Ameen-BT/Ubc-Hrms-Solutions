@@ -34,6 +34,7 @@ const PayrollRun = sequelize.define('PayrollRun', {
   totalNetPay: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0, field: 'total_net_pay' },
   processedAt: { type: DataTypes.DATE, allowNull: true, field: 'processed_at' },
   processedByUserId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'processed_by_user_id' },
+  inputFingerprint: { type: DataTypes.STRING(64), allowNull: true, field: 'input_fingerprint' },
   approvedAt: { type: DataTypes.DATE, allowNull: true, field: 'approved_at' },
   approvedByUserId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'approved_by_user_id' },
   paidAt: { type: DataTypes.DATE, allowNull: true, field: 'paid_at' },

@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
+import { BrandAssetUpload } from '../../components/BrandAssetUpload';
 
 /* GET /org/settings -> { organization, loginUrl, license, usage, logo, smtp, platformSmtpAvailable } */
 export function SettingsPage() {
@@ -72,6 +73,12 @@ export function SettingsPage() {
   });
 
   const org = data?.organization;
+  const refreshBranding = () => {
+    queryClient.invalidateQueries({ queryKey: ['org-settings'] });
+    queryClient.invalidateQueries({ queryKey: ['org-profile'] });
+    window.dispatchEvent(new Event('ucb:branding-changed'));
+    toast.add('Branding updated.', 'success');
+  };
 
   return (
     <div className="page">
@@ -96,6 +103,13 @@ export function SettingsPage() {
         <p className="form-note">Registered name and code are set by the platform. You can edit your bank's contact details here.</p>
         <div className="card-actions">
           <Button loading={saveOrg.isPending} onClick={() => saveOrg.mutate(orgForm)}>Save Details</Button>
+        </div>
+      </Card>
+
+      <Card title="Branding">
+        <div className="form-grid">
+          <BrandAssetUpload id="org-banner" label="Banner logo" hint="Wide logo for sign-in, navigation and documents." asset={data?.logo} limitBytes={data?.logoLimitBytes || 512 * 1024} src={org?.code ? `/assets/org/${encodeURIComponent(org.code)}/logo?v=${data?.logo?.version}` : ''} accept=".png,.jpg,.jpeg,.webp" onUpload={orgApi.uploadLogo} onDelete={orgApi.deleteLogo} onChanged={refreshBranding} />
+          <BrandAssetUpload id="org-icon" label="Icon logo" hint="Square mark used as this organisation's browser favicon." asset={data?.favicon} limitBytes={data?.faviconLimitBytes || 128 * 1024} src={org?.code ? `/assets/org/${encodeURIComponent(org.code)}/favicon?v=${data?.favicon?.version}` : ''} accept=".png,.jpg,.jpeg,.webp,.ico" onUpload={orgApi.uploadFavicon} onDelete={orgApi.deleteFavicon} onChanged={refreshBranding} />
         </div>
       </Card>
 

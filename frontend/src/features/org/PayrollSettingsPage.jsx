@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orgApi } from '../../api/client';
+import { compensationApi } from '../../api/compensation';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -31,20 +32,26 @@ export function PayrollSettingsPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState(null);
+  const [effectiveDate, setEffectiveDate] = useState('');
+  const [reason, setReason] = useState('');
 
   const { data, isLoading } = useQuery({ queryKey: ['org-payroll-settings'], queryFn: orgApi.payrollSettings });
+  const { data: adoptions } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions });
+  const adopted = adoptions?.history?.some(row => row.status === 'APPROVED');
 
   useEffect(() => { if (data) setForm({ ...data }); }, [data]);
 
   const save = useMutation({
-    mutationFn: (payload) => orgApi.updatePayrollSettings(payload),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['org-payroll-settings'] }); toast.add('Payroll settings saved.', 'success'); },
+    mutationFn: (payload) => adopted ? compensationApi.proposeFinancialChange({ targetType: 'ORG_SETTINGS', patch: payload, effectiveDate, reason }) : orgApi.updatePayrollSettings(payload),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['org-payroll-settings'] }); queryClient.invalidateQueries({ queryKey: ['financial-changes'] }); toast.add(adopted ? 'Payroll settings sent for approval.' : 'Payroll settings saved.', 'success'); },
     onError: (err) => toast.add(err.message || 'Save failed.', 'error'),
   });
 
   if (isLoading || !form) return <div className="page"><p>Loading…</p></div>;
 
   const f = (k) => (e) => setForm((s) => ({ ...s, [k]: e.target.value }));
+  const changed = () => Object.fromEntries(Object.entries(form).filter(([key, value]) => Object.hasOwn(data, key) && String(value ?? '') !== String(data[key] ?? '')));
+  const submit = () => save.mutate(adopted ? changed() : form);
 
   return (
     <div className="page">
@@ -52,13 +59,15 @@ export function PayrollSettingsPage() {
         <div className="page-header-row">
           <div>
             <h1>Payroll Settings</h1>
-            <p>Rates and limits used when computing every payslip for this organisation. Money rounds upward to whole rupees; percentage rates retain decimals.</p>
+            <p>Rates and limits used for this bank. Money rounds to the nearest whole rupee; percentage rates retain decimals. Government-controlled values change through a new published revision.</p>
           </div>
           <div className="page-header-actions">
-            <Button loading={save.isPending} onClick={() => save.mutate(form)}>Save Settings</Button>
+            <Button loading={save.isPending} disabled={adopted && (!effectiveDate || !reason.trim() || !Object.keys(changed()).length)} onClick={submit}>{adopted ? 'Send for approval' : 'Save Settings'}</Button>
           </div>
         </div>
       </header>
+
+      {adopted && <Card title="Approval details"><p className="form-note">Enter only bank-controlled changes. An Approving Authority must approve them before they affect payroll.</p><div className="form-grid"><Input id="payroll-effective-date" label="Effective date" type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} /><Input id="payroll-change-reason" label="Reason" value={reason} onChange={e => setReason(e.target.value)} /></div></Card>}
 
       <Card title="Allowances &amp; Statutory Rates">
         <div className="form-grid">
@@ -157,7 +166,7 @@ export function PayrollSettingsPage() {
       </Card>
 
       <div className="card-actions">
-        <Button loading={save.isPending} onClick={() => save.mutate(form)}>Save Settings</Button>
+        <Button loading={save.isPending} disabled={adopted && (!effectiveDate || !reason.trim() || !Object.keys(changed()).length)} onClick={submit}>{adopted ? 'Send for approval' : 'Save Settings'}</Button>
       </div>
     </div>
   );

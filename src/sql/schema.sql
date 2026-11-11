@@ -455,6 +455,46 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX idx_users_org ON users (organization_id);
 
+-- Portal-confirmed, single-use employee mobile device links and revocable sessions.
+CREATE TABLE IF NOT EXISTS employee_mobile_device (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  organization_id INT UNSIGNED NOT NULL,
+  name VARCHAR(80) NOT NULL,
+  platform ENUM('android','ios') NOT NULL,
+  refresh_hash CHAR(64) NOT NULL,
+  rotation INT UNSIGNED NOT NULL DEFAULT 0,
+  last_used_at DATETIME NOT NULL,
+  revoked_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_employee_mobile_device_user (user_id, revoked_at),
+  INDEX idx_employee_mobile_device_org (organization_id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (organization_id) REFERENCES organization(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS employee_device_link (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  organization_id INT UNSIGNED NOT NULL,
+  challenge_hash CHAR(64) NOT NULL UNIQUE,
+  claim_hash CHAR(64) NULL,
+  status ENUM('PENDING','CLAIMED','APPROVED','DENIED','CANCELLED','ISSUED') NOT NULL DEFAULT 'PENDING',
+  verification_code CHAR(6) NULL,
+  device_name VARCHAR(80) NULL,
+  platform ENUM('android','ios') NULL,
+  expires_at DATETIME NOT NULL,
+  device_id INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_employee_device_link_user (user_id, status),
+  INDEX idx_employee_device_link_expiry (expires_at),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (organization_id) REFERENCES organization(id),
+  FOREIGN KEY (device_id) REFERENCES employee_mobile_device(id)
+) ENGINE=InnoDB;
+
 -- ============================================================================
 -- 15. Licensing, branding, email, password reset, audit
 --     (Slice: platform administration.) Existing deployments get the new
@@ -488,7 +528,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (         -- exactly one row, id = 
 CREATE TABLE IF NOT EXISTS brand_asset (
   id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   organization_id INT UNSIGNED NULL,
-  kind            ENUM('LOGO','FAVICON') NOT NULL,      -- FAVICON is platform-only
+  kind            ENUM('LOGO','FAVICON') NOT NULL,      -- banner and icon for platform or organisation
   mime_type       VARCHAR(64)  NOT NULL,                 -- sniffed from bytes: png/jpeg/webp/x-icon (no SVG)
   data            MEDIUMBLOB   NOT NULL,                 -- ≤ 512 KB logo, ≤ 128 KB favicon
   size_bytes      INT UNSIGNED NOT NULL,
@@ -911,3 +951,114 @@ CREATE TABLE IF NOT EXISTS employee_attendance (
   UNIQUE KEY uq_employee_attendance_month (employee_id, year, month),
   CONSTRAINT fk_employee_attendance_employee FOREIGN KEY (employee_id) REFERENCES employee(id)
 ) ENGINE=InnoDB;
+
+-- Employee self-service: additive tables. Existing attendance/LOP is unchanged.
+CREATE TABLE IF NOT EXISTS employee_policy (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, organization_id INT UNSIGNED NOT NULL,
+  version INT UNSIGNED NOT NULL, title VARCHAR(255) NOT NULL, body TEXT NOT NULL,
+  published_by INT UNSIGNED NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_employee_policy_version (organization_id, version)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS employee_policy_acknowledgement (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, policy_id INT UNSIGNED NOT NULL,
+  organization_id INT UNSIGNED NOT NULL, employee_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL, acknowledged_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_policy_user (policy_id, user_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS organization_holiday (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, organization_id INT UNSIGNED NOT NULL,
+  date DATE NOT NULL, name VARCHAR(255) NOT NULL, remarks VARCHAR(500) NULL,
+  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_holiday_date (organization_id, date)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS employee_time_entry (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, organization_id INT UNSIGNED NOT NULL,
+  employee_id INT UNSIGNED NOT NULL, local_date DATE NOT NULL,
+  check_in_at DATETIME NOT NULL, check_out_at DATETIME NULL,
+  corrected_by INT UNSIGNED NULL, correction_reason VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_employee_time_day (employee_id, local_date),
+  KEY idx_employee_time_org_day (organization_id, local_date)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS expense_claim (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, organization_id INT UNSIGNED NOT NULL,
+  employee_id INT UNSIGNED NOT NULL, expense_date DATE NOT NULL,
+  category VARCHAR(64) NOT NULL, purpose VARCHAR(500) NOT NULL,
+  amount INT UNSIGNED NOT NULL,
+  status ENUM('SUBMITTED','PREPARED','APPROVED','REJECTED','PAID','WITHDRAWN') NOT NULL DEFAULT 'SUBMITTED',
+  submitted_by INT UNSIGNED NOT NULL, prepared_by INT UNSIGNED NULL, prepared_at DATETIME NULL,
+  decided_by INT UNSIGNED NULL, decided_at DATETIME NULL, decision_reason VARCHAR(500) NULL,
+  paid_by INT UNSIGNED NULL, paid_at DATE NULL, payment_reference VARCHAR(128) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_expense_org_status (organization_id, status),
+  KEY idx_expense_employee_date (employee_id, expense_date)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS expense_receipt (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, claim_id INT UNSIGNED NOT NULL UNIQUE,
+  mime_type VARCHAR(64) NOT NULL, data LONGBLOB NOT NULL,
+  size_bytes INT UNSIGNED NOT NULL, sha256 VARCHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS organization_catalogue_adoption (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  organization_id INT UNSIGNED NOT NULL, catalogue_id INT UNSIGNED NOT NULL,
+  effective_date DATE NOT NULL,
+  status ENUM('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  prepared_by INT UNSIGNED NOT NULL, decided_by INT UNSIGNED NULL,
+  decided_at DATETIME NULL, decision_reason VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_catalogue_adoption_org_status_date (organization_id, status, effective_date)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS employee_compensation_assignment (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  organization_id INT UNSIGNED NOT NULL, employee_id INT UNSIGNED NOT NULL,
+  catalogue_id INT UNSIGNED NULL, post_code VARCHAR(32) NULL,
+  stage_no INT UNSIGNED NULL, amount BIGINT UNSIGNED NOT NULL,
+  previous_amount BIGINT UNSIGNED NULL,
+  effective_date DATE NOT NULL, reason VARCHAR(500) NOT NULL,
+  status ENUM('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  prepared_by INT UNSIGNED NOT NULL, decided_by INT UNSIGNED NULL,
+  decided_at DATETIME NULL, decision_reason VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_compensation_employee_status_date (employee_id, status, effective_date),
+  KEY idx_compensation_org_status (organization_id, status)
+) ENGINE=InnoDB;
+
+ALTER TABLE organization ADD COLUMN requires_catalogue_adoption TINYINT(1) NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS financial_change_proposal (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  organization_id INT UNSIGNED NOT NULL,
+  target_type ENUM('ORG_SETTINGS','EMPLOYEE') NOT NULL,
+  target_id INT UNSIGNED NULL,
+  patch JSON NOT NULL,
+  effective_date DATE NOT NULL,
+  reason VARCHAR(500) NOT NULL,
+  status ENUM('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  prepared_by INT UNSIGNED NOT NULL,
+  decided_by INT UNSIGNED NULL,
+  decided_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_financial_change_target_date (organization_id, target_type, target_id, status, effective_date)
+) ENGINE=InnoDB;
+
+-- payroll_run.input_fingerprint is added to existing installations by src/scripts/migrate.js;
+-- payroll_run itself is managed by Sequelize sync in this codebase.

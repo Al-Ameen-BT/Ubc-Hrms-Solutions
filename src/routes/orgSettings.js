@@ -33,8 +33,8 @@ async function ownOrg(req) {
 router.get('/settings', async (req, res) => {
   try {
     const org = await ownOrg(req);
-    const [usage, logo, smtpRow, platformSmtp] = await Promise.all([
-      license.usage(org.id), brand.info(org.id, 'LOGO'), mailer.getConfigRow(org.id), mailer.getConfigRow(null),
+    const [usage, logo, favicon, smtpRow, platformSmtp] = await Promise.all([
+      license.usage(org.id), brand.info(org.id, 'LOGO'), brand.info(org.id, 'FAVICON'), mailer.getConfigRow(org.id), mailer.getConfigRow(null),
     ]);
     res.json({
       data: {
@@ -49,7 +49,9 @@ router.get('/settings', async (req, res) => {
         license: licenseSummary(org),
         usage,
         logo,
+        favicon,
         logoLimitBytes: brand.LIMITS.LOGO,
+        faviconLimitBytes: brand.LIMITS.FAVICON,
         smtp: mailer.publicView(smtpRow),
         platformSmtpAvailable: !!(platformSmtp && platformSmtp.enabled && platformSmtp.host && platformSmtp.fromEmail),
       },
@@ -67,21 +69,23 @@ router.put('/settings', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.put('/settings/logo', async (req, res) => {
-  try {
-    const info = await brand.save(req.user.organizationId, 'LOGO', (req.body || {}).dataUrl, req.user.id);
-    await audit(req, 'org.logo.update', { targetType: 'organization', targetId: req.user.organizationId, details: info });
-    res.json({ data: info });
-  } catch (err) { sendError(res, err); }
-});
-
-router.delete('/settings/logo', async (req, res) => {
-  try {
-    await brand.remove(req.user.organizationId, 'LOGO');
-    await audit(req, 'org.logo.remove', { targetType: 'organization', targetId: req.user.organizationId });
-    res.json({ status: 'ok' });
-  } catch (err) { sendError(res, err); }
-});
+for (const kind of ['logo', 'favicon']) {
+  const assetKind = kind.toUpperCase();
+  router.put(`/settings/${kind}`, async (req, res) => {
+    try {
+      const info = await brand.save(req.user.organizationId, assetKind, (req.body || {}).dataUrl, req.user.id);
+      await audit(req, `org.${kind}.update`, { targetType: 'organization', targetId: req.user.organizationId, details: info });
+      res.json({ data: info });
+    } catch (err) { sendError(res, err); }
+  });
+  router.delete(`/settings/${kind}`, async (req, res) => {
+    try {
+      await brand.remove(req.user.organizationId, assetKind);
+      await audit(req, `org.${kind}.remove`, { targetType: 'organization', targetId: req.user.organizationId });
+      res.json({ status: 'ok' });
+    } catch (err) { sendError(res, err); }
+  });
+}
 
 router.get('/settings/smtp', async (req, res) => {
   try { res.json({ data: mailer.publicView(await mailer.getConfigRow(req.user.organizationId)) }); } catch (err) { sendError(res, err); }
@@ -112,11 +116,14 @@ router.post('/settings/smtp/test', async (req, res) => {
 // limits, Festival Advance repayment window, stagnation-increment policy).
 // Lazily created with defaults on first read.
 router.get('/settings/payroll', async (req, res) => {
-  try { res.json({ data: await payrollSettings.getSettings(req.user.organizationId) }); } catch (err) { sendError(res, err); }
+  try { res.json({ data: await require('../services/financialChanges').settingsForDate(req.user.organizationId, new Date().toISOString().slice(0, 10)) }); } catch (err) { sendError(res, err); }
 });
 
 router.put('/settings/payroll', async (req, res) => {
   try {
+    if (await require('../models').OrganizationCatalogueAdoption.count({ where: { organizationId: req.user.organizationId, status: 'APPROVED' } })) {
+      return res.status(409).json({ status: 'error', message: 'Propose payroll setting changes for a separate financial approval.' });
+    }
     const row = await payrollSettings.updateSettings(req.user.organizationId, req.body);
     await audit(req, 'org.payroll_settings.update', { targetType: 'organization', targetId: req.user.organizationId });
     res.json({ data: row });

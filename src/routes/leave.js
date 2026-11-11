@@ -11,7 +11,7 @@
  *
  *   GET    /employees/:id/leave-balances       ?year= (defaults to the org's current year)
  *   GET    /employees/:id/leave-applications   this employee's applications
- *   POST   /employees/:id/leave-applications   file one (HR files on the employee's behalf — no employee self-service login in this product)
+ *   POST   /employees/:id/leave-applications   HR files on the employee's behalf; employees use /me/leave/applications
  *   POST   /leave-applications/:id/decide      { decision: APPROVED|REJECTED, reason? }
  *   POST   /leave-applications/:id/cancel
  */

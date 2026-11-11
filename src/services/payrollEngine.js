@@ -15,13 +15,16 @@
  * rewrite pay history" rule already used for pay stages/fixation.
  */
 
-const { sequelize, Employee, PostCadre, PayScale, PayrollRun, PayrollRunLine, EmployeeBankAccount } = require('../models');
+const { sequelize, Organization, BankRuleCatalogue, Employee, PostCadre, PayScale, PayrollRun, PayrollRunLine, EmployeeBankAccount, EmployeeCompensationAssignment, OrganizationCatalogueAdoption } = require('../models');
+const { Op } = require('sequelize');
 const { getSettings } = require('./payrollSettings');
 const loans = require('./loans');
 const attendance = require('./attendance');
 const { computePayslip } = require('./payslip');
 const { applicableAllowancesFor } = require('./allowances');
 const { round2 } = require('./loans');
+const { createHash } = require('node:crypto');
+const { segmentsForMonth } = require('./compensationResolver');
 // Note: DA Arrears (services/arrears.js) is deliberately NOT wired into this
 // engine. Arrears are paid out separately from salary — see arrears.js's
 // header comment — so a payroll run never adds an arrears line to anyone's
@@ -34,6 +37,29 @@ class PayrollEngineError extends Error {
 function monthKey(year, month) { return `${year}-${String(month).padStart(2, '0')}`; }
 
 const LOCKED_STATUSES = ['APPROVED', 'PAID'];
+
+async function payrollInputFingerprint(organizationId, year, month) {
+  const models = require('../models');
+  const employees = await models.Employee.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true });
+  const employeeIds = employees.map(row => row.id);
+  const allowanceTypes = await models.AllowanceType.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true });
+  const scales = await models.PayScale.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true });
+  const rows = [await models.Organization.findByPk(organizationId, { raw: true }), employees, allowanceTypes, scales];
+  const collect = async (Model, where) => rows.push(await Model.findAll({ where, order: [['id', 'ASC']], raw: true }));
+  await collect(models.OrgPayrollSetting, { organizationId });
+  await collect(models.PostCadre, { organizationId });
+  await collect(models.PayStage, { payScaleId: { [Op.in]: scales.map(row => row.id) } });
+  await collect(models.AllowanceTypePost, { allowanceTypeId: { [Op.in]: allowanceTypes.map(row => row.id) } });
+  await collect(models.EmployeeAttendance, { employeeId: { [Op.in]: employeeIds }, year, month });
+  await collect(models.EmployeeBankAccount, { employeeId: { [Op.in]: employeeIds } });
+  for (const Model of [models.EmployeeFestivalAdvance, models.EmployeeOverdraft, models.EmployeeRecurringDeposit, models.EmployeeLic, models.EmployeeHousingLoan, models.EmployeeVehicleLoan]) {
+    await collect(Model, { employeeId: { [Op.in]: employeeIds } });
+  }
+  await collect(models.EmployeeCompensationAssignment, { organizationId, status: 'APPROVED' });
+  await collect(models.OrganizationCatalogueAdoption, { organizationId, status: 'APPROVED' });
+  await collect(models.FinancialChangeProposal, { organizationId, status: 'APPROVED' });
+  return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+}
 
 /** Finds the current "live" run for an org/month (excludes REJECTED ones, which a fresh run supersedes), or null. */
 async function findCurrentRun(organizationId, year, month) {
@@ -56,6 +82,17 @@ async function processRun({ organizationId, year, month, userId }) {
   year = Number(year); month = Number(month);
   if (!(year >= 2000 && year <= 2100)) throw new PayrollEngineError('A valid year is required.');
   if (!(month >= 1 && month <= 12)) throw new PayrollEngineError('Month must be 1-12.');
+  const org = await Organization.findByPk(organizationId);
+  if (!org) throw new PayrollEngineError('Organisation not found.', 404);
+  const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  const currentAdoption = await require('./catalogueAdoption').adoptionForDate(organizationId, monthEnd);
+  if (currentAdoption) {
+    const adoptedRule = await BankRuleCatalogue.findByPk(currentAdoption.catalogueId);
+    if (adoptedRule?.bankClass !== org.bankClass) throw new PayrollEngineError('Bank class changed; approve an adoption for the current class before payroll.', 409);
+  }
+  if (org.requiresCatalogueAdoption && !await require('./catalogueAdoption').adoptionForDate(organizationId, `${year}-${String(month).padStart(2, '0')}-01`)) {
+    throw new PayrollEngineError('Approve a bank-class catalogue adoption before processing payroll.', 409);
+  }
 
   const existing = await findCurrentRun(organizationId, year, month);
   if (existing && LOCKED_STATUSES.includes(existing.status)) {
@@ -70,6 +107,8 @@ async function processRun({ organizationId, year, month, userId }) {
     throw new PayrollEngineError(err.message, err.status || 409);
   }
 
+  const settings = await getSettings(organizationId);
+  const inputFingerprint = currentAdoption ? await payrollInputFingerprint(organizationId, year, month) : null;
   const employees = await Employee.findAll({
     where: { organizationId, status: 'ACTIVE', employmentStatus: 'ACTIVE' },
     include: [
@@ -80,20 +119,28 @@ async function processRun({ organizationId, year, month, userId }) {
     order: [['empCode', 'ASC']],
   });
 
-  const settings = await getSettings(organizationId);
-  const asOf = loans.asOfForMonth(month);
+  const asOf = loans.asOfForMonth(month, year);
 
   const lines = [];
   let totalGross = 0; let totalDeductions = 0; let totalNet = 0;
 
   for (const employee of employees) {
-    // eslint-disable-next-line no-await-in-loop
+    const salarySegments = await segmentsForMonth(employee, year, month);
+    if (salarySegments.some(segment => segment.source === 'CATALOGUE' && segment.bankClass !== org.bankClass)) throw new PayrollEngineError(`Employee ${employee.empCode} has a salary assignment for another bank class; remap and approve it before payroll.`, 409);
+    if (org.requiresCatalogueAdoption && salarySegments.some(segment => segment.source === 'LEGACY' || segment.source === 'DIRECT_PAY_LEGACY')) {
+      throw new PayrollEngineError(`Employee ${employee.empCode} needs an approved salary assignment before payroll.`, 409);
+    }
+    const last = salarySegments.at(-1);
+    const post = last?.source === 'CATALOGUE' ? await PostCadre.findOne({ where: { organizationId, code: last.postCode } }) : null;
     const [activeLoans, attendanceRow, customAllowances] = await Promise.all([
       loans.loadActiveLoans(employee.id, asOf),
       attendance.getForMonth(employee.id, month),
-      applicableAllowancesFor(organizationId, employee.postCadreId, year, month),
+      applicableAllowancesFor(organizationId, post?.id || employee.postCadreId, year, month),
     ]);
-    const payslip = computePayslip(employee, settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances);
+    const catalogueSegments = salarySegments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? salarySegments : null;
+    const effectiveSettings = catalogueSegments ? catalogueSegments.at(-1).settings : settings;
+    const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
+    const payslip = computePayslip(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, year);
     totalGross = round2(totalGross + payslip.earnings.grossEarnings);
     totalDeductions = round2(totalDeductions + payslip.deductions.totalDeductions);
     totalNet = round2(totalNet + payslip.netPay);
@@ -111,7 +158,7 @@ async function processRun({ organizationId, year, month, userId }) {
       employeeId: employee.id,
       empCode: employee.empCode,
       employeeName: employee.name,
-      postName: employee.PostCadre ? employee.PostCadre.name : null,
+      postName: last?.source === 'CATALOGUE' ? last.postName : employee.PostCadre ? employee.PostCadre.name : null,
       bankName: resolvedBankName || null,
       bankAccountNumber: resolvedAccountNumber || null,
       bankIfsc: resolvedIfsc || null,
@@ -124,6 +171,8 @@ async function processRun({ organizationId, year, month, userId }) {
       exceptionNote: hasBankDetails ? null : 'No bank account number/IFSC on record — cannot be included in a bank transfer file.',
     });
   }
+
+  if (inputFingerprint && inputFingerprint !== await payrollInputFingerprint(organizationId, year, month)) throw new PayrollEngineError('Payroll inputs changed during processing. Reprocess this payroll.', 409);
 
   return sequelize.transaction(async (t) => {
     let run;
@@ -146,6 +195,7 @@ async function processRun({ organizationId, year, month, userId }) {
     run.totalNetPay = totalNet;
     run.processedAt = new Date();
     run.processedByUserId = userId || null;
+    run.inputFingerprint = inputFingerprint;
     run.approvedAt = null; run.approvedByUserId = null;
     run.paidAt = null; run.paidByUserId = null;
     run.rejectionReason = null;
@@ -168,6 +218,17 @@ function assertOwnRun(run, user) {
 
 async function approveRun(run, userId) {
   if (run.status !== 'PROCESSED') throw new PayrollEngineError(`Only a processed run can be approved (this one is ${run.status}).`, 409);
+  const monthEnd = new Date(Date.UTC(run.year, run.month, 0)).toISOString().slice(0, 10);
+  const adopted = await require('./catalogueAdoption').adoptionForDate(run.organizationId, monthEnd);
+  if (adopted && run.processedByUserId && Number(run.processedByUserId) === Number(userId)) throw new PayrollEngineError('A different approving authority must approve this payroll run.', 403);
+  if (run.inputFingerprint && run.inputFingerprint !== await payrollInputFingerprint(run.organizationId, run.year, run.month)) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
+const changedSinceProcessing = { status: 'APPROVED', decidedAt: { [Op.gt]: run.processedAt }, effectiveDate: { [Op.lte]: monthEnd } };
+  const [salaryChanges, adoptions, financialChanges] = await Promise.all([
+    EmployeeCompensationAssignment.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId } }),
+    OrganizationCatalogueAdoption.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId } }),
+    require('../models').FinancialChangeProposal.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId } }),
+  ]);
+  if (salaryChanges || adoptions || financialChanges) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
   run.status = 'APPROVED';
   run.approvedAt = new Date();
   run.approvedByUserId = userId;

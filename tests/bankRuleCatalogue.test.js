@@ -23,6 +23,14 @@ test('validates and expands post scales without inventing payroll defaults', () 
   assert.deepEqual(value.posts[0].stages, [10000, 10500, 11000]);
   assert.deepEqual(value.payrollDefaults, { daPercent: 12, pfCalculationBase: 'BASIC_PLUS_DA' });
 });
+test('accepts explicit whole-rupee stage ladders without a scale expression', () => {
+  const value = catalogue.validateCatalogue(draft({ posts: [{ code: 'NURSE', name: 'Nurse', stages: [10000, 10450, 10925], payableDays: 30 }] }));
+  assert.deepEqual(value.posts[0].stages, [10000, 10450, 10925]);
+  assert.equal(value.posts[0].scaleExpression, '');
+  for (const stages of [[10000, 10000], [10000, 9999], [10000, 10000.5], [0, 100], Array(502).fill(100)]) {
+    assert.throws(() => catalogue.validateCatalogue(draft({ posts: [{ code: 'NURSE', name: 'Nurse', stages }] })), /stage|scale/i);
+  }
+});
 test('rejects malformed, excessive, decreasing and mismatched scales', () => {
   for (const expr of ['100-200', '100-0/2-100', '100--5/2-90', '100-5/999999999-200', '100-5/2-120', '0', '1e2', '100-5/2-110-junk']) {
     assert.throws(() => catalogue.validateCatalogue(draft({ posts: [{ code: 'A', name: 'A', scaleExpression: expr }] })), /scale|stage|expression/i);

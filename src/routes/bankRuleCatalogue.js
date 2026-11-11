@@ -1,6 +1,6 @@
 'use strict';
 const express = require('express');
-const { BankRuleCatalogue } = require('../models');
+const { BankRuleCatalogue, OrganizationCatalogueAdoption } = require('../models');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const catalogue = require('../services/bankRuleCatalogue');
@@ -31,10 +31,11 @@ router.get('/', action(async (req, res) => {
     where.status = req.query.status;
   }
   const rows = await BankRuleCatalogue.findAll({ where, order: [['id', 'DESC']] });
-  res.json({ data: rows.map(row => {
+  res.json({ data: await Promise.all(rows.map(async row => {
     const { posts, rules, payrollDefaults, notes, verificationNote, ...summary } = row.toJSON();
-    return { ...summary, postCount: posts.length, ruleCount: rules.length, payrollSettingCount: Object.keys(payrollDefaults).length };
-  }) });
+    return { ...summary, postCount: posts.length, ruleCount: rules.length, payrollSettingCount: Object.keys(payrollDefaults).length,
+      adoptedBankCount: await OrganizationCatalogueAdoption.count({ where: { catalogueId: row.id, status: 'APPROVED' }, distinct: true, col: 'organizationId' }) };
+  })) });
 }));
 router.post('/', action(async (req, res) => {
   const row = await catalogue.createDraft(req.user.id, req.body);

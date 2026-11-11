@@ -75,4 +75,4 @@ function send(res, row) {
   return res.end(Buffer.from(row.data));
 }
 
-module.exports = { upload, list, get, send, DocumentError, DOC_TYPES, MAX_BYTES };
+module.exports = { upload, list, get, send, decodeUpload, DocumentError, DOC_TYPES, MAX_BYTES };

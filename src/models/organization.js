@@ -23,6 +23,7 @@ const Organization = sequelize.define('Organization', {
     allowNull: true,
     field: 'bank_class',
   },
+  requiresCatalogueAdoption: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'requires_catalogue_adoption' },
   // Optional "license" expiry — like status, but time-boxed instead of a
   // manual flip. NULL means no expiry (perpetual). Enforced in
   // services/orgAccess.js, checked at login and on every authenticated

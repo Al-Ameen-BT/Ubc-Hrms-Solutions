@@ -2,7 +2,7 @@
 
 const { verifyToken } = require('../services/authService');
 const { checkOrgAccess } = require('../services/orgAccess');
-const { User, Organization } = require('../models');
+const { User, Organization, Employee, EmployeeMobileDevice } = require('../models');
 
 /**
  * Verifies the Bearer token and attaches req.user = { id, role, organizationId }.
@@ -28,6 +28,13 @@ async function authenticate(req, res, next) {
     if (!user || user.status !== 'ACTIVE') {
       return res.status(401).json({ status: 'error', message: 'User not found or inactive' });
     }
+    if (payload.deviceId) {
+      const device = await EmployeeMobileDevice.findOne({ where: { id: payload.deviceId, userId: user.id, organizationId: user.organizationId, revokedAt: null } });
+      const linked = user.role === 'EMPLOYEE' && !user.mustChangePassword && user.employeeId &&
+        await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' } }) &&
+        await User.count({ where: { employeeId: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' } }) === 1;
+      if (!device || !linked) return res.status(401).json({ status: 'error', code: 'DEVICE_REVOKED', message: 'This device is no longer linked. Scan a new QR code from your portal.' });
+    }
     if (user.organizationId) {
       const org = await Organization.findByPk(user.organizationId);
       const access = checkOrgAccess(org);
@@ -35,7 +42,7 @@ async function authenticate(req, res, next) {
         return res.status(403).json({ status: 'error', code: access.code, message: access.message });
       }
     }
-    req.user = { id: user.id, role: user.role, organizationId: user.organizationId, employeeId: user.employeeId, email: user.email, name: user.name };
+    req.user = { id: user.id, role: user.role, organizationId: user.organizationId, employeeId: user.employeeId, email: user.email, name: user.name, deviceId: payload.deviceId || null };
     next();
   } catch (err) {
     return res.status(401).json({ status: 'error', message: 'Invalid or expired token' });

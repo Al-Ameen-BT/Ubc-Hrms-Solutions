@@ -100,6 +100,16 @@ async function basicPayAsOfMonth(organizationId, employeeId, year, month) {
     }
   }
 
+  const employee = await Employee.findByPk(employeeId);
+  if (employee) {
+    const segments = await require('./compensationResolver').segmentsForMonth(employee, year, month);
+    if (segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY')) {
+      const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const amount = segments.reduce((sum, segment) => sum + segment.basicPay * ((Date.parse(segment.toDate) - Date.parse(segment.fromDate)) / 86400000 + 1) / daysInMonth, 0);
+      return { amount: toRupees(toPaise(amount)), source: 'CATALOGUE_ASSIGNMENT' };
+    }
+  }
+
   const cutoff = toDateOnly(endOfMonth(year, month));
   const event = await EmployeePayHistory.findOne({
     where: { employeeId, eventDate: { [Op.lte]: cutoff } },
@@ -107,7 +117,6 @@ async function basicPayAsOfMonth(organizationId, employeeId, year, month) {
   });
   if (event) return { amount: toRupees(toPaise(event.newBasicPay)), source: 'PAY_HISTORY' };
 
-  const employee = await Employee.findByPk(employeeId);
   return { amount: toRupees(toPaise(employee ? employee.currentBasicPay : 0)), source: 'CURRENT_ESTIMATE' };
 }
 

@@ -1,7 +1,8 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { masterDataApi, fmt } from '../../api/client';
-import { leaveApi } from '../../api/extended';
+import { employeeApi } from '../../api/employee';
 import { useAuth } from '../../auth/AuthContext';
 import { Card } from '../../components/ui/Card';
 import { StatLedger } from '../../components/ui/StatLedger';
@@ -13,13 +14,13 @@ export function EmployeePortalPage() {
   const { user } = useAuth();
   const employeeId = user?.employeeId;
 
-  const { data: balances } = useQuery({
+  const { data: balances, error: balancesError } = useQuery({
     queryKey: ['my-leave-balances', employeeId],
-    queryFn: () => leaveApi.employeeBalances(employeeId),
+    queryFn: () => employeeApi.leaveBalances(),
     enabled: !!employeeId,
   });
 
-  const { data: book } = useQuery({
+  const { data: book, error: bookError } = useQuery({
     queryKey: ['my-service-book', employeeId],
     queryFn: () => masterDataApi.serviceBook(employeeId),
     enabled: !!employeeId,
@@ -59,6 +60,13 @@ export function EmployeePortalPage() {
         <StatLedger label="Date of Joining" value={fmt.date(employee?.doj)} />
         <StatLedger label="Retirement" value={fmt.date(book?.effectiveRetirementDate)} />
       </div>
+      {(balancesError || bookError) && <p className="auth-error" role="alert">{balancesError?.message || bookError?.message}</p>}
+      <nav className="row-actions" aria-label="Employee quick actions">
+        <Link className="btn btn-secondary btn-sm" to="/my/payslips">Payslips</Link>
+        <Link className="btn btn-secondary btn-sm" to="/my/leave">Request leave</Link>
+        <Link className="btn btn-secondary btn-sm" to="/my/time">Check in</Link>
+        <Link className="btn btn-secondary btn-sm" to="/my/expenses">Reimbursement</Link>
+      </nav>
 
       <Card title="Leave Balances" noPadding>
         <table className="table">

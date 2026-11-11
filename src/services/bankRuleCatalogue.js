@@ -119,10 +119,18 @@ function validateCatalogue(body, publishing = false) {
     const code = text(p.code, 'Post code', 32, true).toUpperCase();
     if (!/^[A-Z][A-Z0-9_]*$/.test(code) || seen.has(code)) throw new CatalogueError('Post codes must be unique and use letters, numbers and underscores.');
     seen.add(code);
-    const scaleExpression = text(p.scaleExpression, 'Scale expression', 255, true);
+    const scaleExpression = text(p.scaleExpression, 'Scale expression', 255);
+    let stages;
+    if (scaleExpression) stages = expandStages(scaleExpression);
+    else {
+      stages = p.stages;
+      if (!Array.isArray(stages) || !stages.length || stages.length > 501 || stages.some((n, i) => !Number.isSafeInteger(n) || n <= 0 || n > 9999999999 || (i > 0 && n <= stages[i - 1]))) {
+        throw new CatalogueError('Explicit stages must be 1–501 increasing positive whole-rupee amounts.');
+      }
+    }
     return { code, name: text(p.name, 'Post name', 128, true), scaleExpression,
       payableDays: integer(p.payableDays ?? 30, 'Payable days', 1, 31),
-      monthDays: p.monthDays == null ? null : integer(p.monthDays, 'Month days', 1, 31), stages: expandStages(scaleExpression) };
+      monthDays: p.monthDays == null ? null : integer(p.monthDays, 'Month days', 1, 31), stages };
   });
   return {
     bankClass, name: text(body.name, 'Revision name', 128, true),
@@ -200,4 +208,4 @@ async function publish(id, actorId, body) {
     return load(id, transaction);
   });
 }
-module.exports = { CatalogueError, validateCatalogue, expandStages, payrollFields, referenceForClass, createDraft, updateDraft, deleteDraft, publish };
+module.exports = { CatalogueError, validateCatalogue, validatePayroll, expandStages, payrollFields, referenceForClass, createDraft, updateDraft, deleteDraft, publish };

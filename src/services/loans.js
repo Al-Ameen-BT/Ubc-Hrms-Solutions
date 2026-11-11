@@ -112,10 +112,10 @@ function manualPaymentDue(record, startDate, asOf) {
   return toRupees(max(0, min(toPaise(record.monthlyPayment), toPaise(record.totalRepaymentAmount) - toPaise(record.monthlyPayment) * elapsed)));
 }
 
-/** The 1st of `month` (1-12) in the current calendar year — the reference date a payslip preview for that month is computed "as of". */
-function asOfForMonth(month) {
+/** The 1st of the requested payroll month and year; year defaults to the current year for older callers. */
+function asOfForMonth(month, year) {
   const d = new Date();
-  d.setUTCFullYear(d.getUTCFullYear(), (month || d.getUTCMonth() + 1) - 1, 1);
+  d.setUTCFullYear(year || d.getUTCFullYear(), (month || d.getUTCMonth() + 1) - 1, 1);
   return d;
 }
 

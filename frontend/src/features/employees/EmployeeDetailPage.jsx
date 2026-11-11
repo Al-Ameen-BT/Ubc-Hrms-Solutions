@@ -16,6 +16,7 @@ import { EmployeeAttendanceTab } from './EmployeeAttendanceTab';
 import { EmployeeDocumentsTab } from './EmployeeDocumentsTab';
 import { EmployeePayslipTab } from './EmployeePayslipTab';
 import { ServiceBookPayslips } from './ServiceBookPayslips';
+import { compensationApi } from '../../api/compensation';
 
 const TABS = ['Service Book', 'Pay History', 'Leave', 'Attendance', 'Bank Accounts', 'Loans', 'Documents', 'Payslip'];
 const NON_PAY_EVENTS = ['APPOINTMENT', 'PROBATION', 'CONFIRMATION', 'TRANSFER', 'SUSPENSION', 'LWA', 'BREAK_IN_SERVICE', 'DISCIPLINARY', 'RETIREMENT', 'OTHER'];
@@ -34,6 +35,9 @@ export function EmployeeDetailPage() {
     queryKey: ['service-book', id],
     queryFn: () => masterDataApi.serviceBook(id),
   });
+  const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions });
+  const { data: salaryHistory } = useQuery({ queryKey: ['compensation', id], queryFn: () => compensationApi.assignments(id) });
+  const approvalMode = !!adoption?.requiresCatalogueAdoption || !!salaryHistory?.rows?.some(row => row.status === 'APPROVED');
 
   const { data: balances } = useQuery({
     queryKey: ['employee-leave-balances', id],
@@ -54,8 +58,9 @@ export function EmployeeDetailPage() {
 
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [salaryModalOpen, setSalaryModalOpen] = useState(false);
-  const [salaryForm, setSalaryForm] = useState({ amount: '', reason: '' });
+  const [salaryForm, setSalaryForm] = useState({ amount: '', reason: '', effectiveDate: '' });
   const [payForm, setPayForm] = useState({ hraType: 'PERCENT', fixedHraAmount: '', riskAllowance: '', otherAllowance: '' });
+  const [payApproval, setPayApproval] = useState({ effectiveDate: '', reason: '' });
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -76,22 +81,22 @@ export function EmployeeDetailPage() {
   });
 
   const updatePay = useMutation({
-    mutationFn: (payload) => masterDataApi.updateEmployee(id, payload),
+    mutationFn: (payload) => approvalMode ? compensationApi.proposeFinancialChange({ targetType: 'EMPLOYEE', targetId: Number(id), patch: payload, ...payApproval }) : masterDataApi.updateEmployee(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-book', id] });
       queryClient.invalidateQueries({ queryKey: ['emp-payslip', id] });
-      toast.add('Allowances updated.', 'success');
+      toast.add(approvalMode ? 'Allowances sent for approval.' : 'Allowances updated.', 'success');
       setPayModalOpen(false);
     },
     onError: (err) => setError(err.message || 'Could not update allowances.'),
   });
 
   const updateSalary = useMutation({
-    mutationFn: (payload) => masterDataApi.updateDirectPaySalary(id, payload),
+    mutationFn: (payload) => approvalMode ? compensationApi.proposeAssignment({ employeeId: Number(id), amount: Number(payload.amount), effectiveDate: payload.effectiveDate, reason: payload.reason }) : masterDataApi.updateDirectPaySalary(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-book', id] });
       queryClient.invalidateQueries({ queryKey: ['emp-payslip', id] });
-      toast.add('Bank-set salary updated and recorded in the Service Book.', 'success');
+      toast.add(approvalMode ? 'Bank-set salary sent for approval.' : 'Bank-set salary updated and recorded in the Service Book.', 'success');
       setSalaryModalOpen(false);
     },
     onError: (err) => setError(err.message || 'Could not update salary.'),
@@ -187,7 +192,8 @@ export function EmployeeDetailPage() {
           </div>
           <div className="employee-profile-actions">
             <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>
-            {employee.directPay ? <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(employee.currentBasicPay || ''), reason: '' }); setError(''); setSalaryModalOpen(true); }}>Edit Salary</Button> : <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>}
+            <Button variant="secondary" onClick={() => navigate(`/employees/${id}/compensation`)}>Salary Assignment</Button>
+            {employee.directPay ? <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(book?.effectiveCompensation?.basicPay || employee.currentBasicPay || ''), reason: '', effectiveDate: '' }); setError(''); setSalaryModalOpen(true); }}>Edit Salary</Button> : <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>}
             <Button variant="secondary" onClick={() => navigate('/people')}>Back</Button>
           </div>
         </div>
@@ -210,13 +216,13 @@ export function EmployeeDetailPage() {
         <div className="meta-strip-item">
           <span className="meta-strip-label">{employee.directPay ? 'Payroll Type' : 'Pay Scale & Grade'}</span>
           <span className="meta-strip-val" title={employee.CurrentPayScale?.name || '—'}>
-            {employee.directPay ? 'Bank-set salary' : employee.CurrentPayScale?.name || '—'}
+            {employee.directPay ? 'Bank-set salary' : book?.effectiveCompensation?.postName || employee.CurrentPayScale?.name || '—'}
           </span>
         </div>
         <div className="meta-strip-item">
-          <span className="meta-strip-label">{employee.directPay ? 'Self-service' : 'Scale Stage'}</span>
+          <span className="meta-strip-label">{employee.directPay ? 'Payroll Type' : 'Scale Stage'}</span>
           <span className="meta-strip-val mono">
-            {employee.directPay ? 'Unavailable' : `Stage ${employee.CurrentPayStage?.stageNo ?? '—'}`}
+            {employee.directPay ? 'Direct pay' : `Stage ${book?.effectiveCompensation?.stageNo ?? employee.CurrentPayStage?.stageNo ?? '—'}`}
           </span>
         </div>
         <div className="meta-strip-item">
@@ -239,8 +245,8 @@ export function EmployeeDetailPage() {
       <div className="stat-grid">
         <div className="stat-ledger">
           <div className="stat-ledger-label">{employee.directPay ? 'Bank-set Gross' : 'Basic Pay'}</div>
-          <div className="stat-ledger-value mono">{fmt.money(employee.currentBasicPay)}</div>
-          <div className="stat-ledger-sub">{employee.directPay ? 'Fixed monthly salary' : `Stage ${employee.CurrentPayStage?.stageNo ?? '—'} basic`}</div>
+          <div className="stat-ledger-value mono">{fmt.money(book?.effectiveCompensation?.basicPay ?? employee.currentBasicPay)}</div>
+          <div className="stat-ledger-sub">{employee.directPay ? 'Fixed monthly salary' : `Stage ${book?.effectiveCompensation?.stageNo ?? employee.CurrentPayStage?.stageNo ?? '—'} basic`}</div>
         </div>
         <div className="stat-ledger">
           <div className="stat-ledger-label">Monthly Allowances</div>
@@ -380,11 +386,12 @@ export function EmployeeDetailPage() {
       {tab === 'Payslip' && <EmployeePayslipTab employeeId={id} employeeName={employee.name} directPay={employee.directPay} />}
 
       <Modal open={salaryModalOpen} onClose={() => setSalaryModalOpen(false)} title="Change Bank-set Salary"
-        footer={<><Button variant="secondary" onClick={() => setSalaryModalOpen(false)}>Cancel</Button><Button loading={updateSalary.isPending} disabled={!Number(salaryForm.amount) || !salaryForm.reason.trim()} onClick={() => { setError(''); updateSalary.mutate(salaryForm); }}>Save Salary</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setSalaryModalOpen(false)}>Cancel</Button><Button loading={updateSalary.isPending} disabled={!Number(salaryForm.amount) || !salaryForm.reason.trim() || (approvalMode && !salaryForm.effectiveDate)} onClick={() => { setError(''); updateSalary.mutate(salaryForm); }}>{approvalMode ? 'Send for approval' : 'Save Salary'}</Button></>}>
         {error && <div className="auth-error" role="alert">{error}</div>}
         <div className="form-grid">
           <Input id="direct-salary" label="Monthly Gross Salary (₹)" type="number" value={salaryForm.amount} onChange={(e) => setSalaryForm((s) => ({ ...s, amount: e.target.value }))} mono required />
           <Input id="direct-salary-reason" label="Reason for Change" value={salaryForm.reason} onChange={(e) => setSalaryForm((s) => ({ ...s, reason: e.target.value }))} required />
+          {approvalMode && <Input id="direct-salary-date" label="Effective date" type="date" value={salaryForm.effectiveDate} onChange={(e) => setSalaryForm((s) => ({ ...s, effectiveDate: e.target.value }))} required />}
         </div>
       </Modal>
 
@@ -397,6 +404,7 @@ export function EmployeeDetailPage() {
             <Button variant="secondary" onClick={() => setPayModalOpen(false)}>Cancel</Button>
             <Button
               loading={updatePay.isPending}
+              disabled={approvalMode && (!payApproval.effectiveDate || !payApproval.reason.trim())}
               onClick={() => {
                 setError('');
                 updatePay.mutate({
@@ -407,13 +415,14 @@ export function EmployeeDetailPage() {
                 });
               }}
             >
-              Save Allowances
+              {approvalMode ? 'Send for approval' : 'Save Allowances'}
             </Button>
           </>
         }
       >
         <form noValidate>
           {error && <div className="auth-error" role="alert">{error}</div>}
+          {approvalMode && <div className="form-grid"><Input id="allowance-effective-date" label="Effective date" type="date" value={payApproval.effectiveDate} onChange={e => setPayApproval({ ...payApproval, effectiveDate: e.target.value })} /><Input id="allowance-reason" label="Reason" value={payApproval.reason} onChange={e => setPayApproval({ ...payApproval, reason: e.target.value })} /></div>}
           <div className="form-grid">
             <div className="field">
               <label className="field-label" htmlFor="modal-emp-hratype">HRA Basis</label>

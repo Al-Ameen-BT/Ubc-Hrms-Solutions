@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { masterDataApi } from '../../api/client';
+import { compensationApi } from '../../api/compensation';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
@@ -40,6 +41,8 @@ export function NewEmployeePage() {
 
   const { data: posts } = useQuery({ queryKey: ['post-cadres-lite'], queryFn: () => masterDataApi.postCadres() });
   const { data: scales } = useQuery({ queryKey: ['pay-scales-lite'], queryFn: () => masterDataApi.payScales() });
+  const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions });
+  const catalogueBank = !!adoption?.requiresCatalogueAdoption;
 
   const { data: stages } = useQuery({
     queryKey: ['pay-stages', form.currentPayScaleId],
@@ -49,9 +52,9 @@ export function NewEmployeePage() {
 
   const createMutation = useMutation({
     mutationFn: (payload) => masterDataApi.createEmployee({ ...payload, organizationId: user?.organizationId }),
-    onSuccess: () => {
+    onSuccess: (created) => {
       toast.add('Employee created.', 'success');
-      navigate('/people');
+      navigate(catalogueBank ? `/employees/${created.id}/compensation` : '/people');
     },
     onError: (err) => setError(err.message || 'Could not create employee.'),
   });
@@ -59,7 +62,7 @@ export function NewEmployeePage() {
   const canAdvance = () => {
     if (step === 0) return form.name && form.empCode && form.dob && form.gender;
     if (step === 1) return form.doj && form.postCadreId;
-    if (step === 2) return form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay;
+    if (step === 2) return catalogueBank || (form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay);
     if (step === 3) return form.bankName && form.bankAccountNumber && form.bankIfsc;
     return true;
   };
@@ -108,7 +111,7 @@ export function NewEmployeePage() {
             </div>
             <label className="checkbox-row">
               <input type="checkbox" checked={form.directPay} onChange={(e) => set({ directPay: e.target.checked, currentPayScaleId: '', currentStageId: '', currentBasicPay: '' })} />
-              <span>Direct-pay staff (security, cleaning or other bank-set salary; no self-service account)</span>
+              <span>Direct-pay staff (security, cleaning or other bank-set salary)</span>
             </label>
             <h3 className="form-section-title">Identity &amp; Contact</h3>
             <div className="form-grid">
@@ -137,6 +140,7 @@ export function NewEmployeePage() {
 
         {step === 2 && (
           <>
+            {catalogueBank ? <p className="form-note">Salary is assigned after creation from the adopted government stage, or as approved direct pay. A separate authority approves the assignment before payroll.</p> : <>
             <div className="form-grid">
               {form.directPay ? (
                 <Input id="basic" label="Bank-set Monthly Gross Salary (₹)" type="number" value={form.currentBasicPay} onChange={(e) => set({ currentBasicPay: e.target.value })} mono required />
@@ -173,6 +177,7 @@ export function NewEmployeePage() {
               </>}
             </div>
             <p className="form-note">{form.directPay ? 'This gross salary is set by the bank. Government pay stages and grade allowances do not apply; configured deductions still apply.' : 'HRA is subject to the organisation ceiling. Policies default from the organisation unless set per employee.'}</p>
+            </>}
           </>
         )}
 
@@ -196,10 +201,12 @@ export function NewEmployeePage() {
             <ReviewRow label="Post" value={postName(form.postCadreId)} />
             <ReviewRow label="Designation" value={form.designation} />
             <ReviewRow label="Department" value={form.department} />
-            <ReviewRow label={form.directPay ? 'Bank-set Monthly Gross' : 'Basic Pay'} value={form.currentBasicPay} />
-            {!form.directPay && <ReviewRow label="Pay Scale" value={scaleName(form.currentPayScaleId)} />}
-            {!form.directPay && <ReviewRow label="HRA Basis" value={form.hraType === 'FIXED' ? `Fixed Amount (₹${Number(form.fixedHraAmount || 0).toLocaleString('en-IN')})` : 'Calculated from Basic Pay (%)'} />}
-            {!form.directPay && Number(form.riskAllowance) > 0 && <ReviewRow label="Risk Allowance" value={`₹${Number(form.riskAllowance).toLocaleString('en-IN')}`} />}
+            {catalogueBank ? <ReviewRow label="Salary" value="Pending separate approval" /> : <>
+              <ReviewRow label={form.directPay ? 'Bank-set Monthly Gross' : 'Basic Pay'} value={form.currentBasicPay} />
+              {!form.directPay && <ReviewRow label="Pay Scale" value={scaleName(form.currentPayScaleId)} />}
+              {!form.directPay && <ReviewRow label="HRA Basis" value={form.hraType === 'FIXED' ? `Fixed Amount (₹${Number(form.fixedHraAmount || 0).toLocaleString('en-IN')})` : 'Calculated from Basic Pay (%)'} />}
+              {!form.directPay && Number(form.riskAllowance) > 0 && <ReviewRow label="Risk Allowance" value={`₹${Number(form.riskAllowance).toLocaleString('en-IN')}`} />}
+            </>}
             <ReviewRow label="Bank" value={`${form.bankName} · ${form.bankAccountNumber} · ${form.bankIfsc}`} />
           </div>
         )}
@@ -210,7 +217,7 @@ export function NewEmployeePage() {
           {step < STEPS.length - 1 ? (
             <Button onClick={next} disabled={!canAdvance()}>Next</Button>
           ) : (
-            <Button loading={createMutation.isPending} onClick={() => { setError(''); createMutation.mutate(form); }}>
+            <Button loading={createMutation.isPending} onClick={() => { setError(''); createMutation.mutate(catalogueBank ? { ...form, currentPayScaleId: null, currentStageId: null, currentBasicPay: null, fixedHraAmount: null, riskAllowance: null, otherAllowance: null } : form); }}>
               Create Employee
             </Button>
           )}

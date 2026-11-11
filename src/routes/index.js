@@ -11,12 +11,23 @@ router.use('/public', require('./public'));
 
 // Sign-in, MFA, password reset.
 router.use('/auth', require('./auth'));
+const deviceRoutes = require('./employeeDevices');
+router.use('/me/devices', deviceRoutes.employee);
+router.use('/mobile', deviceRoutes.mobile);
+router.use('/me', require('./me'));
 
 // Super Admin platform administration.
 router.use('/admin', require('./admin'));
 router.use('/admin/bank-rule-catalogue', require('./bankRuleCatalogue'));
 
 // An Org Admin's own organisation settings.
+router.use('/org/employee-policy', require('./orgEmployeePolicy'));
+router.use('/org/catalogue-adoptions', require('./orgCatalogueAdoption'));
+router.use('/org/compensation', require('./orgCompensation'));
+router.use('/org/financial-changes', require('./orgFinancialChanges'));
+router.use('/org/holidays', require('./orgHolidays'));
+router.use('/org/time', require('./orgTime'));
+router.use('/org/expenses', require('./orgExpenses'));
 router.use('/org', require('./orgSettings'));
 
 // Org user management (Org Admin for own org; Super Admin for any).

@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi, brandingApi } from '../api/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
   const [branding, setBranding] = useState(null);
+  const [brandingVersion, setBrandingVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [orgCode, setOrgCode] = useState(() => {
     const match = window.location.pathname.match(/^\/o\/([^/]+)/);
@@ -43,7 +46,13 @@ export function AuthProvider({ children }) {
       }
     }
     loadBranding();
-  }, [orgCode]);
+  }, [orgCode, brandingVersion]);
+
+  useEffect(() => {
+    const refresh = () => setBrandingVersion(version => version + 1);
+    window.addEventListener('ucb:branding-changed', refresh);
+    return () => window.removeEventListener('ucb:branding-changed', refresh);
+  }, []);
 
   /* Restore session from token */
   useEffect(() => {
@@ -58,45 +67,50 @@ export function AuthProvider({ children }) {
         setUser(data);
       } catch {
         sessionStorage.removeItem('token');
+        queryClient.clear();
       } finally {
         setLoading(false);
       }
     }
     restore();
-  }, []);
+  }, [queryClient]);
 
   const login = useCallback(async (email, password, code) => {
     const data = await authApi.login(email, password, code);
     if (data.token) {
+      queryClient.clear();
       sessionStorage.setItem('token', data.token);
       setUser(data.user);
       return { mfaRequired: false };
     }
     return { mfaRequired: true, challengeToken: data.mfaToken };
-  }, []);
+  }, [queryClient]);
 
   const verifyMfa = useCallback(async (challengeToken, code) => {
     const data = await authApi.verifyMfa(challengeToken, code);
+    queryClient.clear();
     sessionStorage.setItem('token', data.token);
     setUser(data.user);
-  }, []);
+  }, [queryClient]);
 
   const logout = useCallback(() => {
+    queryClient.clear();
     sessionStorage.removeItem('token');
     setUser(null);
-  }, []);
+  }, [queryClient]);
 
   /* The API client dispatches 'ucb:logout' when a session ends mid-flight
      (401) or the bank is suspended / its licence lapses (403). Clear the user
      and carry a notice to the sign-in screen. */
   useEffect(() => {
     function onLogout(e) {
+      queryClient.clear();
       setUser(null);
       if (e && e.detail && e.detail.message) setFlash({ message: e.detail.message, kind: e.detail.kind || 'warn' });
     }
     window.addEventListener('ucb:logout', onLogout);
     return () => window.removeEventListener('ucb:logout', onLogout);
-  }, []);
+  }, [queryClient]);
 
   /* Re-fetches /auth/me and refreshes the stored user — used after actions
      that change server-side user state (password change, MFA enable/disable). */

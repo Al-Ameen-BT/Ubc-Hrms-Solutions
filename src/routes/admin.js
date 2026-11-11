@@ -16,7 +16,7 @@
 
 const express = require('express');
 const { Op, fn, col, where: sqlWhere } = require('sequelize');
-const { Organization, User, AuditLog, sequelize } = require('../models');
+const { Organization, User, AuditLog, PostCadre, sequelize } = require('../models');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { licenseSummary, todayIST, daysBetween } = require('../services/orgAccess');
 const license = require('../services/license');
@@ -201,9 +201,7 @@ router.post('/organizations/:id/pay-scales/bulk-apply', async (req, res) => {
 });
 
 // POST — onboard a new UCB tenant (profile + licence in one step). The bank
-// class is required and chosen once here — it drives which reference
-// post/pay-scale library (src/seed/payScalesUCB.js) gets auto-provisioned
-// into this organisation.
+// class is required; verified pay rules are adopted separately.
 router.post('/organizations', async (req, res) => {
   try {
     const b = req.body || {};
@@ -218,9 +216,9 @@ router.post('/organizations', async (req, res) => {
       if (conflict) return res.status(conflict.status).json({ status: 'error', message: conflict.message });
     }
     orgFields.checkDateOrder(Organization.build({ ...fields, code }));
-    const org = await sequelize.transaction(async (transaction) => {
-      const created = await Organization.create({ ...fields, code, status: 'ACTIVE' }, { transaction });
-      await payScaleLibrary.provisionForOrganization(created, { transaction });
+    const org = await sequelize.transaction(async transaction => {
+      const created = await Organization.create({ ...fields, code, status: 'ACTIVE', requiresCatalogueAdoption: true }, { transaction });
+      await PostCadre.create({ organizationId: created.id, code: 'UNASSIGNED', name: 'Unassigned (pending bank rules)' }, { transaction });
       return created;
     });
     await audit(req, 'org.create', { organizationId: org.id, targetType: 'organization', targetId: org.id, details: { code, name: org.name, bankClass: org.bankClass, ...pickLicense(org) } });
@@ -245,11 +243,8 @@ router.put('/organizations/:id', async (req, res) => {
   try {
     const org = await Organization.findByPk(req.params.id);
     if (!org) return res.status(404).json({ status: 'error', message: 'Not found' });
-    // Bank class can be changed at any time. Changing it never touches
-    // existing posts/pay scales (or anything an employee references) — it
-    // only ADDS the new class's posts/scales if the org doesn't already
-    // have them (see payScaleLibrary.seedMissingPosts), so switching back
-    // and forth never loses data.
+    // A class change leaves existing salary history untouched; adoption
+    // of a verified revision is a separate bank action.
     const before = pickLicense(org);
     const bankClassChanged = req.body && req.body.bankClass !== undefined && req.body.bankClass !== org.bankClass;
     const prevDomain = org.customDomain;
@@ -262,14 +257,7 @@ router.put('/organizations/:id', async (req, res) => {
       org.customDomainVerifiedAt = null; // a changed domain has to be verified again
     }
     orgFields.checkDateOrder(org);
-    if (bankClassChanged) {
-      await sequelize.transaction(async (transaction) => {
-        await org.save({ transaction });
-        await payScaleLibrary.provisionForOrganization(org, { transaction });
-      });
-    } else {
-      await org.save();
-    }
+    await org.save();
     const after = pickLicense(org);
     const changed = Object.keys(after).filter((k) => String(after[k]) !== String(before[k]));
     if (bankClassChanged) changed.push('bankClass');

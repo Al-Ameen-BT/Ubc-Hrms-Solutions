@@ -59,6 +59,20 @@ function signToken(user) {
   );
 }
 
+function signDeviceAccessToken(user, deviceId) {
+  return jwt.sign({ sub: user.id, role: user.role, organizationId: user.organizationId, deviceId, typ: 'access' }, getSecret(), { expiresIn: '15m' });
+}
+
+function signDeviceRefreshToken(user, deviceId, rotation) {
+  return jwt.sign({ sub: user.id, deviceId, rotation, typ: 'device_refresh', jti: crypto.randomBytes(16).toString('hex') }, getSecret(), { expiresIn: '30d' });
+}
+
+function verifyDeviceRefreshToken(token) {
+  const payload = jwt.verify(token, getSecret());
+  if (payload.typ !== 'device_refresh' || !Number.isInteger(payload.deviceId) || !Number.isInteger(payload.rotation)) throw new Error('Invalid device refresh token');
+  return payload;
+}
+
 function verifyToken(token) {
   const payload = jwt.verify(token, getSecret());
   if (payload.typ && payload.typ !== 'access') {
@@ -130,6 +144,9 @@ module.exports = {
   verifyPassword,
   generateTempPassword,
   signToken,
+  signDeviceAccessToken,
+  signDeviceRefreshToken,
+  verifyDeviceRefreshToken,
   verifyToken,
   signMfaChallengeToken,
   verifyMfaChallengeToken,

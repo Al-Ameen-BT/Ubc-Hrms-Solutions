@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, fmt } from '../../api/client';
+import { usersApi, masterDataApi, fmt } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
@@ -20,7 +20,9 @@ export function UsersPage({ embedded = false }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', role: 'HR_OFFICER' });
+  const [form, setForm] = useState({ name: '', email: '', role: 'HR_OFFICER', employeeId: '' });
+  const [linkTarget, setLinkTarget] = useState(null);
+  const [linkEmployeeId, setLinkEmployeeId] = useState('');
   const [error, setError] = useState('');
   const [tempPassword, setTempPassword] = useState(null);
   const [statusTarget, setStatusTarget] = useState(null);
@@ -31,13 +33,15 @@ export function UsersPage({ embedded = false }) {
     queryFn: () => usersApi.list(orgId),
     enabled: !!orgId,
   });
+  const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => masterDataApi.employees(), enabled: !!orgId });
+  const employeeOptions = (employees?.rows || []).filter((employee) => employee.status === 'ACTIVE' && !(data?.rows || []).some((account) => account.status === 'ACTIVE' && account.employeeId === employee.id && account.id !== linkTarget?.id));
 
   const createMutation = useMutation({
     mutationFn: (payload) => usersApi.create(orgId, payload),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['users', orgId] });
       setTempPassword(res.tempPassword || 'Sent by email');
-      setForm({ name: '', email: '', role: 'HR_OFFICER' });
+      setForm({ name: '', email: '', role: 'HR_OFFICER', employeeId: '' });
       toast.add('User created.', 'success');
     },
     onError: (err) => setError(err.message || 'Could not create user.'),
@@ -58,6 +62,11 @@ export function UsersPage({ embedded = false }) {
     onSuccess: (res) => { setTempPassword(res.tempPassword || 'Sent by email'); toast.add('Password reset.', 'success'); },
     onError: (err) => toast.add(err.message || 'Could not reset password.', 'error'),
   });
+  const linkMutation = useMutation({
+    mutationFn: () => usersApi.update(orgId, linkTarget.id, { employeeId: linkEmployeeId || null }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users', orgId] }); setLinkTarget(null); toast.add('Employee link updated.', 'success'); },
+    onError: (err) => setActionError(err.message || 'Could not update employee link.'),
+  });
 
   const rows = useMemo(() => {
     const all = data?.rows || [];
@@ -70,6 +79,7 @@ export function UsersPage({ embedded = false }) {
     { field: 'name', label: 'Name' },
     { field: 'email', label: 'Email', mono: true },
     { field: 'role', label: 'Role', render: (row) => <Badge variant={row.role === 'ORG_ADMIN' ? 'info' : 'default'}>{row.role?.replace(/_/g, ' ')}</Badge> },
+    { field: 'employeeId', label: 'Employee', render: (row) => (employees?.rows || []).find((employee) => employee.id === row.employeeId)?.name || (row.employeeId ? `#${row.employeeId}` : 'Unlinked') },
     { field: 'mfaEnabled', label: '2FA', render: (row) => (row.mfaEnabled ? <Badge variant="success">On</Badge> : '—') },
     { field: 'status', label: 'Status', render: (row) => <Badge variant={row.status === 'ACTIVE' ? 'success' : 'default'}>{row.status}</Badge> },
     { field: 'lastLoginAt', label: 'Last Sign-in', mono: true, render: (row) => fmt.dateTime(row.lastLoginAt) },
@@ -77,6 +87,7 @@ export function UsersPage({ embedded = false }) {
       field: 'actions', label: '', sortable: false,
       render: (row) => (
         <div className="row-actions">
+          <Button variant="secondary" size="sm" onClick={() => { setLinkTarget(row); setLinkEmployeeId(row.employeeId || ''); setActionError(''); }}>Link employee</Button>
           <Button variant="secondary" size="sm" onClick={() => resetMutation.mutate(row.id)}>Reset Password</Button>
           {row.id !== user?.id && (
             <Button
@@ -138,8 +149,26 @@ export function UsersPage({ embedded = false }) {
                 {ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
               </select>
             </div>
+            {form.role === 'EMPLOYEE' && <div className="field">
+              <label className="field-label" htmlFor="nu-employee">Employee record</label>
+              <select id="nu-employee" className="input" value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })}>
+                <option value="">Select an employee</option>
+                {employeeOptions.map((employee) => <option key={employee.id} value={employee.id}>{employee.empCode} · {employee.name}</option>)}
+              </select>
+            </div>}
           </form>
         )}
+      </Modal>
+
+      <Modal open={linkTarget != null} onClose={() => setLinkTarget(null)} title={`Link employee · ${linkTarget?.name || ''}`}
+        footer={<><Button variant="secondary" onClick={() => setLinkTarget(null)}>Cancel</Button><Button loading={linkMutation.isPending} onClick={() => { setActionError(''); linkMutation.mutate(); }}>Save link</Button></>}>
+        {actionError && <div className="auth-error" role="alert">{actionError}</div>}
+        <div className="field"><label className="field-label" htmlFor="link-employee">Employee record</label>
+          <select id="link-employee" className="input" value={linkEmployeeId} onChange={(e) => setLinkEmployeeId(e.target.value)}>
+            <option value="">Unlinked</option>
+            {employeeOptions.map((employee) => <option key={employee.id} value={employee.id}>{employee.empCode} · {employee.name}</option>)}
+          </select>
+        </div>
       </Modal>
 
       <ConfirmationModal

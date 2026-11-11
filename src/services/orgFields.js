@@ -207,7 +207,7 @@ function validateEmployeeMandatoryFields(org, effective) {
   const missing = [];
   for (const f of MANDATORY_FIELD_DEFS) {
     if (!config[f.key]) continue;
-    if (effective.directPay && (f.key === 'currentPayScaleId' || f.key === 'currentStageId')) continue;
+    if ((effective.directPay || org?.requiresCatalogueAdoption) && (f.key === 'currentPayScaleId' || f.key === 'currentStageId')) continue;
     if (f.key === 'bankDetails') {
       if (!effective.bankName || !effective.bankAccountNumber || !effective.bankIfsc) missing.push(f.label);
       continue;

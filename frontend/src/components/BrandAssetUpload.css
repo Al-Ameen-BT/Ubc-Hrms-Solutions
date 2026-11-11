@@ -1,0 +1,7 @@
+.brand-asset-preview {
+  display: block;
+  max-width: min(100%, 360px);
+  max-height: 120px;
+  object-fit: contain;
+  margin: 12px 0;
+}

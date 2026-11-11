@@ -7,7 +7,8 @@
  * email and audit entry are identical no matter which screen it came from.
  */
 
-const { User, Organization, Employee } = require('../models');
+const { sequelize, User, Organization, Employee, EmployeeMobileDevice, EmployeeDeviceLink } = require('../models');
+const { Op } = require('sequelize');
 const { hashPassword, generateTempPassword } = require('./authService');
 const { assertCanAddUser } = require('./license');
 const mailer = require('./mailer');
@@ -74,14 +75,8 @@ async function createAccount(req, { organizationId, email, name, role, employeeI
     throw new UserAdminError(409, 'A user with this email already exists.');
   }
   if (organizationId) await assertCanAddUser(organizationId);
-  if (employeeId) {
-    const employee = await Employee.findByPk(employeeId);
-    if (!employee || String(employee.organizationId) !== String(organizationId)) throw new UserAdminError(400, 'Employee must belong to this bank.');
-    if (employee.directPay) throw new UserAdminError(400, 'Direct-pay staff do not have self-service accounts.');
-  }
-
   const tempPassword = generateTempPassword();
-  const user = await User.create({
+  const values = {
     organizationId: organizationId || null,
     email: cleanEmail,
     name: String(name).trim(),
@@ -90,7 +85,10 @@ async function createAccount(req, { organizationId, email, name, role, employeeI
     passwordHash: await hashPassword(tempPassword),
     mustChangePassword: true,
     status: 'ACTIVE',
-  });
+  };
+  const user = employeeId
+    ? await withEmployeeLink(organizationId, employeeId, null, transaction => User.create(values, { transaction }))
+    : await User.create(values);
 
   let emailResult = { requested: !!sendEmail, sent: false, error: null };
   if (sendEmail) {
@@ -105,11 +103,34 @@ async function createAccount(req, { organizationId, email, name, role, employeeI
   return { user, tempPassword, email: emailResult };
 }
 
+async function assertEmployeeLink(organizationId, employeeId, exceptUserId, transaction) {
+  const employee = await Employee.findByPk(employeeId, { transaction, lock: transaction?.LOCK.UPDATE });
+  if (!employee || String(employee.organizationId) !== String(organizationId)) throw new UserAdminError(400, 'Employee must belong to this bank.');
+  const where = { employeeId, status: 'ACTIVE' };
+  if (exceptUserId) where.id = { [Op.ne]: exceptUserId };
+  if (await User.findOne({ where, transaction })) throw new UserAdminError(409, 'This employee already has an active account.');
+}
+
+async function withEmployeeLink(organizationId, employeeId, exceptUserId, write) {
+  return sequelize.transaction(async transaction => {
+    await assertEmployeeLink(organizationId, employeeId, exceptUserId, transaction);
+    return write(transaction);
+  });
+}
+
+async function revokeEmployeeDevices(userId, transaction) {
+  await EmployeeMobileDevice.update({ revokedAt: new Date() }, { where: { userId, revokedAt: null }, transaction });
+  await EmployeeDeviceLink.update({ status: 'CANCELLED' }, { where: { userId, status: ['PENDING', 'CLAIMED', 'APPROVED'] }, transaction });
+}
+
 async function resetPassword(req, user, sendEmail) {
   const tempPassword = generateTempPassword();
-  user.passwordHash = await hashPassword(tempPassword);
-  user.mustChangePassword = true;
-  await user.save();
+  await sequelize.transaction(async transaction => {
+    user.passwordHash = await hashPassword(tempPassword);
+    user.mustChangePassword = true;
+    await user.save({ transaction });
+    await revokeEmployeeDevices(user.id, transaction);
+  });
   let emailResult = { requested: !!sendEmail, sent: false, error: null };
   if (sendEmail) {
     const r = await sendWelcome(req, user, tempPassword);
@@ -137,9 +158,22 @@ async function resetMfa(req, user) {
 async function setStatus(req, user, status) {
   if (!['ACTIVE', 'INACTIVE'].includes(status)) throw new UserAdminError(400, "status must be 'ACTIVE' or 'INACTIVE'");
   if (status === user.status) return;
-  if (status === 'ACTIVE' && user.organizationId) await assertCanAddUser(user.organizationId);
-  user.status = status;
-  await user.save();
+  if (status === 'ACTIVE' && user.organizationId) {
+    await assertCanAddUser(user.organizationId);
+    if (user.employeeId) {
+      await withEmployeeLink(user.organizationId, user.employeeId, user.id, async transaction => {
+        user.status = status;
+        await user.save({ transaction });
+      });
+      await audit(req, 'user.reactivate', { organizationId: user.organizationId, targetType: 'user', targetId: user.id, details: { email: user.email } });
+      return;
+    }
+  }
+  await sequelize.transaction(async transaction => {
+    user.status = status;
+    await user.save({ transaction });
+    if (status === 'INACTIVE') await revokeEmployeeDevices(user.id, transaction);
+  });
   await audit(req, status === 'ACTIVE' ? 'user.reactivate' : 'user.deactivate', {
     organizationId: user.organizationId, targetType: 'user', targetId: user.id, details: { email: user.email },
   });
@@ -160,8 +194,12 @@ async function hardDelete(req, user) {
   }
   const { PasswordResetToken } = require('../models');
   const email = user.email; const organizationId = user.organizationId; const userId = user.id;
-  await PasswordResetToken.destroy({ where: { userId } });
-  await user.destroy();
+  await sequelize.transaction(async transaction => {
+    await PasswordResetToken.destroy({ where: { userId }, transaction });
+    await EmployeeDeviceLink.destroy({ where: { userId }, transaction });
+    await EmployeeMobileDevice.destroy({ where: { userId }, transaction });
+    await user.destroy({ transaction });
+  });
   await audit(req, 'user.delete', {
     organizationId, targetType: 'user', targetId: userId, details: { email },
   });
@@ -176,5 +214,5 @@ function sendError(res, err) {
 }
 
 module.exports = {
-  publicUser, createAccount, resetPassword, resetMfa, setStatus, hardDelete, sendError, loginUrlFor, UserAdminError,
+  publicUser, createAccount, assertEmployeeLink, withEmployeeLink, revokeEmployeeDevices, resetPassword, resetMfa, setStatus, hardDelete, sendError, loginUrlFor, UserAdminError,
 };

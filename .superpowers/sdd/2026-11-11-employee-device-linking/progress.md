@@ -1,0 +1,11 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-11-11-employee-device-linking.md
+
+Pre-flight: Task 1 device models/tokens are consumed by Task 2 routes; Task 2 response shapes are consumed by Task 3 portal and Task 4 mobile; Task 4 session verification is exercised by Task 5 full checks. Interfaces match the approved spec.
+Ruling: Work in existing checkout on main — earlier staged HRMS work must stay in place and .git metadata is read-only in this sandbox — no commits or worktree creation; risk is a mixed working tree that needs careful diff review before a later commit.
+Baseline: root backend 88/88 pass with loopback socket permission; mobile direct node --import tsx test passes, while sandboxed npm test and loopback servers hit EPERM without escalation.
+Task 1: Device and link models, SQL tables, signed device tokens, and per-request device/employee/tenant guard complete. Focused token guard tests passed.
+Task 2: Two-minute single-use QR, portal code approval, transactional issuance, rotating refresh, revocation, rate limits, and audit complete. QR creation now serializes per user. Admin password reset, deactivation, role/employee changes, and hard deletion handle devices and pending links. Focused API tests passed.
+Task 3: Employee-only Linked devices tab, password check, QR countdown, code entry, status polling, and revocation complete. Wrong-password browser-session regression test passed; frontend build passed.
+Task 4: Expo Camera QR flow, fixed-origin parser, SecureStore session, single-flight renewal, portal-linked signout, and in-app bank branding complete. Generic native icon retained. Mobile tests, typecheck, and Android/iOS exports passed.
+Task 5: Final read-only review found lifecycle gaps; they were fixed and covered. Full backend, mobile, web, version, and diff checks pass. Native camera, store builds, production MySQL, and live backend were not available for validation.
+Ruling: If a response is lost after server-side token issue or rotation, strict replay detection requires a fresh portal QR. This is documented for employees; a retry-safe recovery protocol can be designed later without storing plaintext tokens or accepting an old refresh token for access.

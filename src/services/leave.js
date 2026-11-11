@@ -4,10 +4,8 @@
  * Leave Policy + Leave Management — see models/leaveType.js,
  * employeeLeaveBalance.js, leaveApplication.js.
  *
- * This product has no employee self-service login (every screen is used
- * by HR/payroll staff), so a "leave application" here is filed by HR on
- * the employee's behalf — the same shape as attendance/LOP marking — and
- * decided by an approver, rather than a self-serve request/inbox flow.
+ * Applications can be filed by HR on an employee's behalf or by the
+ * employee through /me. The existing approver flow decides both.
  *
  * Rule verification required: the default leave types this service can
  * seed (seedDefaultLeaveTypes) follow the commonly-cited Kerala Service
@@ -166,7 +164,7 @@ async function applyLeave(employee, { leaveTypeId, fromDate, toDate, reason }, u
   const application = await LeaveApplication.create({
     employeeId: employee.id, leaveTypeId: leaveType.id, fromDate, toDate, days,
     reason: reason ? String(reason).slice(0, 500) : null, appliedBy: userId || null,
-    status: leaveType.requiresApproval ? 'PENDING' : 'APPROVED',
+    status: 'PENDING',
   });
   if (!leaveType.requiresApproval) {
     await settleApproval(application, leaveType, employee, 'APPROVED', userId, null);
@@ -175,9 +173,15 @@ async function applyLeave(employee, { leaveTypeId, fromDate, toDate, reason }, u
 }
 
 async function settleApproval(application, leaveType, employee, decision, userId, reason) {
+  const year = decision === 'APPROVED' && leaveType.accrualMethod !== 'NONE'
+    ? await currentYearLabel(employee.organizationId, application.fromDate) : null;
   return sequelize.transaction(async (t) => {
+    const [changed] = await LeaveApplication.update({
+      status: decision, decidedBy: userId || null, decidedAt: new Date(),
+      decisionReason: reason ? String(reason).slice(0, 500) : null,
+    }, { where: { id: application.id, status: 'PENDING' }, transaction: t });
+    if (!changed) throw new LeaveError('This application has already been decided.', 409);
     if (decision === 'APPROVED' && leaveType.accrualMethod !== 'NONE') {
-      const year = await currentYearLabel(employee.organizationId, application.fromDate);
       const bal = await getOrCreateBalance(employee.id, leaveType.id, year, t);
       if (Number(application.days) > Number(bal.closingBalance)) {
         throw new LeaveError(`Insufficient ${leaveType.code} balance at approval time: ${bal.closingBalance} day(s) available, ${application.days} requested.`, 409);
@@ -186,10 +190,7 @@ async function settleApproval(application, leaveType, employee, decision, userId
       recomputeClosing(bal);
       await bal.save({ transaction: t });
     }
-    await application.update({
-      status: decision, decidedBy: userId || null, decidedAt: new Date(),
-      decisionReason: reason ? String(reason).slice(0, 500) : null,
-    }, { transaction: t });
+    await application.reload({ transaction: t });
     return application;
   });
 }
@@ -207,18 +208,24 @@ async function decideLeave(application, decision, userId, reason) {
 async function cancelLeave(application, userId) {
   if (!['PENDING', 'APPROVED'].includes(application.status)) throw new LeaveError(`This application is already ${application.status}.`, 409);
   const wasApproved = application.status === 'APPROVED';
+  const leaveType = wasApproved ? await LeaveType.findByPk(application.leaveTypeId) : null;
+  const year = wasApproved && leaveType.accrualMethod !== 'NONE'
+    ? await currentYearLabel((await Employee.findByPk(application.employeeId)).organizationId, application.fromDate) : null;
   return sequelize.transaction(async (t) => {
+    const [changed] = await LeaveApplication.update(
+      { status: 'CANCELLED', decidedBy: userId || null, decidedAt: new Date() },
+      { where: { id: application.id, status: application.status }, transaction: t },
+    );
+    if (!changed) throw new LeaveError('This application has already changed.', 409);
     if (wasApproved) {
-      const leaveType = await LeaveType.findByPk(application.leaveTypeId);
       if (leaveType.accrualMethod !== 'NONE') {
-        const year = await currentYearLabel((await Employee.findByPk(application.employeeId)).organizationId, application.fromDate);
         const bal = await getOrCreateBalance(application.employeeId, application.leaveTypeId, year, t);
         bal.availed = round1(Math.max(0, Number(bal.availed) - Number(application.days)));
         recomputeClosing(bal);
         await bal.save({ transaction: t });
       }
     }
-    await application.update({ status: 'CANCELLED', decidedBy: userId || null, decidedAt: new Date() }, { transaction: t });
+    await application.reload({ transaction: t });
     return application;
   });
 }

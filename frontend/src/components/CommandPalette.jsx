@@ -17,6 +17,13 @@ const SCREENS = [
   { label: 'Audit Log', to: '/audit' },
   { label: 'Settings', to: '/settings' },
   { label: 'My Account', to: '/account' },
+  { label: 'My Payslips', to: '/my/payslips', roles: ['EMPLOYEE'] },
+  { label: 'My Leave', to: '/my/leave', roles: ['EMPLOYEE'] },
+  { label: 'Calendar', to: '/my/calendar', roles: ['EMPLOYEE'] },
+  { label: 'Policies', to: '/my/policies', roles: ['EMPLOYEE'] },
+  { label: 'Reimbursements', to: '/my/expenses', roles: ['EMPLOYEE'] },
+  { label: 'Workplace', to: '/my/workplace', roles: ['EMPLOYEE'] },
+  { label: 'Check-in & out', to: '/my/time', roles: ['EMPLOYEE'] },
 ];
 
 export function CommandPalette() {
@@ -47,11 +54,11 @@ export function CommandPalette() {
   useEffect(() => {
     const q = query.trim().toLowerCase();
     const screenHits = SCREENS
-      .filter((s) => !s.roles || s.roles.includes(user?.role))
+      .filter((s) => user?.role === 'EMPLOYEE' ? ['/', '/account'].includes(s.to) || s.roles?.includes('EMPLOYEE') : !s.roles || s.roles.includes(user?.role))
       .filter((s) => !q || s.label.toLowerCase().includes(q))
       .map((s) => ({ group: 'Screens', label: s.label, action: () => navigate(s.to) }));
 
-    if (!q) { setResults(screenHits); return; }
+    if (!q || user?.role === 'EMPLOYEE') { setResults(screenHits); return; }
 
     let cancelled = false;
     api.get(`/employees?search=${encodeURIComponent(q)}&limit=5`)

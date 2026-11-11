@@ -14,7 +14,7 @@
 
 const express = require('express');
 const { Op } = require('sequelize');
-const { User, Organization, PasswordResetToken } = require('../models');
+const { sequelize, User, Organization, PasswordResetToken, EmployeeMobileDevice, EmployeeDeviceLink } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { checkOrgAccess, licenseSummary } = require('../services/orgAccess');
 const brand = require('../services/brandAssets');
@@ -189,10 +189,14 @@ router.post('/change-password', authenticate, async (req, res) => {
     if (String(newPassword).length < 8) return res.status(400).json({ status: 'error', message: 'New password must be at least 8 characters' });
     if (currentPassword === newPassword) return res.status(400).json({ status: 'error', message: 'New password must be different from the current one' });
     const user = await User.findByPk(req.user.id);
-    if (!(await verifyPassword(currentPassword, user.passwordHash))) return res.status(401).json({ status: 'error', message: 'Current password is incorrect' });
-    user.passwordHash = await hashPassword(newPassword);
-    user.mustChangePassword = false;
-    await user.save();
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) return res.status(401).json({ status: 'error', code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect' });
+    await sequelize.transaction(async transaction => {
+      user.passwordHash = await hashPassword(newPassword);
+      user.mustChangePassword = false;
+      await user.save({ transaction });
+      await EmployeeMobileDevice.update({ revokedAt: new Date() }, { where: { userId: user.id, revokedAt: null }, transaction });
+      await EmployeeDeviceLink.update({ status: 'CANCELLED' }, { where: { userId: user.id, status: ['PENDING', 'CLAIMED', 'APPROVED'] }, transaction });
+    });
     await audit(req, 'auth.password.change', { targetType: 'user', targetId: user.id });
     res.json({ status: 'ok', message: 'Password changed' });
   } catch (err) {
@@ -249,11 +253,15 @@ router.post('/reset-password', async (req, res) => {
     if (!row) return res.status(400).json({ status: 'error', code: 'RESET_INVALID', message: 'This reset link is invalid or has expired. Request a new one.' });
     const user = await User.findByPk(row.userId);
     if (!user || user.status !== 'ACTIVE') return res.status(400).json({ status: 'error', code: 'RESET_INVALID', message: 'This reset link is invalid or has expired.' });
-    user.passwordHash = await hashPassword(newPassword);
-    user.mustChangePassword = false;
-    await user.save();
-    row.usedAt = new Date();
-    await row.save();
+    await sequelize.transaction(async transaction => {
+      user.passwordHash = await hashPassword(newPassword);
+      user.mustChangePassword = false;
+      await user.save({ transaction });
+      row.usedAt = new Date();
+      await row.save({ transaction });
+      await EmployeeMobileDevice.update({ revokedAt: new Date() }, { where: { userId: user.id, revokedAt: null }, transaction });
+      await EmployeeDeviceLink.update({ status: 'CANCELLED' }, { where: { userId: user.id, status: ['PENDING', 'CLAIMED', 'APPROVED'] }, transaction });
+    });
     await audit(req, 'auth.reset.completed', { actor: actorOf(user), organizationId: user.organizationId, targetType: 'user', targetId: user.id });
     // MFA is deliberately left as-is: a reset link proves control of the
     // mailbox, not of the authenticator — the next sign-in still asks for a code.

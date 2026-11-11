@@ -5,7 +5,7 @@ process.env.JWT_SECRET = 'catalogue-api-test-secret-only';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { sequelize, User, Organization, AuditLog } = require('../src/models');
+const { sequelize, User, Organization, AuditLog, PayScale, PostCadre } = require('../src/models');
 const { signToken } = require('../src/services/authService');
 const routes = require('../src/routes');
 let server, base, adminToken;
@@ -56,6 +56,7 @@ test('metadata, reference library, persisted drafts and publication work through
   const listed = await call('GET', '/?bankClass=CLASS_I&status=PUBLISHED');
   assert.equal(listed.body.data.length, 1);
   assert.equal(listed.body.data[0].postCount, ref.body.data.posts.length);
+  assert.equal(listed.body.data[0].adoptedBankCount, 0);
   assert.ok(await AuditLog.count({ where: { action: 'bank-catalogue.publish' } }));
 });
 test('rejects invalid filters, malformed IDs, version omissions and source tampering', async () => {
@@ -70,4 +71,15 @@ test('rejects invalid filters, malformed IDs, version omissions and source tampe
   const id = created.body.data.id;
   assert.equal((await call('DELETE', `/${id}`, {})).status, 409);
   assert.equal((await call('DELETE', `/${id}`, { version: 1 })).status, 200);
+});
+
+test('new bank waits for verified catalogue adoption instead of receiving reference pay stages', async () => {
+  const response = await fetch(`${base.replace('/bank-rule-catalogue', '')}/organizations`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({ code: 'PENDING', name: 'Pending Setup Bank', bankClass: 'CLASS_V' }),
+  });
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(await PayScale.count({ where: { organizationId: body.data.id } }), 0);
+  assert.deepEqual((await PostCadre.findAll({ where: { organizationId: body.data.id } })).map(row => row.code), ['UNASSIGNED']);
 });

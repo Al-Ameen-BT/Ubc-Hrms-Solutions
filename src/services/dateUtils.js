@@ -10,6 +10,12 @@ function fmt(d) {
   return toDate(d).toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
+function isDateOnly(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
+  const date = toDate(value);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function addMonths(date, months) {
   const d = toDate(date);
   const result = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, d.getUTCDate()));
@@ -74,6 +80,6 @@ function yearLabelFor(yearType, calendarYear, calendarMonth) {
 }
 
 module.exports = {
-  toDate, fmt, addMonths, addDays, diffInDays, nextOccurrenceOfMMDD, nextAnniversary,
+  toDate, fmt, isDateOnly, addMonths, addDays, diffInDays, nextOccurrenceOfMMDD, nextAnniversary,
   yearBounds, yearLabelFor,
 };
