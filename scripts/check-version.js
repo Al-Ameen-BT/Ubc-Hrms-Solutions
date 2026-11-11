@@ -10,7 +10,7 @@ const frontendLock = require('../frontend/package-lock.json');
 const mobileLock = require('../mobile/package-lock.json');
 const mobileConfig = require('../mobile/app.json');
 
-assert.match(root.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+assert.match(root.version, /^\d+\.\d+\.\d+$/, 'application version must use numeric nn.nn.nn format only');
 for (const [name, version] of [
   ['frontend/package.json', frontend.version],
   ['mobile/package.json', mobile.version],
@@ -23,7 +23,7 @@ for (const [name, version] of [
 ]) {
   assert.equal(version, root.version, `${name} must match package.json`);
 }
-assert.equal(mobileConfig.expo.version, root.version.split('-')[0], 'mobile/app.json must show the release version');
+assert.equal(mobileConfig.expo.version, root.version, 'mobile/app.json must show the release version');
 const originalApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 try {
   process.env.EXPO_PUBLIC_API_BASE_URL = 'https://172.17.121.200:8443';

@@ -1,6 +1,6 @@
 {
   "name": "ucb-employee-mobile",
-  "version": "0.2.0-alpha.2",
+  "version": "0.2.0",
   "main": "index.ts",
   "dependencies": {
     "expo": "~58.0.23",
@@ -17,11 +17,14 @@
     "react-native-safe-area-context": "~5.11.1"
   },
   "devDependencies": {
+    "@expo/image-utils": "^0.12.6",
     "@types/react": "~19.3.0",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "brand:prepare": "node scripts/prepare-brand-assets.mjs",
+    "eas-build-post-install": "npm run brand:prepare",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
