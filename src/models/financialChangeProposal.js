@@ -13,4 +13,4 @@ module.exports = sequelize.define('FinancialChangeProposal', {
   preparedBy: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'prepared_by' },
   decidedBy: { type: DataTypes.INTEGER.UNSIGNED, field: 'decided_by' },
   decidedAt: { type: DataTypes.DATE, field: 'decided_at' },
-}, { tableName: 'financial_change_proposal', indexes: [{ fields: ['organization_id', 'target_type', 'target_id', 'status', 'effective_date'] }] });
+}, { tableName: 'financial_change_proposal', indexes: [{ name: 'idx_financial_change_target_date', fields: ['organization_id', 'target_type', 'target_id', 'status', 'effective_date'] }] });

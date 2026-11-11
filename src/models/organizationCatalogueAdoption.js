@@ -11,4 +11,4 @@ module.exports = sequelize.define('OrganizationCatalogueAdoption', {
   decidedBy: { type: DataTypes.INTEGER.UNSIGNED, field: 'decided_by' },
   decidedAt: { type: DataTypes.DATE, field: 'decided_at' },
   decisionReason: { type: DataTypes.STRING(500), field: 'decision_reason' },
-}, { tableName: 'organization_catalogue_adoption', indexes: [{ fields: ['organization_id', 'status', 'effective_date'] }] });
+}, { tableName: 'organization_catalogue_adoption', indexes: [{ name: 'idx_catalogue_adoption_org_status_date', fields: ['organization_id', 'status', 'effective_date'] }] });
