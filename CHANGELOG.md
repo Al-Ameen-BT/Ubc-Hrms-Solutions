@@ -4,6 +4,18 @@ This project uses [Semantic Versioning](https://semver.org/). Record user-visibl
 
 ## Unreleased
 
+## 0.2.1 — 2026-11-11
+
+### Added
+
+- Publish the versioned `UCB-HRMS` UAT APK with the current platform favicon, Android build number 3 and numeric-only application versioning.
+
+### Changed
+
+- Refine the complete employee mobile experience in place, including loading and QR onboarding, the Home dashboard, payslips, leave, attendance, policies, calendar, workplace tree, claims and profile.
+- Replace the narrow text-only navigation with a broader full-width five-item navigation using compact symbols, minimal labels and stronger pressed/selected feedback.
+- Add consistent loading, empty, error, success, status and disabled-action presentation across employee workflows.
+
 ## 0.2.0-alpha.2 — 2026-11-11
 
 ### Added
