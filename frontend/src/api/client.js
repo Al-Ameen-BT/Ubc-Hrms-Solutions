@@ -188,7 +188,7 @@ export const platformApi = {
   createOrganization: (data) => api.post('/admin/organizations', data),
   updateOrganization: (id, data) => api.put(`/admin/organizations/${id}`, data),
   orgAdminUsers: (orgId) => api.get(`/admin/organizations/${orgId}/admin-users`),
-  createOrgAdmin: (orgId, data) => api.post(`/admin/organizations/${orgId}/admin-users`, data),
+  createOrgAdmin: (orgId, data) => api.postRaw(`/admin/organizations/${orgId}/admin-users`, data),
   uploadOrgLogo: (orgId, formData) => {
     return fetch(`${BASE}/admin/organizations/${orgId}/logo`, {
       method: 'POST',
@@ -197,7 +197,7 @@ export const platformApi = {
     }).then(r => r.json());
   },
   platformUsers: (params) => api.get(`/admin/platform-users?${new URLSearchParams(params)}`),
-  createPlatformUser: (data) => api.post('/admin/platform-users', data),
+  createPlatformUser: (data) => api.postRaw('/admin/platform-users', data),
   updatePlatformUser: (id, data) => api.put(`/admin/platform-users/${id}`, data),
   settings: () => api.get('/admin/settings'),
   updateSettings: (data) => api.put('/admin/settings', data),
@@ -247,10 +247,12 @@ export const orgApi = {
 /* Users API */
 export const usersApi = {
   list: (orgId, params) => api.get(`/organizations/${orgId}/users?${new URLSearchParams(params)}`),
+  smtpStatus: (orgId) => api.get(`/organizations/${orgId}/users/smtp-status`),
   get: (orgId, id) => api.get(`/organizations/${orgId}/users/${id}`),
-  create: (orgId, data) => api.post(`/organizations/${orgId}/users`, data),
+  create: (orgId, data) => api.postRaw(`/organizations/${orgId}/users`, data),
   update: (orgId, id, data) => api.put(`/organizations/${orgId}/users/${id}`, data),
-  resetPassword: (orgId, id, data) => api.post(`/organizations/${orgId}/users/${id}/reset-password`, data),
+  remove: (orgId, id) => api.delete(`/organizations/${orgId}/users/${id}`),
+  resetPassword: (orgId, id, data) => api.postRaw(`/organizations/${orgId}/users/${id}/reset-password`, data),
   resetMfa: (orgId, id) => api.post(`/organizations/${orgId}/users/${id}/reset-mfa`),
 };
 

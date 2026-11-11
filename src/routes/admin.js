@@ -329,7 +329,7 @@ router.post('/organizations/:id/admin-users', async (req, res) => {
     if (!org) return res.status(404).json({ status: 'error', message: 'Organisation not found' });
     const b = req.body || {};
     const r = await users.createAccount(req, { organizationId: org.id, email: b.email, name: b.name, role: 'ORG_ADMIN', sendEmail: b.sendEmail });
-    res.status(201).json({ data: publicUser(r.user), tempPassword: r.tempPassword, email: r.email });
+    res.status(201).json({ data: publicUser(r.user), tempPassword: r.tempPassword, email: r.email, loginUrl: r.loginUrl });
   } catch (err) { sendError(res, err); }
 });
 
@@ -355,7 +355,7 @@ router.post('/platform-users', async (req, res) => {
   try {
     const b = req.body || {};
     const r = await users.createAccount(req, { organizationId: null, email: b.email, name: b.name, role: 'SUPER_ADMIN', sendEmail: b.sendEmail });
-    res.status(201).json({ data: publicUser(r.user), tempPassword: r.tempPassword, email: r.email });
+    res.status(201).json({ data: publicUser(r.user), tempPassword: r.tempPassword, email: r.email, loginUrl: r.loginUrl });
   } catch (err) { sendError(res, err); }
 });
 
@@ -386,7 +386,7 @@ router.post('/platform-users/:userId/reset-password', async (req, res) => {
     if (!u) return;
     if (u.id === req.user.id) return res.status(400).json({ status: 'error', message: 'Use My account to change your own password.' });
     const r = await users.resetPassword(req, u, (req.body || {}).sendEmail);
-    res.json({ status: 'ok', tempPassword: r.tempPassword, email: r.email });
+    res.json({ status: 'ok', data: publicUser(u), tempPassword: r.tempPassword, email: r.email, loginUrl: r.loginUrl });
   } catch (err) { sendError(res, err); }
 });
 

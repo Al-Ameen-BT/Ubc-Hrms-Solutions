@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { masterDataApi, fmt } from '../../api/client';
+import { masterDataApi, usersApi, fmt } from '../../api/client';
 import { leaveApi } from '../../api/extended';
+import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
@@ -10,6 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { TempPasswordModal } from '../../components/TempPasswordModal';
 import { EmployeeBankAccountsTab } from './EmployeeBankAccountsTab';
 import { EmployeeLoansTab } from './EmployeeLoansTab';
 import { EmployeeAttendanceTab } from './EmployeeAttendanceTab';
@@ -24,12 +26,19 @@ const NON_PAY_EVENTS = ['APPOINTMENT', 'PROBATION', 'CONFIRMATION', 'TRANSFER', 
 export function EmployeeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const isOrgAdmin = currentUser?.role === 'ORG_ADMIN' && Boolean(currentUser?.organizationId);
+  const orgId = currentUser?.organizationId;
   const [tab, setTab] = useState('Service Book');
   const [eventOpen, setEventOpen] = useState(false);
   const [eventForm, setEventForm] = useState({ eventType: 'CONFIRMATION', eventDate: '', remarks: '' });
   const [error, setError] = useState('');
+  const [portalModalOpen, setPortalModalOpen] = useState(false);
+  const [portalForm, setPortalForm] = useState({ name: '', email: '', sendEmail: false });
+  const [portalError, setPortalError] = useState('');
+  const [credentials, setCredentials] = useState(null);
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['service-book', id],
@@ -38,6 +47,18 @@ export function EmployeeDetailPage() {
   const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions });
   const { data: salaryHistory } = useQuery({ queryKey: ['compensation', id], queryFn: () => compensationApi.assignments(id) });
   const approvalMode = !!adoption?.requiresCatalogueAdoption || !!salaryHistory?.rows?.some(row => row.status === 'APPROVED');
+
+  const { data: orgUsers } = useQuery({
+    queryKey: ['users', orgId],
+    queryFn: () => usersApi.list(orgId),
+    enabled: isOrgAdmin,
+  });
+  const { data: smtpStatus } = useQuery({
+    queryKey: ['users-smtp-status', orgId],
+    queryFn: () => usersApi.smtpStatus(orgId),
+    enabled: isOrgAdmin,
+  });
+  const smtpConfigured = Boolean(smtpStatus?.smtpConfigured);
 
   const { data: balances } = useQuery({
     queryKey: ['employee-leave-balances', id],
@@ -102,9 +123,79 @@ export function EmployeeDetailPage() {
     onError: (err) => setError(err.message || 'Could not update salary.'),
   });
 
+  const createPortalUser = useMutation({
+    mutationFn: (payload) => usersApi.create(orgId, {
+      name: payload.name,
+      email: payload.email,
+      role: 'EMPLOYEE',
+      employeeId: Number(id),
+      sendEmail: smtpConfigured ? Boolean(payload.sendEmail) : false,
+    }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['users', orgId] });
+      setPortalModalOpen(false);
+      setCredentials({
+        mode: 'create',
+        user: res.data,
+        tempPassword: res.tempPassword,
+        emailStatus: res.email,
+        loginUrl: res.loginUrl || smtpStatus?.loginUrl,
+      });
+      toast.add('Portal login created.', 'success');
+    },
+    onError: (err) => setPortalError(err.message || 'Could not create portal login.'),
+  });
+
+  const resetPortalPassword = useMutation({
+    mutationFn: ({ target, sendEmail }) => usersApi.resetPassword(orgId, target.id, {
+      sendEmail: smtpConfigured ? Boolean(sendEmail) : false,
+    }),
+    onSuccess: (res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['users', orgId] });
+      setPortalModalOpen(false);
+      setCredentials({
+        mode: 'reset',
+        user: res.data || vars.target,
+        tempPassword: res.tempPassword,
+        emailStatus: res.email,
+        loginUrl: res.loginUrl || smtpStatus?.loginUrl,
+      });
+      toast.add('Temporary password issued.', 'success');
+    },
+    onError: (err) => setPortalError(err.message || 'Could not reset password.'),
+  });
+
+  const linkExistingUser = useMutation({
+    mutationFn: (userId) => usersApi.update(orgId, userId, { employeeId: Number(id) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users', orgId] });
+      setPortalModalOpen(false);
+      toast.add('Existing user linked to employee.', 'success');
+    },
+    onError: (err) => setPortalError(err.message || 'Could not link existing user.'),
+  });
+
   if (isLoading) return <div className="page"><p>Loading…</p></div>;
   const employee = book?.employee;
   if (!employee) return <div className="page"><EmptyState title="Employee not found" /></div>;
+
+  const linkedAccount = isOrgAdmin
+    ? (orgUsers?.rows || []).find((u) => String(u.employeeId) === String(employee.id) && u.status === 'ACTIVE')
+    : null;
+  const unlinkedUsers = isOrgAdmin
+    ? (orgUsers?.rows || []).filter((u) => u.status === 'ACTIVE' && !u.employeeId)
+    : [];
+  const openPortalModal = () => {
+    setPortalError('');
+    setPortalForm({
+      mode: 'create',
+      existingUserId: '',
+      name: employee.name || '',
+      email: employee.officeEmail || employee.personalEmail || '',
+      sendEmail: smtpConfigured,
+    });
+    setPortalModalOpen(true);
+  };
 
   const timeline = book?.timeline || [];
   const payEntries = timeline.filter((t) => t.PayHistoryEntry);
@@ -192,6 +283,11 @@ export function EmployeeDetailPage() {
           </div>
           <div className="employee-profile-actions">
             <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>
+            {isOrgAdmin && (
+              <Button variant="secondary" onClick={openPortalModal}>
+                {linkedAccount ? 'Reset Portal Password' : 'Grant Portal Login'}
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => navigate(`/employees/${id}/compensation`)}>Salary Assignment</Button>
             {employee.directPay ? <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(book?.effectiveCompensation?.basicPay || employee.currentBasicPay || ''), reason: '', effectiveDate: '' }); setError(''); setSalaryModalOpen(true); }}>Edit Salary</Button> : <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>}
             <Button variant="secondary" onClick={() => navigate('/people')}>Back</Button>
@@ -548,6 +644,131 @@ export function EmployeeDetailPage() {
           </div>
         </form>
       </Modal>
+
+      <Modal
+        open={portalModalOpen}
+        onClose={() => setPortalModalOpen(false)}
+        title={linkedAccount ? `Reset Portal Password · ${employee.name}` : `Grant Portal & Mobile Login · ${employee.name}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPortalModalOpen(false)}>Cancel</Button>
+            <Button
+              loading={createPortalUser.isPending || linkExistingUser.isPending || resetPortalPassword.isPending}
+              disabled={!linkedAccount && portalForm.mode === 'link' && !portalForm.existingUserId}
+              onClick={() => {
+                setPortalError('');
+                if (linkedAccount) {
+                  resetPortalPassword.mutate({ target: linkedAccount, sendEmail: portalForm.sendEmail });
+                } else if (portalForm.mode === 'link') {
+                  linkExistingUser.mutate(portalForm.existingUserId);
+                } else {
+                  createPortalUser.mutate(portalForm);
+                }
+              }}
+            >
+              {linkedAccount
+                ? 'Issue Temporary Password'
+                : portalForm.mode === 'link'
+                  ? 'Link Existing User'
+                  : 'Create Portal Login'}
+            </Button>
+          </>
+        }
+      >
+        {portalError && <div className="auth-error" role="alert">{portalError}</div>}
+        {linkedAccount ? (
+          <p>
+            Issue a new temporary password for <strong>{linkedAccount.name}</strong> (<span className="mono">{linkedAccount.email}</span>).
+            They will be asked to choose a new password on their next Employee Self-Service portal login, and any linked mobile devices will be signed out until re-linked.
+          </p>
+        ) : (
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              setPortalError('');
+              if (portalForm.mode === 'link') {
+                if (portalForm.existingUserId) linkExistingUser.mutate(portalForm.existingUserId);
+              } else {
+                createPortalUser.mutate(portalForm);
+              }
+            }}
+          >
+            {unlinkedUsers.length > 0 && (
+              <div className="form-field">
+                <label className="form-label" htmlFor="emp-portal-mode">Action</label>
+                <select
+                  id="emp-portal-mode"
+                  className="input"
+                  value={portalForm.mode}
+                  onChange={(e) => {
+                    setPortalError('');
+                    setPortalForm({ ...portalForm, mode: e.target.value });
+                  }}
+                >
+                  <option value="create">Create new portal login</option>
+                  <option value="link">Link an already created user ({unlinkedUsers.length} available)</option>
+                </select>
+              </div>
+            )}
+            {portalForm.mode === 'link' && unlinkedUsers.length > 0 ? (
+              <div className="form-field">
+                <label className="form-label" htmlFor="emp-portal-existing-user">Existing User Account</label>
+                <select
+                  id="emp-portal-existing-user"
+                  className="input"
+                  value={portalForm.existingUserId}
+                  onChange={(e) => setPortalForm({ ...portalForm, existingUserId: e.target.value })}
+                  required
+                >
+                  <option value="">Select an unlinked active user...</option>
+                  {unlinkedUsers.map((u) => (
+                    <option key={u.id} value={String(u.id)}>
+                      {u.name} · {u.email} ({u.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                <Input
+                  id="emp-portal-name"
+                  label="Account Name"
+                  value={portalForm.name}
+                  onChange={(e) => setPortalForm({ ...portalForm, name: e.target.value })}
+                  required
+                />
+                <Input
+                  id="emp-portal-email"
+                  label="Login Email"
+                  type="email"
+                  value={portalForm.email}
+                  onChange={(e) => setPortalForm({ ...portalForm, email: e.target.value })}
+                  required
+                />
+              </>
+            )}
+          </form>
+        )}
+        {(linkedAccount || portalForm.mode !== 'link') && (
+          smtpConfigured ? (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={Boolean(portalForm.sendEmail)}
+                onChange={(e) => setPortalForm({ ...portalForm, sendEmail: e.target.checked })}
+              />
+              <span>Send temporary password by email (uncheck to bypass email and share manually)</span>
+            </label>
+          ) : (
+            <p className="form-note">
+              No SMTP service is configured — email delivery will be bypassed and the temporary password will appear in a popup so you can share it directly with the employee.
+            </p>
+          )
+        )}
+      </Modal>
+
+      <TempPasswordModal credentials={credentials} onClose={() => setCredentials(null)} />
     </div>
   );
 }

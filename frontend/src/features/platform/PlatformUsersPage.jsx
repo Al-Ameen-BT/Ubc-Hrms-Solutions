@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { TempPasswordModal } from '../../components/TempPasswordModal';
 
 export function PlatformUsersPage() {
   const queryClient = useQueryClient();
@@ -17,6 +18,7 @@ export function PlatformUsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ name: '', email: '' });
   const [formError, setFormError] = useState('');
+  const [credentials, setCredentials] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['platform-users', { page, search }],
@@ -25,11 +27,18 @@ export function PlatformUsersPage() {
 
   const createMutation = useMutation({
     mutationFn: (payload) => platformApi.createPlatformUser(payload),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['platform-users'] });
-      toast.add('Platform user created. Temporary password shown in the response.', 'success');
+      toast.add('Platform user created.', 'success');
       setModalOpen(false);
       setForm({ name: '', email: '' });
+      setCredentials({
+        mode: 'create',
+        user: res.data,
+        tempPassword: res.tempPassword,
+        emailStatus: res.email,
+        loginUrl: res.loginUrl,
+      });
     },
     onError: (err) => setFormError(err.message || 'Could not create user.'),
   });
@@ -112,6 +121,8 @@ export function PlatformUsersPage() {
           />
         </form>
       </Modal>
+
+      <TempPasswordModal credentials={credentials} onClose={() => setCredentials(null)} />
     </div>
   );
 }

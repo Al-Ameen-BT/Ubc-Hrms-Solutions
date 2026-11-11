@@ -64,8 +64,51 @@ async function sendWelcome(req, user, tempPassword) {
   return mailer.sendMail({ organizationId: user.organizationId, to: user.email, ...msg });
 }
 
+/** Checks whether an organisation (or platform fallback) has a usable SMTP configuration. */
+async function smtpAvailability(organizationId) {
+  const chosen = await mailer.resolve(organizationId);
+  return { smtpConfigured: Boolean(chosen), via: chosen ? chosen.via : null };
+}
+
 /**
- * @returns {{ user, tempPassword, email: {requested, sent, error} }}
+ * Attempts welcome/reset email delivery only when requested and SMTP is
+ * configured; otherwise bypasses email cleanly so callers can display the
+ * temporary password on screen.
+ */
+async function deliverTempPasswordEmail(req, user, tempPassword, sendEmail, organizationId) {
+  const [smtp, loginUrl] = await Promise.all([
+    smtpAvailability(organizationId),
+    loginUrlFor(req, user.organizationId),
+  ]);
+  if (!sendEmail || !smtp.smtpConfigured) {
+    return {
+      loginUrl,
+      emailResult: {
+        requested: !!sendEmail,
+        sent: false,
+        bypassed: true,
+        smtpConfigured: smtp.smtpConfigured,
+        via: smtp.via,
+        error: sendEmail && !smtp.smtpConfigured ? 'No SMTP server is configured.' : null,
+      },
+    };
+  }
+  const r = await sendWelcome(req, user, tempPassword);
+  return {
+    loginUrl,
+    emailResult: {
+      requested: true,
+      sent: r.sent,
+      bypassed: false,
+      smtpConfigured: true,
+      via: r.via || smtp.via,
+      error: r.error || null,
+    },
+  };
+}
+
+/**
+ * @returns {{ user, tempPassword, email: {requested, sent, bypassed, smtpConfigured, via, error}, loginUrl }}
  */
 async function createAccount(req, { organizationId, email, name, role, employeeId, sendEmail }) {
   const cleanEmail = normEmail(email);
@@ -90,17 +133,13 @@ async function createAccount(req, { organizationId, email, name, role, employeeI
     ? await withEmployeeLink(organizationId, employeeId, null, transaction => User.create(values, { transaction }))
     : await User.create(values);
 
-  let emailResult = { requested: !!sendEmail, sent: false, error: null };
-  if (sendEmail) {
-    const r = await sendWelcome(req, user, tempPassword);
-    emailResult = { requested: true, sent: r.sent, error: r.error || null };
-  }
+  const { emailResult, loginUrl } = await deliverTempPasswordEmail(req, user, tempPassword, sendEmail, organizationId);
   await audit(req, 'user.create', {
     organizationId: user.organizationId,
     targetType: 'user', targetId: user.id,
-    details: { email: user.email, role: user.role, welcomeEmailSent: emailResult.sent },
+    details: { email: user.email, role: user.role, welcomeEmailSent: emailResult.sent, emailBypassed: emailResult.bypassed },
   });
-  return { user, tempPassword, email: emailResult };
+  return { user, tempPassword, email: emailResult, loginUrl };
 }
 
 async function assertEmployeeLink(organizationId, employeeId, exceptUserId, transaction) {
@@ -131,16 +170,12 @@ async function resetPassword(req, user, sendEmail) {
     await user.save({ transaction });
     await revokeEmployeeDevices(user.id, transaction);
   });
-  let emailResult = { requested: !!sendEmail, sent: false, error: null };
-  if (sendEmail) {
-    const r = await sendWelcome(req, user, tempPassword);
-    emailResult = { requested: true, sent: r.sent, error: r.error || null };
-  }
+  const { emailResult, loginUrl } = await deliverTempPasswordEmail(req, user, tempPassword, sendEmail, user.organizationId);
   await audit(req, 'user.password.reset', {
     organizationId: user.organizationId, targetType: 'user', targetId: user.id,
-    details: { email: user.email, emailSent: emailResult.sent },
+    details: { email: user.email, emailSent: emailResult.sent, emailBypassed: emailResult.bypassed },
   });
-  return { tempPassword, email: emailResult };
+  return { tempPassword, email: emailResult, loginUrl };
 }
 
 async function resetMfa(req, user) {
@@ -214,5 +249,5 @@ function sendError(res, err) {
 }
 
 module.exports = {
-  publicUser, createAccount, assertEmployeeLink, withEmployeeLink, revokeEmployeeDevices, resetPassword, resetMfa, setStatus, hardDelete, sendError, loginUrlFor, UserAdminError,
+  publicUser, createAccount, assertEmployeeLink, withEmployeeLink, revokeEmployeeDevices, resetPassword, resetMfa, setStatus, hardDelete, sendError, loginUrlFor, smtpAvailability, UserAdminError,
 };

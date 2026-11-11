@@ -16,7 +16,7 @@ async function appBaseUrl(req) {
   const s = await getPlatformSettings();
   const configured = (s.appBaseUrl || process.env.APP_BASE_URL || '').trim();
   if (configured) return configured.replace(/\/+$/, '');
-  if (req) return `${req.protocol}://${req.get('host')}`;
+  if (req && typeof req.get === 'function' && req.get('host')) return `${req.protocol}://${req.get('host')}`;
   return '';
 }
 

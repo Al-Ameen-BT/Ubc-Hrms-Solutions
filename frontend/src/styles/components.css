@@ -309,6 +309,7 @@
 
 .row-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -1335,6 +1336,56 @@
   color: var(--text-primary);
 }
 
+/* ---------- Temporary password & SMTP bypass ---------- */
+.smtp-bypass-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-sunken, var(--bg-glass-subtle));
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.temp-pwd-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.temp-pwd-notice {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-glass-subtle);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.temp-pwd-notice-bypass {
+  border-color: var(--accent, #2563eb);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.temp-pwd-notice-sent {
+  border-color: var(--success, #16a34a);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.temp-pwd-notice-warn {
+  border-color: var(--danger, #dc2626);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.temp-pwd-meta {
+  margin: 0;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 768px) {
   .stepper-label { display: none; }
@@ -1343,4 +1394,3 @@
   .mfa-setup-grid { grid-template-columns: 1fr; }
   .profile-grid { grid-template-columns: 1fr; }
 }
-

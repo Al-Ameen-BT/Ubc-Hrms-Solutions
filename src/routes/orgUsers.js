@@ -60,6 +60,18 @@ router.get('/', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
+router.get('/smtp-status', async (req, res) => {
+  try {
+    const org = await loadOrgOr404(req, res);
+    if (!org) return;
+    const [smtp, loginUrl] = await Promise.all([
+      users.smtpAvailability(org.id),
+      users.loginUrlFor(req, org.id),
+    ]);
+    res.json({ data: { ...smtp, loginUrl } });
+  } catch (err) { sendError(res, err); }
+});
+
 router.post('/', async (req, res) => {
   try {
     const org = await loadOrgOr404(req, res);
@@ -71,7 +83,7 @@ router.post('/', async (req, res) => {
     const r = await users.createAccount(req, {
       organizationId: org.id, email: b.email, name: b.name, role: b.role, employeeId: b.employeeId, sendEmail: b.sendEmail,
     });
-    res.status(201).json({ data: publicUser(r.user), tempPassword: r.tempPassword, email: r.email });
+    res.status(201).json({ data: publicUser(r.user), tempPassword: r.tempPassword, email: r.email, loginUrl: r.loginUrl });
   } catch (err) { sendError(res, err); }
 });
 
@@ -82,7 +94,19 @@ router.put('/:userId', async (req, res) => {
     if (!user) return;
     const { name, role, status, employeeId } = req.body || {};
     const isSelf = user.id === req.user.id;
-    const accessChanged = (employeeId !== undefined && String(employeeId || '') !== String(user.employeeId || '')) || (role !== undefined && role !== user.role);
+    let nextEmployeeId = user.employeeId;
+    if (employeeId !== undefined) {
+      if (employeeId === null || employeeId === '') {
+        nextEmployeeId = null;
+      } else {
+        const parsed = Number(employeeId);
+        if (!Number.isInteger(parsed) || parsed <= 0) {
+          return res.status(400).json({ status: 'error', message: 'employeeId must be a valid employee id.' });
+        }
+        nextEmployeeId = parsed;
+      }
+    }
+    const accessChanged = (employeeId !== undefined && String(nextEmployeeId || '') !== String(user.employeeId || '')) || (role !== undefined && role !== user.role);
     if (role !== undefined && role !== user.role) {
       if (!MANAGEABLE_ROLES.includes(role)) {
         return res.status(400).json({ status: 'error', message: `role must be one of: ${MANAGEABLE_ROLES.join(', ')}` });
@@ -92,12 +116,17 @@ router.put('/:userId', async (req, res) => {
     if (status === 'INACTIVE' && isSelf) {
       return res.status(400).json({ status: 'error', message: 'You cannot deactivate your own account.' });
     }
+    if (name !== undefined) {
+      const trimmedName = String(name).trim();
+      if (!trimmedName) return res.status(400).json({ status: 'error', message: 'Name is required.' });
+      if (trimmedName.length > 255) return res.status(400).json({ status: 'error', message: 'Name must be 255 characters or fewer.' });
+    }
     if (status !== undefined) await users.setStatus(req, user, status);
     let changed = false;
-    if (employeeId !== undefined && String(employeeId || '') !== String(user.employeeId || '')) {
-      if (employeeId) {
-        await users.withEmployeeLink(user.organizationId, employeeId, user.id, async transaction => {
-          user.employeeId = employeeId;
+    if (employeeId !== undefined && String(nextEmployeeId || '') !== String(user.employeeId || '')) {
+      if (nextEmployeeId) {
+        await users.withEmployeeLink(user.organizationId, nextEmployeeId, user.id, async transaction => {
+          user.employeeId = nextEmployeeId;
           await user.save({ transaction });
         });
       } else {
@@ -105,7 +134,13 @@ router.put('/:userId', async (req, res) => {
       }
       changed = true;
     }
-    if (name !== undefined && String(name).trim()) { user.name = String(name).trim(); changed = true; }
+    if (name !== undefined) {
+      const trimmedName = String(name).trim();
+      if (trimmedName !== user.name) {
+        user.name = trimmedName;
+        changed = true;
+      }
+    }
     if (role !== undefined && role !== user.role) { user.role = role; changed = true; }
     if (changed) {
       await sequelize.transaction(async transaction => {
@@ -126,7 +161,7 @@ router.post('/:userId/reset-password', async (req, res) => {
     if (!user) return;
     if (user.id === req.user.id) return res.status(400).json({ status: 'error', message: 'Use My account to change your own password.' });
     const r = await users.resetPassword(req, user, (req.body || {}).sendEmail);
-    res.json({ status: 'ok', tempPassword: r.tempPassword, email: r.email });
+    res.json({ status: 'ok', data: publicUser(user), tempPassword: r.tempPassword, email: r.email, loginUrl: r.loginUrl });
   } catch (err) { sendError(res, err); }
 });
 
@@ -145,12 +180,14 @@ router.post('/:userId/reset-mfa', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-// DELETE /:userId — two-step: an ACTIVE account is disabled (soft delete);
-// calling DELETE again on an already-INACTIVE account permanently removes
-// it. This is deliberate friction: nothing gets permanently deleted on the
-// first call.
+// DELETE /:userId — only ORG_ADMIN may remove users from their organisation.
+// Two-step: an ACTIVE account is disabled (soft delete); calling DELETE again
+// on an already-INACTIVE account permanently removes it.
 router.delete('/:userId', async (req, res) => {
   try {
+    if (req.user.role !== 'ORG_ADMIN') {
+      return res.status(403).json({ status: 'error', message: 'Only an Organisation Admin can remove users from the organisation.' });
+    }
     const user = await loadUserInOrgOr404(req, res);
     if (!user) return;
     if (user.id === req.user.id) return res.status(400).json({ status: 'error', message: 'You cannot deactivate or delete your own account.' });

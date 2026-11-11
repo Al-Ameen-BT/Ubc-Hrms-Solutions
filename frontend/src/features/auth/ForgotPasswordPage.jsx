@@ -123,7 +123,7 @@ export function ForgotPasswordPage() {
           </p>
           <p className="login-success-hint">
             The link can only be used once. If it doesn’t arrive, check your spam
-            folder or ask your HR administrator.
+            folder or ask your Organisation Admin to issue a temporary password.
           </p>
           <div className="login-success-actions">
             <a className="login-submit login-submit-link" href="#/login">Back to sign in</a>
