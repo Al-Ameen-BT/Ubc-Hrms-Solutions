@@ -17,11 +17,13 @@ const rateLimit = require('express-rate-limit');
 const { sequelize, User } = require('./models');
 const { hashPassword } = require('./services/authService');
 const { migrate } = require('./scripts/migrate');
+const { assertSchemaCurrent } = require('./services/schemaReadiness');
 const redis = require('./services/redis');
 const apiRoutes = require('./routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+let schemaError = null;
 
 // Behind reverse proxy (Nginx / Cloudflare), so req.ip reflects
 // the real client rather than the proxy.
@@ -272,6 +274,7 @@ app.get(['/health', '/healthz'], (req, res) => {
 app.get(['/health/db', '/ready'], async (req, res) => {
   try {
     await sequelize.authenticate();
+    if (schemaError) throw schemaError;
     const redisStatus = await redis.probeRedis();
     const body = {
       status: 'ok',
@@ -455,14 +458,19 @@ app.use((err, req, res, next) => {
  * (e.g. on production, if schema changes must be applied by hand).
  */
 async function prepareDatabase() {
-  if (String(process.env.AUTO_MIGRATE).toLowerCase() === 'false') return;
   try {
     await sequelize.authenticate();
-    await sequelize.sync();
-    const added = await migrate();
+    let added = [];
+    if (String(process.env.AUTO_MIGRATE).toLowerCase() !== 'false') {
+      await sequelize.sync();
+      added = await migrate();
+    }
+    await assertSchemaCurrent(sequelize);
+    schemaError = null;
     console.log(added.length ? `Schema upgraded — added: ${added.join(', ')}` : 'Schema up to date.');
   } catch (err) {
     // Still start, so /ready can report the problem instead of the site being simply down.
+    schemaError = err;
     console.error(`*** Schema check failed: ${err.message}`);
   }
 }
