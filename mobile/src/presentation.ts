@@ -17,10 +17,10 @@ export function isPrimarySectionSelected(current: string, item: PrimarySection) 
 
 export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 const toneByStatus: Record<string, StatusTone> = {
-  APPROVED: 'success', PAID: 'success', ACKNOWLEDGED: 'success', COMPLETED: 'success',
+  APPROVED: 'success', PAID: 'success', FINALIZED: 'success', ACKNOWLEDGED: 'success', COMPLETED: 'success',
   PENDING: 'warning', SUBMITTED: 'warning', PREPARED: 'warning', OPEN: 'warning',
-  REJECTED: 'danger', DECLINED: 'danger', CANCELLED: 'danger', WITHDRAWN: 'danger',
-  IN_PROGRESS: 'info', REQUIRED: 'info',
+  REJECTED: 'danger', DECLINED: 'danger', CANCELLED: 'danger', WITHDRAWN: 'danger', EXPIRED: 'danger',
+  IN_PROGRESS: 'info', REQUIRED: 'info', ACTIVE: 'info',
 };
 
 function titleCase(value: string) {

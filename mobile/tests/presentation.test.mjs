@@ -14,6 +14,9 @@ test('status metadata gives financial and workflow states readable labels and to
   assert.deepEqual(statusMeta('REJECTED'), { label: 'Rejected', tone: 'danger' });
   assert.deepEqual(statusMeta('IN_PROGRESS'), { label: 'In progress', tone: 'info' });
   assert.deepEqual(statusMeta('something_new'), { label: 'Something new', tone: 'neutral' });
+  assert.deepEqual(statusMeta('FINALIZED'), { label: 'Finalized', tone: 'success' });
+  assert.deepEqual(statusMeta('EXPIRED'), { label: 'Expired', tone: 'danger' });
+  assert.deepEqual(statusMeta('ACTIVE'), { label: 'Active', tone: 'info' });
 });
 
 test('nested employee services keep More selected in primary navigation', () => {
