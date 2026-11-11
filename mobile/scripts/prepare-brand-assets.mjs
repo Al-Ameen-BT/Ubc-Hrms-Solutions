@@ -56,8 +56,10 @@ export async function prepareBrandAssets({
 
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'ucb-hrms-brand-'));
   const input = join(temporaryDirectory, 'platform-source');
-  const normalized = join(temporaryDirectory, 'platform-icon.png');
+  const outputDirectory = dirname(outputPath);
+  const normalized = join(outputDirectory, `.platform-icon-${process.pid}-${Date.now()}.png`);
   try {
+    await mkdir(outputDirectory, { recursive: true });
     await writeFile(input, source);
     await imageAsync(
       { input, output: normalized, format: 'png' },
@@ -65,12 +67,12 @@ export async function prepareBrandAssets({
     );
     const png = await readFile(normalized);
     if (png.subarray(1, 4).toString() !== 'PNG') throw new Error('Normalized platform favicon is not a PNG image.');
-    await mkdir(dirname(outputPath), { recursive: true });
     await rename(normalized, outputPath);
     return { source: url.origin, sha256: createHash('sha256').update(png).digest('hex') };
   } catch (error) {
     throw new Error(`Platform favicon could not be decoded as an image: ${error instanceof Error ? error.message : 'invalid image'}`);
   } finally {
+    await rm(normalized, { force: true });
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import app from '../app.json' with { type: 'json' };
@@ -24,7 +24,7 @@ test('brand preparation accepts only HTTPS platform origins', async () => {
 });
 
 test('brand preparation writes a normalized PNG from the current platform favicon', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'ucb-brand-'));
+  const dir = await mkdtemp(join(process.cwd(), '.ucb-brand-test-'));
   const outputPath = join(dir, 'platform-icon.png');
   let requested = '';
   const result = await prepareBrandAssets({
@@ -32,10 +32,12 @@ test('brand preparation writes a normalized PNG from the current platform favico
     fetchImpl: async url => { requested = String(url); return response(); },
     outputPath,
   });
-  const written = await readFile(outputPath);
-  assert.equal(requested, 'https://hrms.example.com/assets/platform/favicon');
-  assert.equal(written.subarray(1, 4).toString(), 'PNG');
-  assert.match(result.sha256, /^[a-f0-9]{64}$/);
+  try {
+    const written = await readFile(outputPath);
+    assert.equal(requested, 'https://hrms.example.com/assets/platform/favicon');
+    assert.equal(written.subarray(1, 4).toString(), 'PNG');
+    assert.match(result.sha256, /^[a-f0-9]{64}$/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('invalid favicon does not overwrite a known-good generated asset', async () => {
