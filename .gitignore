@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 *.pem
+!mobile/certs/uat-server.pem
 *.key
 *.p12
 *.pfx
@@ -23,6 +24,9 @@ node_modules/
 # --- Build output --------------------------------------------------------
 dist/
 frontend/dist/
+mobile/android/
+mobile/.local-build/
+mobile/builds/
 *.tsbuildinfo
 
 # --- Logs ----------------------------------------------------------------

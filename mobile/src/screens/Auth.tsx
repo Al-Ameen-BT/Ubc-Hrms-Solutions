@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Linking, Platform, Text, View } from 'react-native';
+import { Image, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { Api, EmployeeUser } from '../api';
 import { acceptEmployeeLink, type EmployeeSession } from '../session';
 import { parseLinkQr } from '../link';
-import { Action, Card, ErrorText, Field, Page, styles } from '../ui';
+import { Action, Card, colors, ErrorText, Field, Page, styles } from '../ui';
 
 export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated: (session: EmployeeSession) => void }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -60,6 +60,7 @@ export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated
   };
 
   return <Page>
+    {!scanning && !claim && <View style={local.illustration}><Image source={require('../../assets/link-illustration.png')} resizeMode="contain" style={local.art} accessibilityLabel="Phone linking securely to your bank" /></View>}
     <Text style={styles.title}>Link your employee app</Text>
     <Text style={styles.subtitle}>Sign in to your bank’s self-service portal on a computer. Open My Account → Linked devices and create a QR code.</Text>
     <Card>
@@ -71,6 +72,11 @@ export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated
     </Card>
   </Page>;
 }
+
+const local = StyleSheet.create({
+  illustration: { backgroundColor: colors.pale, borderRadius: 16, alignItems: 'center', justifyContent: 'center', minHeight: 210, overflow: 'hidden' },
+  art: { width: '100%', height: 210 },
+});
 
 export function PasswordForm({ api, session, onSignOut }: { api: Api; session: EmployeeSession; onSignOut: () => void }) {
   const [current, setCurrent] = useState('');

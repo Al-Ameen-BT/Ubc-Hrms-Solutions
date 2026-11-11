@@ -4,8 +4,11 @@ This project uses [Semantic Versioning](https://semver.org/). Record user-visibl
 
 ## Unreleased
 
+## 0.2.0-alpha.2 — 2026-11-11
+
 ### Added
 
+- Prepare an installable Android UAT APK profile with the UAT server certificate, illustrated launch and QR onboarding screens, and a high-resolution generic app mark.
 - Add portal-confirmed QR onboarding for the employee mobile app, with revocable linked devices, rotating mobile sessions, and bank branding inside the app.
 - Add a separate Expo Android/iOS employee self-service app for payslips, leave, policies, calendar, workplace, time, reimbursement claims and profile/password management.
 - Let platform and organisation administrators upload separate banner and icon logos; serve each organisation's icon as its custom-domain favicon.

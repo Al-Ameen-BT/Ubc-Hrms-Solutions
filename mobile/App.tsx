@@ -52,7 +52,12 @@ function EmployeeApp() {
   };
 
   if (configured.error || !api) return <Page><Text style={styles.title}>App setup needed</Text><ErrorText message={configured.error} /><Text style={styles.body}>Set EXPO_PUBLIC_API_BASE_URL to your HRMS HTTPS origin and restart the app.</Text></Page>;
-  if (loading) return <View style={{ flex: 1, justifyContent: 'center' }}><Loading /></View>;
+  if (loading) return <View style={local.loading} accessibilityRole="progressbar" accessibilityLabel="Opening employee app">
+    <Image source={require('./assets/splash-icon.png')} style={local.loadingMark} resizeMode="contain" />
+    <Text style={local.loadingTitle}>Your workplace, ready when you are.</Text>
+    <Text style={styles.muted}>Opening your secure employee space…</Text>
+    <Loading />
+  </View>;
   if (restoreError) return <Page><Text style={styles.title}>Connection needed</Text><ErrorText message={restoreError} /><Action title="Retry connection" onPress={() => setRestoreAttempt(value => value + 1)} /><Action title="Sign in with another account" secondary onPress={signOut} /></Page>;
   if (!session) return <AuthScreen api={api} onAuthenticated={setSession} />;
   if (session.user.mustChangePassword) return <Page><Text style={styles.title}>Complete account setup</Text><Text style={styles.body}>Change your temporary password in the web self-service portal, then link this phone again.</Text><Action title="Sign out" onPress={signOut} /></Page>;
@@ -69,6 +74,9 @@ function EmployeeApp() {
 }
 
 const local = StyleSheet.create({
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, gap: 16, backgroundColor: colors.paper },
+  loadingMark: { width: 112, height: 112, marginBottom: 8 },
+  loadingTitle: { color: colors.ink, fontSize: 22, fontWeight: '700', textAlign: 'center' },
   header: { backgroundColor: colors.ink, paddingHorizontal: 20, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   logo: { width: 48, height: 48, backgroundColor: colors.white, borderRadius: 8 },
   bank: { color: '#c7dded', fontSize: 13, fontWeight: '600' },

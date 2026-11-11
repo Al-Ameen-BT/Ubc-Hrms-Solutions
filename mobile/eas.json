@@ -1,0 +1,10 @@
+{
+  "cli": { "version": ">= 14.0.0" },
+  "build": {
+    "uat": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": { "EXPO_PUBLIC_API_BASE_URL": "https://172.17.121.200:8443" }
+    }
+  }
+}

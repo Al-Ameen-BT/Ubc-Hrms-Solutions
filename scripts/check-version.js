@@ -24,5 +24,14 @@ for (const [name, version] of [
   assert.equal(version, root.version, `${name} must match package.json`);
 }
 assert.equal(mobileConfig.expo.version, root.version.split('-')[0], 'mobile/app.json must show the release version');
+const originalApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+try {
+  process.env.EXPO_PUBLIC_API_BASE_URL = 'https://172.17.121.200:8443';
+  const uatConfig = require('../mobile/app.config.js')({ config: { ...mobileConfig.expo } });
+  assert.equal(uatConfig.version, root.version, 'UAT APK version must match package.json');
+} finally {
+  if (originalApiBaseUrl === undefined) delete process.env.EXPO_PUBLIC_API_BASE_URL;
+  else process.env.EXPO_PUBLIC_API_BASE_URL = originalApiBaseUrl;
+}
 
 console.log(`Application version ${root.version} is consistent.`);
