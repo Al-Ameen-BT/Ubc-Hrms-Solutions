@@ -41,3 +41,7 @@ export function initials(value?: string | null) {
   const words = value?.trim().split(/\s+/).filter(Boolean) || [];
   return (words.slice(0, 2).map(word => word[0]).join('') || 'E').toUpperCase();
 }
+
+export function isCurrentBankPeriod(today: string, year: number, month: number) {
+  return Number(today.slice(0, 4)) === year && Number(today.slice(5, 7)) === month;
+}

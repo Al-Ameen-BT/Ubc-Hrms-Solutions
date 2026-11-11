@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   firstName,
   initials,
+  isCurrentBankPeriod,
   isPrimarySectionSelected,
   navigationItems,
   statusMeta,
@@ -17,6 +18,12 @@ test('status metadata gives financial and workflow states readable labels and to
   assert.deepEqual(statusMeta('FINALIZED'), { label: 'Finalized', tone: 'success' });
   assert.deepEqual(statusMeta('EXPIRED'), { label: 'Expired', tone: 'danger' });
   assert.deepEqual(statusMeta('ACTIVE'), { label: 'Active', tone: 'info' });
+});
+
+test('today actions are available only while viewing the current bank month', () => {
+  assert.equal(isCurrentBankPeriod('2026-11-11', 2026, 11), true);
+  assert.equal(isCurrentBankPeriod('2026-11-11', 2026, 10), false);
+  assert.equal(isCurrentBankPeriod('2026-11-11', 2025, 11), false);
 });
 
 test('nested employee services keep More selected in primary navigation', () => {
