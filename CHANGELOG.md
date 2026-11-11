@@ -4,6 +4,14 @@ This project uses [Semantic Versioning](https://semver.org/). Record user-visibl
 
 ## Unreleased
 
+## 0.2.2 — 2026-11-11
+
+### Fixed
+
+- Preserve web and mobile sessions during rate limits, network outages and temporary server errors; only invalid, revoked or suspended sessions are cleared.
+- Isolate QR status and mobile refresh limits by device credential so employees sharing a bank network do not exhaust one another's polling allowance.
+- Stop completed or expired device-link polling and slow polling after a rate-limit response.
+
 ## 0.2.1 — 2026-11-11
 
 ### Added

@@ -2,7 +2,7 @@
   "expo": {
     "name": "UCB-HRMS",
     "slug": "ucb-employee",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "icon": "./assets/splash-icon.png",
     "userInterfaceStyle": "light",
     "ios": {
@@ -10,7 +10,7 @@
     },
     "android": {
       "package": "in.banihal.ucbemployee.uat",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#17324d",
         "foregroundImage": "./assets/splash-icon.png"

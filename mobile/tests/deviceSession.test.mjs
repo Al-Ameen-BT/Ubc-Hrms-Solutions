@@ -44,6 +44,24 @@ test('network outage preserves refresh credential for retry', async () => {
   assert.equal(JSON.parse(store.peek('employeeDeviceSession')).refreshToken, 'old-refresh');
 });
 
+test('temporary server and rate-limit failures preserve refresh credential for retry', async () => {
+  for (const status of [429, 500]) {
+    const store = storage();
+    await store.setItemAsync('employeeDeviceSession', JSON.stringify({ accessToken: 'old', refreshToken: 'old-refresh' }));
+    await assert.rejects(restoreEmployeeSession({ post: async () => { throw new ApiError('Temporary failure', status); } }, store), /Temporary/);
+    assert.equal(JSON.parse(store.peek('employeeDeviceSession')).refreshToken, 'old-refresh');
+  }
+});
+
+test('invalid and suspended sessions clear stored device credentials', async () => {
+  for (const error of [new ApiError('Expired', 401), new ApiError('Suspended', 403, 'ORG_SUSPENDED')]) {
+    const store = storage();
+    await store.setItemAsync('employeeDeviceSession', JSON.stringify({ accessToken: 'old', refreshToken: 'old-refresh' }));
+    assert.equal(await restoreEmployeeSession({ post: async () => { throw error; } }, store), null);
+    assert.equal(store.peek('employeeDeviceSession'), undefined);
+  }
+});
+
 test('stale concurrent renewal reuses new access token without rotating twice', async () => {
   const store = storage();
   await store.setItemAsync('employeeDeviceSession', JSON.stringify({ accessToken: 'old', refreshToken: 'old-refresh' }));

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authApi, brandingApi } from '../api/client';
+import { authApi, brandingApi, isSessionEndingError } from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
 
 const AuthContext = createContext(null);
@@ -65,9 +65,11 @@ export function AuthProvider({ children }) {
       try {
         const data = await authApi.me();
         setUser(data);
-      } catch {
-        sessionStorage.removeItem('token');
-        queryClient.clear();
+      } catch (error) {
+        if (isSessionEndingError(error)) {
+          sessionStorage.removeItem('token');
+          queryClient.clear();
+        }
       } finally {
         setLoading(false);
       }

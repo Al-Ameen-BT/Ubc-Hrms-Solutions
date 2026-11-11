@@ -1,4 +1,4 @@
-import type { Api, ApiError, EmployeeContext, EmployeeUser } from './api';
+import { isSessionEndingError, type Api, type ApiError, type EmployeeContext, type EmployeeUser } from './api';
 
 const SESSION_KEY = 'employeeDeviceSession';
 const LEGACY_KEY = 'employeeToken';
@@ -45,7 +45,7 @@ export async function restoreEmployeeSession(api: Pick<Api, 'get' | 'post'>, sto
     if (!context.linked || !context.employee) throw new Error('Employee link unavailable.');
     return { token: renewed.accessToken, user, context };
   } catch (error) {
-    if ((error as ApiError)?.status === 0) throw error;
+    if (!isSessionEndingError(error as ApiError)) throw error;
     await clearEmployeeSession(store);
     return null;
   }

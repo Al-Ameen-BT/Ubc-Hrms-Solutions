@@ -20,6 +20,7 @@ export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated
     if (!claim) return;
     let active = true; let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      let nextDelay = 2500;
       try {
         const result = await api.post<{ status?: string; accessToken?: string; refreshToken?: string; user?: EmployeeUser }>('/mobile/link/status', { linkId: claim.linkId, claimSecret: claim.claimSecret });
         if (!active) return;
@@ -30,10 +31,11 @@ export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated
         setError('');
       } catch (err) {
         if (!active) return;
-        if ((err as { status?: number }).status === 409) { setClaim(null); setError('This link is no longer available. Start again from your portal.'); return; }
+        if ((err as { status?: number }).status === 409 || Date.parse(claim.expiresAt) <= Date.now()) { setClaim(null); setError('This link is no longer available. Start again from your portal.'); return; }
+        if ((err as { status?: number }).status === 429) nextDelay = 10000;
         setError(err instanceof Error ? err.message : 'Could not check the link.');
       }
-      if (active) timer = setTimeout(poll, 2500);
+      if (active) timer = setTimeout(poll, nextDelay);
     };
     timer = setTimeout(poll, 1000);
     return () => { active = false; clearTimeout(timer); };

@@ -119,13 +119,17 @@ const resetLimiter = rateLimit({
 app.use('/api/v1/auth/forgot-password', resetLimiter);
 app.use('/api/v1/auth/reset-password', mfaLimiter);
 
-const deviceLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-link') || undefined });
-const devicePollLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-poll') || undefined });
+const deviceKey = value => crypto.createHash('sha256').update(String(value || '')).digest('hex');
+const deviceLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyGenerator: req => deviceKey(req.headers.authorization || req.body?.challenge || req.ip), standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-link') || undefined });
+const deviceStatusLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 400, keyGenerator: req => deviceKey(`${req.body?.linkId}:${req.body?.claimSecret || req.ip}`), standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-status') || undefined, passOnStoreError: true });
+const deviceRefreshLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, keyGenerator: req => deviceKey(req.body?.refreshToken || req.ip), standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-refresh') || undefined, passOnStoreError: true });
+const devicePortalStatusLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500, keyGenerator: req => deviceKey(`${req.headers.authorization || req.ip}:${req.params.id}`), standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-portal-status') || undefined, passOnStoreError: true });
 app.post('/api/v1/me/devices/link', deviceLinkLimiter);
 app.post('/api/v1/mobile/link/claim', deviceLinkLimiter);
 app.post('/api/v1/me/devices/link/:id/approve', rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-approve') || undefined }));
-app.post('/api/v1/mobile/link/status', devicePollLimiter);
-app.post('/api/v1/mobile/session/refresh', devicePollLimiter);
+app.get('/api/v1/me/devices/link/:id', devicePortalStatusLimiter);
+app.post('/api/v1/mobile/link/status', deviceStatusLimiter);
+app.post('/api/v1/mobile/session/refresh', deviceRefreshLimiter);
 
 // Wider limiter for the one-time setup endpoints — they're token-gated, but
 // a limiter means the token itself can't be brute-forced either.
@@ -146,6 +150,7 @@ const apiLimiter = rateLimit({
   message: { status: 'error', message: 'API rate limit exceeded. Please retry shortly.' },
   store: redis.getRateStore('api') || undefined,
   passOnStoreError: true,
+  skip: req => ['/api/v1/mobile/link/status', '/api/v1/mobile/session/refresh'].includes(req.originalUrl.split('?')[0]) || /^\/api\/v1\/me\/devices\/link\/\d+$/.test(req.originalUrl.split('?')[0]),
 });
 app.use('/api/v1', apiLimiter);
 

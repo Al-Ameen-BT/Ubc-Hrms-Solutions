@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { api } from '../src/api/client.js';
+import { api, isSessionEndingError } from '../src/api/client.js';
+
+test('only genuine authentication and organisation access failures end a browser session', () => {
+  assert.equal(isSessionEndingError({ status: 401, body: {} }), true);
+  assert.equal(isSessionEndingError({ status: 403, body: { code: 'ORG_SUSPENDED' } }), true);
+  assert.equal(isSessionEndingError({ status: 429, body: {} }), false);
+  assert.equal(isSessionEndingError({ status: 500, body: {} }), false);
+  assert.equal(isSessionEndingError({ status: 0, body: null }), false);
+});
 
 test('wrong password while creating a QR leaves the portal session intact', async () => {
   const values = new Map([['token', 'browser-session']]);

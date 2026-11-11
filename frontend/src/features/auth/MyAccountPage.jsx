@@ -83,18 +83,26 @@ function LinkedDevices() {
   useEffect(() => {
     if (!link) return undefined;
     let active = true;
+    let timer;
     const tick = async () => {
       setNow(Date.now());
+      let delay = 2000;
       try {
         const next = await employeeApi.deviceLink(link.id);
         if (active) {
+          setError('');
           setStatus(next);
-          if (next.status === 'ISSUED') refetch();
+          if (next.status === 'ISSUED') { refetch(); return; }
+          if (!['PENDING', 'CLAIMED'].includes(next.status) || Date.parse(next.expiresAt) <= Date.now()) return;
         }
-      } catch (err) { if (active) setError(err.message); }
+      } catch (err) {
+        if (active) setError(err.message);
+        if (err?.status === 429) delay = 10000;
+      }
+      if (active) timer = setTimeout(tick, delay);
     };
-    const timer = setInterval(tick, 2000);
-    return () => { active = false; clearInterval(timer); };
+    timer = setTimeout(tick, 2000);
+    return () => { active = false; clearTimeout(timer); };
   }, [link?.id, refetch]);
 
   const start = async event => {

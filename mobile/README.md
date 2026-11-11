@@ -23,7 +23,7 @@ If a connection drops after the server issues or rotates a device token but befo
 
 ## UAT Android APK
 
-Current compiled test artifact: `builds/UCB-HRMS-UAT-0.2.1.apk` (`versionCode` 3). SHA-256: `542c6354091931d6445551abcff64e058f4e1983f8bced2df379a2dcc0de2289`.
+Current compiled test artifact: `builds/UCB-HRMS-UAT-0.2.2.apk` (`versionCode` 4). SHA-256: `2dd307cbca6682114d162f3004ee6e0c2a2e5a2696061e953c816646d5a17171`.
 
 The `uat` build profile embeds `https://172.17.121.200:8443` and produces an installable APK. It includes only that UAT server's self-signed public certificate as an Android trust anchor for that IP; normal certificate checks remain in place for other hosts. The certificate fingerprint captured on 11 Nov 2026 is `49:B0:22:64:9D:58:9D:06:46:50:EE:A1:04:2E:8B:06:55:37:1D:26:26:64:C0:2F:7B:2F:25:0A:16:88:E8:52`. Rebuild after the server certificate changes. Never use this UAT package as a production release.
 

@@ -11,6 +11,9 @@ export class ApiError extends Error {
   }
 }
 
+export const isSessionEndingError = error =>
+  error?.status === 401 || error?.status === 403 && /^ORG_(SUSPENDED|LICENSE_EXPIRED|LICENSE_NOT_STARTED)$/.test(error?.body?.code || '');
+
 /** Clears the session and asks the React layer to sign out with a notice. */
 function forceLogout(message, kind = 'warn') {
   sessionStorage.removeItem('token');

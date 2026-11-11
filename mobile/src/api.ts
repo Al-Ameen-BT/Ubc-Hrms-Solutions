@@ -18,6 +18,9 @@ export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) { super(message); }
 }
 
+export const isSessionEndingError = (error: { status?: number; code?: string }) =>
+  error.status === 401 || error.status === 403 && !!error.code?.startsWith('ORG_');
+
 export function createApi(baseUrl: string, transport: typeof fetch = fetch, onUnauthorized: () => void = () => {}, renewAccess?: (staleToken: string) => Promise<string>) {
   let origin: URL;
   try { origin = new URL(baseUrl); } catch { throw new Error('Set a valid HTTPS API origin.'); }
@@ -40,7 +43,7 @@ export function createApi(baseUrl: string, transport: typeof fetch = fetch, onUn
       parsed = await response.json().catch(() => null);
       if (!['INVALID_CURRENT_PASSWORD', 'DEVICE_REVOKED'].includes(parsed?.code)) {
         try { response = await send(await renewAccess(token)); parsed = undefined; }
-        catch (error) { if ((error as ApiError)?.status !== 0) onUnauthorized(); throw error; }
+        catch (error) { if (isSessionEndingError(error as ApiError)) onUnauthorized(); throw error; }
       }
     }
     return { response, parsed };

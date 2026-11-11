@@ -36,6 +36,15 @@ test('expired device access renews and retries once with the new token', async (
   assert.equal(expired, false);
 });
 
+test('rate-limited access renewal does not end the device session', async () => {
+  let expired = false;
+  const api = createApi('https://hrms.example.invalid', async () => ({ ok: false, status: 401, json: async () => ({ message: 'Expired' }) }), () => { expired = true; }, async () => {
+    throw Object.assign(new Error('Too many requests'), { status: 429 });
+  });
+  await assert.rejects(api.get('/me/payslips', 'old'), /Too many/);
+  assert.equal(expired, false);
+});
+
 test('password change keeps session for wrong current password but clears expired token', async () => {
   let expired = 0;
   const wrongPassword = createApi('https://hrms.example.invalid', async () => ({ ok: false, status: 401, json: async () => ({ code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect' }) }), () => { expired++; });
