@@ -22,11 +22,18 @@ test('nested employee services keep More selected in primary navigation', () => 
   assert.equal(isPrimarySectionSelected('Calendar', 'More'), true);
   assert.equal(isPrimarySectionSelected('Payslips', 'More'), false);
   assert.equal(isPrimarySectionSelected('Time', 'Time'), true);
+  for (const section of ['Policies', 'Calendar', 'Workplace', 'Claims', 'Profile']) {
+    assert.equal(isPrimarySectionSelected(section, 'More'), true, `${section} should select More`);
+  }
+  for (const item of navigationItems) {
+    assert.equal(isPrimarySectionSelected(item.section, item.section), true);
+  }
 });
 
 test('navigation metadata keeps five compact accessible destinations', () => {
   assert.deepEqual(navigationItems.map(item => item.label), ['Home', 'Pay', 'Leave', 'Time', 'More']);
   assert.equal(new Set(navigationItems.map(item => item.section)).size, 5);
+  assert.ok(navigationItems.every(item => item.glyph.length > 0));
   assert.ok(navigationItems.every(item => item.accessibilityLabel.length > item.label.length));
 });
 

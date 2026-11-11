@@ -6,7 +6,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { Api, EmployeeUser } from '../api';
 import { acceptEmployeeLink, type EmployeeSession } from '../session';
 import { parseLinkQr } from '../link';
-import { Action, Card, colors, ErrorText, Field, Page, styles } from '../ui';
+import { Action, Card, colors, ErrorText, Field, Notice, Page, radius, ScreenHeading, styles } from '../ui';
 
 export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated: (session: EmployeeSession) => void }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -59,14 +59,16 @@ export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated
     finally { setBusy(false); scanStarted.current = false; }
   };
 
+  const step = claim ? 3 : scanning ? 2 : 1;
   return <Page>
+    <View style={local.brandRow}><View style={local.brandMark}><Text style={local.brandMarkText}>U</Text></View><View><Text style={local.brand}>UCB-HRMS</Text><Text style={styles.muted}>Secure employee access</Text></View></View>
+    <View style={local.steps} accessibilityLabel={`Device linking step ${step} of 3`}>{['Portal', 'Scan', 'Approve'].map((label, index) => <View key={label} style={local.step}><View style={[local.stepDot, step >= index + 1 && local.stepDotActive]}><Text style={[local.stepNumber, step >= index + 1 && local.stepNumberActive]}>{index + 1}</Text></View><Text style={[local.stepLabel, step >= index + 1 && local.stepLabelActive]}>{label}</Text></View>)}</View>
     {!scanning && !claim && <View style={local.illustration}><Image source={require('../../assets/link-illustration.png')} resizeMode="contain" style={local.art} accessibilityLabel="Phone linking securely to your bank" /></View>}
-    <Text style={styles.title}>Link your employee app</Text>
-    <Text style={styles.subtitle}>Sign in to your bank’s self-service portal on a computer. Open My Account → Linked devices and create a QR code.</Text>
+    <ScreenHeading eyebrow="Device linking" title={claim ? 'Approve this phone' : scanning ? 'Scan your portal QR' : 'Link your employee app'} description={claim ? 'Match the code below in your self-service portal. This keeps your account protected.' : scanning ? 'Hold the portal QR code inside the frame. Scanning happens automatically.' : 'Create a QR code from My Account → Linked devices in your bank’s web self-service portal.'} />
     <Card>
       <ErrorText message={error} />
-      {claim ? <><Text style={styles.cardTitle}>{claim.organizationName}</Text><Text style={styles.body}>Code on this phone: <Text style={{ fontWeight: '700', fontSize: 24 }}>{claim.verificationCode}</Text></Text><Text style={styles.muted}>Enter this code in your portal to approve this phone. Waiting for approval…</Text><Action title="Start again" secondary onPress={() => { setClaim(null); setError(''); }} /></> : <>
-        {scanning ? <><CameraView style={{ width: '100%', height: 320 }} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={({ data }) => scan(data)} /><Action title="Cancel scanning" secondary onPress={() => setScanning(false)} /></> : <Action title={busy ? 'Checking QR…' : 'Scan portal QR code'} disabled={busy} onPress={openScanner} />}
+      {claim ? <><Text style={styles.eyebrow}>{claim.organizationName}</Text><View style={local.codePanel}><Text style={local.codeLabel}>Verification code</Text><Text selectable style={local.code}>{claim.verificationCode}</Text></View><Notice message="Waiting for approval in your portal. Keep this screen open." /><Text style={styles.muted}>The code expires automatically. If it does, create a new QR from the portal.</Text><Action title="Cancel and start again" secondary onPress={() => { setClaim(null); setError(''); }} /></> : <>
+        {scanning ? <><View style={local.cameraFrame}><CameraView style={local.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={({ data }) => scan(data)} /><View pointerEvents="none" style={local.scanGuide} /></View><Action title="Cancel scanning" secondary onPress={() => setScanning(false)} /></> : <><View style={local.instruction}><Text style={local.instructionNumber}>1</Text><Text style={styles.body}>Open your portal on a computer.</Text></View><View style={local.instruction}><Text style={local.instructionNumber}>2</Text><Text style={styles.body}>Choose My Account → Linked devices.</Text></View><View style={local.instruction}><Text style={local.instructionNumber}>3</Text><Text style={styles.body}>Create a QR, then scan it here.</Text></View><Action title="Scan portal QR code" busy={busy} onPress={openScanner} /></>}
         {permission && !permission.granted && !permission.canAskAgain && <Action title="Open camera settings" secondary onPress={() => Linking.openSettings()} />}
       </>}
     </Card>
@@ -74,8 +76,28 @@ export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated
 }
 
 const local = StyleSheet.create({
-  illustration: { backgroundColor: colors.pale, borderRadius: 16, alignItems: 'center', justifyContent: 'center', minHeight: 210, overflow: 'hidden' },
-  art: { width: '100%', height: 210 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  brandMark: { width: 44, height: 44, borderRadius: 13, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  brandMarkText: { color: colors.white, fontSize: 20, fontWeight: '900' },
+  brand: { color: colors.ink, fontSize: 15, fontWeight: '900', letterSpacing: 0.8 },
+  steps: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
+  step: { flex: 1, alignItems: 'center', gap: 5 },
+  stepDot: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#e4eaee', alignItems: 'center', justifyContent: 'center' },
+  stepDotActive: { backgroundColor: colors.blue },
+  stepNumber: { color: colors.muted, fontWeight: '800' },
+  stepNumberActive: { color: colors.white },
+  stepLabel: { color: colors.muted, fontSize: 11, fontWeight: '700' },
+  stepLabelActive: { color: colors.blue },
+  illustration: { backgroundColor: colors.pale, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', minHeight: 190, overflow: 'hidden' },
+  art: { width: '100%', height: 190 },
+  instruction: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  instructionNumber: { width: 28, height: 28, borderRadius: 14, textAlign: 'center', textAlignVertical: 'center', backgroundColor: colors.pale, color: colors.blue, fontWeight: '900' },
+  cameraFrame: { height: 330, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.ink },
+  camera: { width: '100%', height: '100%' },
+  scanGuide: { position: 'absolute', left: 36, right: 36, top: 50, bottom: 50, borderRadius: 18, borderWidth: 3, borderColor: colors.white },
+  codePanel: { alignItems: 'center', paddingVertical: 20, borderRadius: radius.md, backgroundColor: colors.pale, borderWidth: 1, borderColor: '#c7dce7' },
+  codeLabel: { color: colors.muted, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
+  code: { color: colors.ink, fontSize: 34, lineHeight: 44, fontWeight: '900', letterSpacing: 5, marginTop: 4 },
 });
 
 export function PasswordForm({ api, session, onSignOut }: { api: Api; session: EmployeeSession; onSignOut: () => void }) {
@@ -102,8 +124,8 @@ export function PasswordForm({ api, session, onSignOut }: { api: Api; session: E
     <Field label="Current password" value={current} onChangeText={setCurrent} secureTextEntry />
     <Field label="New password" value={next} onChangeText={setNext} secureTextEntry />
     <Field label="Confirm new password" value={confirm} onChangeText={setConfirm} secureTextEntry />
-    <ErrorText message={error} />{notice && <Text style={styles.body}>{notice}</Text>}
-    <Action title={busy ? 'Saving…' : 'Change password'} onPress={submit} disabled={busy} />
+    <ErrorText message={error} /><Notice message={notice} tone="success" />
+    <Action title="Change password" onPress={submit} busy={busy} />
     {session.user.mustChangePassword && <Action title="Sign out" onPress={onSignOut} secondary />}
   </Card>;
 }
