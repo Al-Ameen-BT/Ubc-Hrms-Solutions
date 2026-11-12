@@ -117,6 +117,14 @@ CONFIG_DIR="${USER_HOME}/.config/ucb-hrms"
 
 "${PODMAN_CMD[@]}" build -t "$IMAGE_NAME" .
 
+PUSH_RUNTIME_DIR="${USER_HOME}/.config/ucb-hrms"
+if [[ ! -f "$PUSH_RUNTIME_DIR/.env" ]]; then
+  echo "Runtime environment not found at $PUSH_RUNTIME_DIR/.env; cannot provision push secrets." >&2
+  exit 1
+fi
+"${PODMAN_CMD[@]}" run --rm --user 0 -v "$PUSH_RUNTIME_DIR:/runtime:Z" "$IMAGE_NAME" \
+  node src/scripts/provisionPushSecrets.js /runtime/.env
+
 # ── 3. Update frontend assets for Nginx edge ───────────────────────────────
 echo ""
 echo "→ Extracting updated frontend dist for Nginx..."

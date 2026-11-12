@@ -366,6 +366,10 @@ stage4_build() {
   podman build -t "$IMAGE_BACKEND" . \
     || stage_fail "image build failed"
 
+  podman run --rm --user 0 -v "$CONFIG_DIR:/runtime:Z" "$IMAGE_BACKEND" \
+    node src/scripts/provisionPushSecrets.js /runtime/.env \
+    || stage_fail "push secret provisioning failed; existing keys were preserved"
+
   # Copy frontend/dist out of the image for nginx (static hosting at the edge)
   local cp_err
   podman rm -f hrms-dist-extract >/dev/null 2>&1 || true   # stale from an aborted run
