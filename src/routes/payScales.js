@@ -16,8 +16,9 @@
  */
 
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
 const crudRouter = require('./crudFactory');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { PayRevision, PayScale, PayStage, RuleReference, Employee, EmployeePayHistory } = require('../models');
 const { audit } = require('../services/audit');
 const { Op } = require('sequelize');
@@ -65,7 +66,7 @@ async function stagesInUse(stageIds) {
   return used;
 }
 
-stagesRouter.get('/', requireRole('SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD'), async (req, res) => {
+stagesRouter.get('/', requireFeaturePermission('compensation.view', ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD'], resource('PayScale')), async (req, res) => {
   try {
     const scale = await loadScale(req, res);
     if (!scale) return;
@@ -78,7 +79,7 @@ stagesRouter.get('/', requireRole('SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OF
 });
 
 // PUT { stages: [{ stageNo, amount }, ...] }
-stagesRouter.put('/', requireRole('SUPER_ADMIN', ...WRITE), async (req, res) => {
+stagesRouter.put('/', requireFeaturePermission('compensation.prepare', ['SUPER_ADMIN', ...WRITE], resource('PayScale')), async (req, res) => {
   try {
     const scale = await loadScale(req, res);
     if (!scale) return;

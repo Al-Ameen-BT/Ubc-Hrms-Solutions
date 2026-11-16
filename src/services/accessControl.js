@@ -1,5 +1,5 @@
 'use strict';
-const { Op } = require('sequelize');
+const { Op, literal } = require('sequelize');
 const models = require('../models');
 const { User, Organization, Employee, OrganizationBranch, OrganizationDepartment, OrganizationRole, OrganizationRolePermission, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = models;
 const { permission, template } = require('./permissionCatalog');
@@ -35,6 +35,7 @@ async function effectiveAccess(userId, at = todayIST(), transaction) {
   const organization = await Organization.findByPk(user.organizationId, { transaction });
   if (!checkOrgAccess(organization).ok) return access;
   access.accessControlMode = organization.accessControlMode;
+  access.at = date;
   const employee = user.employeeId && await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' }, attributes: ['id'], transaction });
   const linked = employee && await User.count({ where: { organizationId: user.organizationId, employeeId: employee.id, status: 'ACTIVE' }, transaction }) === 1;
   if (linked) access.employeeId = employee.id;
@@ -46,6 +47,7 @@ async function effectiveAccess(userId, at = todayIST(), transaction) {
     access.grants.push({ action: code, scope, branchIds, departmentIds });
   }
   const { bootstrap, protectedAssignment } = linked ? { bootstrap: false, protectedAssignment: false } : await bootstrapState(user, date, transaction);
+  access.bootstrapRestricted = protectedAssignment;
   if (organization.accessControlMode === 'LEGACY') {
     const definition = template(User.LEGACY_ROLE_TEMPLATES[user.role]);
     // Legacy routes use tenant-wide management; narrower template scopes bind after activation.
@@ -91,11 +93,11 @@ async function effectiveAccess(userId, at = todayIST(), transaction) {
 // Model names are the shared resolver/query contract; unknown layouts fail closed.
 function resourceModel(resourceType) {
   const model = models[resourceType];
-  return model?.rawAttributes?.organizationId ? model : null;
+  return model === Organization || model?.rawAttributes?.organizationId || model?.rawAttributes?.employeeId ? model : null;
 }
 function typeOf(resource) { return resource.resourceType || resource.constructor?.name; }
 function validResource(access, resource, model) {
-  if (!model || !sameId(access.organizationId, resource.organizationId)) return false;
+  if (!model || !sameId(access.organizationId, model === Organization ? resource.id : resource.organizationId)) return false;
   if (access.accessControlMode === 'LEGACY') return true;
   if (model === OrganizationBranch) return access.activeBranchIds.some(id => sameId(id, resource.id));
   if (model === OrganizationDepartment) return access.activeDepartmentIds.some(id => sameId(id, resource.id));
@@ -108,11 +110,14 @@ function guardFields(permissionCode, resourceType) {
   const fields = [];
   if (guardrails.includes('PREPARER_CANNOT_APPROVE') || guardrails.includes('PREPARER_CANNOT_PAY')) {
     if (resourceType === 'PayrollRun') fields.push('processedByUserId');
-    else if (['ExpenseClaim', 'FinancialChangeProposal'].includes(resourceType)) fields.push('preparedBy');
+    else if (resourceType === 'DaRevision') fields.push('preparedBy');
+    else if (resourceType === 'ArrearsCase') fields.push('calculatedBy');
+    else if (['ExpenseClaim', 'FinancialChangeProposal', 'EmployeeCompensationAssignment', 'OrganizationCatalogueAdoption'].includes(resourceType)) fields.push('preparedBy');
     else return null;
   }
   if (guardrails.includes('APPROVER_CANNOT_PAY')) {
     if (resourceType === 'PayrollRun') fields.push('approvedByUserId');
+    else if (resourceType === 'ArrearsCase') fields.push('adjustedBy', 'planApprovedBy');
     else if (resourceType === 'ExpenseClaim') fields.push('decidedBy');
     else return null;
   }
@@ -132,17 +137,43 @@ function can(access, permissionCode, resource) {
   const model = resourceModel(resourceType);
   if (!validResource(access, resource, model)) return false;
   if (hasProtectedConflict(permissionCode, resource, access.userId)) return false;
-  if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY') && resource.status !== 'APPROVED') return false;
+  if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY') && (resourceType === 'ArrearsCase' ? resource.paymentMode === 'NONE' || !resource.planApprovedBy : resource.status !== 'APPROVED')) return false;
   const employeeId = model === Employee ? resource.id : model.rawAttributes.employeeId ? resource.employeeId : null;
   const scoped = { id: employeeId, branchId: model === OrganizationBranch ? resource.id : resource.branchId, departmentId: model === OrganizationDepartment ? resource.id : resource.departmentId };
   return grants.some(g => matchesScope(access, scoped, g));
+}
+
+// QueryGenerator escapes every tenant/date/scope value; SQL never interpolates request text.
+function employeeIds(access, scope) {
+  const q = models.sequelize.getQueryInterface().queryGenerator;
+  const employeeQuery = where => literal(`(${q.selectQuery(Employee.getTableName(), { attributes: ['id'], where }).replace(/;$/, '')})`);
+  if (!scope) return employeeQuery({ organization_id: access.organizationId });
+  const assignment = models.EmployeeOrganizationAssignment;
+  const date = access.at || todayIST();
+  const currentWhere = { organization_id: access.organizationId, status: 'ACTIVE', effective_from: { [Op.lte]: date }, [Op.or]: [{ effective_to: null }, { effective_to: { [Op.gte]: date } }] };
+  const currentQuery = q.selectQuery(assignment.getTableName(), { attributes: ['employee_id'], where: currentWhere, group: ['employee_id'], having: literal('COUNT(*) = 1') }).replace(/;$/, '');
+  if (scope.allCurrent) return literal(`(${q.selectQuery(assignment.getTableName(), { attributes: ['employee_id'], where: currentWhere }).replace(/;$/, '')})`);
+  const where = { ...currentWhere, employee_id: { [Op.in]: literal(`(${currentQuery})`) },
+    branch_id: { [Op.in]: access.activeBranchIds },
+    [Op.and]: [{ [Op.or]: [{ department_id: null }, { department_id: { [Op.in]: access.activeDepartmentIds } }] }],
+  };
+  if (scope.scope === 'SELECTED_BRANCHES') where.branch_id = { [Op.in]: scope.branchIds.filter(id => access.activeBranchIds.includes(id)) };
+  if (scope.scope === 'DEPARTMENT') where.department_id = { [Op.in]: scope.departmentIds.filter(id => access.activeDepartmentIds.includes(id)) };
+  const query = q.selectQuery(assignment.getTableName(), { attributes: ['employee_id'], where, group: ['employee_id'], having: literal('COUNT(*) = 1') }).replace(/;$/, '');
+  return employeeQuery({ organization_id: access.organizationId, id: { [Op.in]: literal(`(${query})`) } });
+}
+function tenantWhere(access, resourceType) {
+  const model = resourceModel(resourceType);
+  if (!model) return { id: { [Op.in]: [] } };
+  if (model === Organization) return { id: access.organizationId };
+  return model.rawAttributes.organizationId ? { organizationId: access.organizationId } : { employeeId: { [Op.in]: employeeIds(access) } };
 }
 
 function scopedWhere(access, permissionCode, resourceType) {
   const model = resourceModel(resourceType);
   const deny = { id: { [Op.in]: [] } };
   if (!model || !can(access, permissionCode)) return deny;
-  const clauses = [{ organizationId: access.organizationId }];
+  const clauses = [tenantWhere(access, resourceType)];
   const scopes = [];
   for (const grant of access.grants.filter(g => g.action === permissionCode)) {
     if (grant.scope === 'ORGANISATION') scopes.push({});
@@ -151,27 +182,30 @@ function scopedWhere(access, permissionCode, resourceType) {
       else if (model.rawAttributes.employeeId) scopes.push({ employeeId: access.employeeId });
     }
     if (grant.scope === 'SELECTED_BRANCHES') {
-      if (model === OrganizationBranch) scopes.push({ id: { [Op.in]: grant.branchIds } });
+      if (model === Employee || model.rawAttributes.employeeId && model !== models.EmployeeOrganizationAssignment) scopes.push({ [model === Employee ? 'id' : 'employeeId']: { [Op.in]: employeeIds(access, grant) } });
+      else if (model === OrganizationBranch) scopes.push({ id: { [Op.in]: grant.branchIds } });
       else if (model.rawAttributes.branchId) scopes.push({ branchId: { [Op.in]: grant.branchIds } });
     }
     if (grant.scope === 'DEPARTMENT') {
-      if (model === OrganizationDepartment) scopes.push({ id: { [Op.in]: grant.departmentIds } });
+      if (model === Employee || model.rawAttributes.employeeId && model !== models.EmployeeOrganizationAssignment) scopes.push({ [model === Employee ? 'id' : 'employeeId']: { [Op.in]: employeeIds(access, grant) } });
+      else if (model === OrganizationDepartment) scopes.push({ id: { [Op.in]: grant.departmentIds } });
       else if (model.rawAttributes.departmentId) scopes.push({ departmentId: { [Op.in]: grant.departmentIds } });
     }
   }
   if (!scopes.length) return deny;
   if (!access.grants.some(g => g.action === permissionCode && g.scope === 'ORGANISATION')) clauses.push({ [Op.or]: scopes });
   if (access.accessControlMode !== 'LEGACY') {
+    if (model === Employee) clauses.push({ [Op.or]: [{ id: { [Op.notIn]: employeeIds(access, { allCurrent: true }) } }, { id: { [Op.in]: employeeIds(access, { scope: 'ORGANISATION' }) } }] });
     if (model === OrganizationBranch) clauses.push({ id: { [Op.in]: access.activeBranchIds } });
     if (model === OrganizationDepartment) clauses.push({ id: { [Op.in]: access.activeDepartmentIds } });
     for (const [field, activeIds] of [['branchId', access.activeBranchIds], ['departmentId', access.activeDepartmentIds]]) {
-      if (model.rawAttributes[field]) clauses.push({ [Op.or]: [{ [field]: null }, { [field]: { [Op.in]: activeIds } }] });
+      if (model !== Employee && model.rawAttributes[field]) clauses.push({ [Op.or]: [{ [field]: null }, { [field]: { [Op.in]: activeIds } }] });
     }
   }
   const fields = guardFields(permissionCode, resourceType);
   if (!fields) return deny;
   for (const field of fields) clauses.push({ [Op.or]: [{ [field]: null }, { [field]: { [Op.ne]: access.userId } }] });
-  if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY')) clauses.push({ status: 'APPROVED' });
+  if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY')) clauses.push(resourceType === 'ArrearsCase' ? { paymentMode: { [Op.ne]: 'NONE' }, planApprovedBy: { [Op.ne]: null } } : { status: 'APPROVED' });
   return { [Op.and]: clauses };
 }
-module.exports = { effectiveAccess, can, scopedWhere, resourceModel, hasProtectedConflict };
+module.exports = { effectiveAccess, can, scopedWhere, resourceModel, hasProtectedConflict, tenantWhere };

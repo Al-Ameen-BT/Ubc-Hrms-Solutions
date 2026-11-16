@@ -69,6 +69,8 @@ function errStatus(err, fallback) {
 function crudRouter(model, options) {
   const express = require('express');
   const { authenticate, requireRole } = require('../middleware/auth');
+  const { requireFeaturePermission, resource } = require('../middleware/permissions');
+  const { scopedWhere } = require('../services/accessControl');
   const router = express.Router();
   const fields = options.fields;
   const softDeleteField = options.softDeleteField || 'status';
@@ -82,15 +84,12 @@ function crudRouter(model, options) {
   router.use(authenticate);
   if (superAdminOnly) {
     router.use(requireRole('SUPER_ADMIN'));
-  } else {
-    router.use((req, res, next) => {
-      const allowed = req.method === 'GET' ? readRoles : writeRoles;
-      if (!allowed.includes(req.user.role)) {
-        return res.status(403).json({ status: 'error', message: req.method === 'GET' ? 'Your role cannot view this data.' : 'Your role cannot change this data.' });
-      }
-      next();
-    });
   }
+  const employee = model.name === 'Employee';
+  const readPermission = employee ? 'people.view' : 'compensation.view';
+  const writePermission = employee ? 'people.edit' : 'compensation.prepare';
+  const guard = (method, item = false) => superAdminOnly ? [] : [requireFeaturePermission(method === 'get' ? readPermission : method === 'post' && employee ? 'people.create' : writePermission,
+    method === 'get' ? readRoles : writeRoles, item ? resource(model.name) : undefined)];
 
   function pick(body) {
     const out = {};
@@ -108,7 +107,7 @@ function crudRouter(model, options) {
 
   // GET /  — list. Tenant-scoped resources: non-SUPER_ADMIN always see only
   // their own org's rows; SUPER_ADMIN may optionally filter with ?organizationId=.
-  router.get('/', async (req, res) => {
+  router.get('/', ...guard('get', false), async (req, res) => {
     try {
       const where = {};
       if (isTenantScoped()) {
@@ -118,7 +117,7 @@ function crudRouter(model, options) {
           where[orgFilterField] = req.user.organizationId;
         }
       }
-      const rows = await model.findAll({ where, order: [['id', 'ASC']] });
+      const rows = await model.findAll({ where: req.access ? { ...where, ...scopedWhere(req.access, readPermission, model.name) } : where, order: [['id', 'ASC']] });
       res.json({ data: rows });
     } catch (err) {
       res.status(500).json({ status: 'error', message: err.message });
@@ -126,7 +125,7 @@ function crudRouter(model, options) {
   });
 
   // GET /:id
-  router.get('/:id', async (req, res) => {
+  router.get('/:id', ...guard('get', true), async (req, res) => {
     try {
       const row = await model.findByPk(req.params.id);
       if (!row) return res.status(404).json({ status: 'error', message: 'Not found' });
@@ -140,7 +139,7 @@ function crudRouter(model, options) {
   });
 
   // POST /
-  router.post('/', async (req, res) => {
+  router.post('/', ...guard('post', false), async (req, res) => {
     try {
       const payload = pick(req.body || {});
       if (isTenantScoped() && req.user.role !== 'SUPER_ADMIN') {
@@ -148,7 +147,9 @@ function crudRouter(model, options) {
       }
       await checkRefs(options.refs, payload, payload[orgFilterField]);
       if (options.beforeCreate) await options.beforeCreate(req, payload);
-      const row = await model.create(payload);
+      const row = employee && req.access?.accessControlMode === 'PERMISSIONS'
+        ? await require('../services/organizationStructure').onboardEmployee({ organizationId: req.user.organizationId, actor: req.user, data: payload, organizationAssignment: req.body.organizationAssignment })
+        : await model.create(payload);
       res.status(201).json({ data: row });
     } catch (err) {
       res.status(errStatus(err, 400)).json({ status: 'error', code: err.code, message: friendly(err) });
@@ -156,7 +157,7 @@ function crudRouter(model, options) {
   });
 
   // PUT /:id
-  router.put('/:id', async (req, res) => {
+  router.put('/:id', ...guard('put', true), async (req, res) => {
     try {
       const row = await model.findByPk(req.params.id);
       if (!row) return res.status(404).json({ status: 'error', message: 'Not found' });
@@ -177,7 +178,7 @@ function crudRouter(model, options) {
   });
 
   // DELETE /:id — soft delete only
-  router.delete('/:id', async (req, res) => {
+  router.delete('/:id', ...guard('delete', true), async (req, res) => {
     try {
       const row = await model.findByPk(req.params.id);
       if (!row) return res.status(404).json({ status: 'error', message: 'Not found' });

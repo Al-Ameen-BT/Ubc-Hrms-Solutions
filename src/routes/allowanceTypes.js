@@ -11,8 +11,10 @@
  */
 
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const { AllowanceType, AllowanceTypePost } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const allowances = require('../services/allowances');
 
@@ -20,7 +22,7 @@ const router = express.Router();
 const VIEWERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'];
 const WRITERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN'];
 
-router.use(authenticate, requireRole(...VIEWERS));
+router.use(authenticate);
 
 function orgIdFor(req) { return req.user.organizationId; }
 
@@ -35,7 +37,7 @@ async function loadOr404(req, res) {
   return row;
 }
 
-router.get('/', async (req, res) => {
+router.get('/', requireFeaturePermission('compensation.view', VIEWERS), async (req, res) => {
   try {
     const where = { organizationId: orgIdFor(req) };
     if (req.user.role === 'SUPER_ADMIN' && req.query.organizationId) where.organizationId = req.query.organizationId;
@@ -44,15 +46,14 @@ router.get('/', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireFeaturePermission('compensation.view', VIEWERS, resource('AllowanceType')), async (req, res) => {
   try {
     const row = await loadOr404(req, res); if (!row) return;
     res.json({ data: row });
   } catch (err) { sendErr(res, err); }
 });
 
-router.post('/', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot create an allowance type.' });
+router.post('/', requireFeaturePermission('compensation.prepare', WRITERS), async (req, res) => {
   try {
     const row = await allowances.create(orgIdFor(req), req.body);
     if (Array.isArray(req.body.postCadreIds)) await allowances.setPosts(row, req.body.postCadreIds);
@@ -61,8 +62,7 @@ router.post('/', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-router.put('/:id', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot edit this allowance type.' });
+router.put('/:id', requireFeaturePermission('compensation.prepare', WRITERS, resource('AllowanceType')), async (req, res) => {
   try {
     const row = await loadOr404(req, res); if (!row) return;
     await allowances.update(row, req.body);
@@ -71,8 +71,7 @@ router.put('/:id', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-router.post('/:id/status', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot change this.' });
+router.post('/:id/status', requireFeaturePermission('compensation.prepare', WRITERS, resource('AllowanceType')), async (req, res) => {
   try {
     const row = await loadOr404(req, res); if (!row) return;
     const status = req.body && req.body.status;
@@ -83,8 +82,7 @@ router.post('/:id/status', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-router.put('/:id/posts', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot change this.' });
+router.put('/:id/posts', requireFeaturePermission('compensation.prepare', WRITERS, resource('AllowanceType')), async (req, res) => {
   try {
     const row = await loadOr404(req, res); if (!row) return;
     await allowances.setPosts(row, (req.body && req.body.postCadreIds) || []);

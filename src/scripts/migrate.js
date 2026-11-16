@@ -16,7 +16,7 @@
  */
 
 const { DataTypes } = require('sequelize');
-const { sequelize, Organization, OrganizationBranch, Employee, User, EmployeeTransfer } = require('../models');
+const { sequelize, DaRevision, ArrearsCase, LeaveApplication, Organization, OrganizationBranch, Employee, User, EmployeeTransfer } = require('../models');
 
 async function addColumnIfMissing(queryInterface, table, column, spec) {
   const desc = await queryInterface.describeTable(table);
@@ -31,6 +31,12 @@ async function addColumnIfMissing(queryInterface, table, column, spec) {
  * outright on SQLite.
  */
 const COLUMN_STEPS = [
+  ['da_revision', 'prepared_by', DaRevision.rawAttributes.preparedBy],
+  ['da_revision', 'approved_by', DaRevision.rawAttributes.approvedBy],
+  ['da_revision', 'approved_at', DaRevision.rawAttributes.approvedAt],
+  ['arrears_case', 'plan_approved_by', ArrearsCase.rawAttributes.planApprovedBy],
+  ['arrears_case', 'plan_approved_at', ArrearsCase.rawAttributes.planApprovedAt],
+  ['leave_application', 'selected_approver_user_id', LeaveApplication.rawAttributes.selectedApproverUserId],
   // Organisation access is opt-in; identifiers remain unmapped until explicitly resolved.
   ['organization', 'access_control_mode', Organization.rawAttributes.accessControlMode],
   ['users', 'access_version', User.rawAttributes.accessVersion],

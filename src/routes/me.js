@@ -1,10 +1,12 @@
 'use strict';
 
 const express = require('express');
+const { requireFeaturePermission } = require('../middleware/permissions');
+
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { sequelize, User, Employee, PayrollRun, PayrollRunLine, LeaveType, LeaveApplication, Organization, EmployeePolicy, EmployeePolicyAcknowledgement, OrganizationHoliday, EmployeeTimeEntry, ExpenseClaim, ExpenseReceipt } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const leave = require('../services/leave');
 const { buildPayslipPdf } = require('../services/payslipPdf');
@@ -13,7 +15,7 @@ const { organizationChart } = require('../services/organizationChart');
 const { isDateOnly } = require('../services/dateUtils');
 
 const router = express.Router();
-router.use(authenticate, requireRole('EMPLOYEE'));
+router.use(authenticate, requireFeaturePermission('self.profile', ['EMPLOYEE']));
 
 async function ownEmployee(req) {
   if (!req.user.employeeId) return null;
@@ -26,7 +28,7 @@ function bankDate(date = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-router.get('/context', async (req, res) => {
+router.get('/context', requireFeaturePermission('self.profile', ['EMPLOYEE']), async (req, res) => {
   try {
     const employee = await ownEmployee(req);
     res.json({ data: { linked: !!employee, employee: employee ? { id: employee.id, empCode: employee.empCode, name: employee.name, designation: employee.designation, department: employee.department, branchName: employee.branchName } : null } });
@@ -41,7 +43,7 @@ router.use(async (req, res, next) => {
   } catch (err) { fail(res, err); }
 });
 
-router.get('/payslips', async (req, res) => {
+router.get('/payslips', requireFeaturePermission('self.payslips', ['EMPLOYEE']), async (req, res) => {
   try {
     const lines = await PayrollRunLine.findAll({
       where: { employeeId: req.employee.id },
@@ -53,7 +55,7 @@ router.get('/payslips', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.get('/payslips/:id/pdf', async (req, res) => {
+router.get('/payslips/:id/pdf', requireFeaturePermission('self.payslips', ['EMPLOYEE']), async (req, res) => {
   try {
     const line = await PayrollRunLine.findOne({ where: { id: req.params.id, employeeId: req.employee.id }, include: [{ model: PayrollRun, where: { organizationId: req.user.organizationId, status: ['APPROVED', 'PAID'] } }] });
     if (!line) return res.status(404).json({ status: 'error', message: 'Payslip not found.' });
@@ -65,22 +67,22 @@ router.get('/payslips/:id/pdf', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.get('/leave/types', async (req, res) => {
+router.get('/leave/types', requireFeaturePermission('self.leave', ['EMPLOYEE']), async (req, res) => {
   try { res.json({ data: await LeaveType.findAll({ where: { organizationId: req.user.organizationId, status: 'ACTIVE' }, order: [['name', 'ASC']] }) }); }
   catch (err) { fail(res, err); }
 });
-router.get('/leave/balances', async (req, res) => {
+router.get('/leave/balances', requireFeaturePermission('self.leave', ['EMPLOYEE']), async (req, res) => {
   try {
     const year = req.query.year == null ? await leave.currentYearLabel(req.user.organizationId) : Number(req.query.year);
     if (!Number.isInteger(year) || year < 2000 || year > 2100) return res.status(400).json({ status: 'error', message: 'Invalid year.' });
     res.json({ data: await leave.balancesFor(req.employee.id, year), year });
   } catch (err) { fail(res, err); }
 });
-router.get('/leave/applications', async (req, res) => {
+router.get('/leave/applications', requireFeaturePermission('self.leave', ['EMPLOYEE']), async (req, res) => {
   try { res.json({ data: await LeaveApplication.findAll({ where: { employeeId: req.employee.id }, include: [{ model: LeaveType }], order: [['fromDate', 'DESC'], ['id', 'DESC']] }) }); }
   catch (err) { fail(res, err); }
 });
-router.post('/leave/applications', async (req, res) => {
+router.post('/leave/applications', requireFeaturePermission('self.leave', ['EMPLOYEE']), async (req, res) => {
   try {
     const { leaveTypeId, fromDate, toDate, reason } = req.body || {};
     if (!isDateOnly(fromDate) || !isDateOnly(toDate)) return res.status(400).json({ status: 'error', message: 'Use valid YYYY-MM-DD dates.' });
@@ -89,7 +91,7 @@ router.post('/leave/applications', async (req, res) => {
     res.status(201).json({ data: row });
   } catch (err) { fail(res, err); }
 });
-router.post('/leave/applications/:id/cancel', async (req, res) => {
+router.post('/leave/applications/:id/cancel', requireFeaturePermission('self.leave', ['EMPLOYEE']), async (req, res) => {
   try {
     const row = await LeaveApplication.findOne({ where: { id: req.params.id, employeeId: req.employee.id } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Leave application not found.' });
@@ -100,14 +102,14 @@ router.post('/leave/applications/:id/cancel', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.get('/policy', async (req, res) => {
+router.get('/policy', requireFeaturePermission('self.policies', ['EMPLOYEE']), async (req, res) => {
   try {
     const policy = await EmployeePolicy.findOne({ where: { organizationId: req.user.organizationId }, order: [['version', 'DESC']] });
     const history = await EmployeePolicyAcknowledgement.findAll({ where: { userId: req.user.id, organizationId: req.user.organizationId }, include: [{ model: EmployeePolicy, attributes: ['version', 'title', 'body'] }], order: [['acknowledgedAt', 'DESC']] });
     res.json({ data: { policy, acknowledged: !!policy && history.some(row => row.policyId === policy.id), history } });
   } catch (err) { fail(res, err); }
 });
-router.post('/policy/acknowledge', async (req, res) => {
+router.post('/policy/acknowledge', requireFeaturePermission('self.policies', ['EMPLOYEE']), async (req, res) => {
   try {
     const policy = await EmployeePolicy.findOne({ where: { organizationId: req.user.organizationId }, order: [['version', 'DESC']] });
     if (!policy) return res.status(404).json({ status: 'error', message: 'No policy has been published.' });
@@ -117,7 +119,7 @@ router.post('/policy/acknowledge', async (req, res) => {
     res.status(created ? 201 : 200).json({ data: row });
   } catch (err) { fail(res, err); }
 });
-router.get('/calendar', async (req, res) => {
+router.get('/calendar', requireFeaturePermission('self.attendance', ['EMPLOYEE']), async (req, res) => {
   try {
     const year = Number(req.query.year); const month = Number(req.query.month);
     if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) return res.status(400).json({ status: 'error', message: 'Valid year and month are required.' });
@@ -132,11 +134,11 @@ router.get('/calendar', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.get('/chart', async (req, res) => {
+router.get('/chart', requireFeaturePermission('chart.view', ['EMPLOYEE']), async (req, res) => {
   try { res.json({ data: await organizationChart({ actor: req.user, at: req.query.at, view: 'employee' }) }); }
   catch (err) { fail(res, err); }
 });
-router.get('/workplace', async (req, res) => {
+router.get('/workplace', requireFeaturePermission('self.attendance', ['EMPLOYEE']), async (req, res) => {
   try {
     const chart = await organizationChart({ actor: req.user, at: req.query.at, view: 'employee' });
     res.json({ data: chart.employees.map(row => ({
@@ -148,7 +150,7 @@ router.get('/workplace', async (req, res) => {
     })), context: chart.context, leadership: chart.leadership });
   } catch (err) { fail(res, err); }
 });
-router.get('/time', async (req, res) => {
+router.get('/time', requireFeaturePermission('self.attendance', ['EMPLOYEE']), async (req, res) => {
   try {
     const today = bankDate();
     const year = Number(req.query.year || today.slice(0, 4));
@@ -159,7 +161,7 @@ router.get('/time', async (req, res) => {
     res.json({ data: await EmployeeTimeEntry.findAll({ where: { employeeId: req.employee.id, organizationId: req.user.organizationId, localDate: { [Op.between]: [start, end] } }, order: [['localDate', 'DESC']] }) });
   } catch (err) { fail(res, err); }
 });
-router.post('/time/check-in', async (req, res) => {
+router.post('/time/check-in', requireFeaturePermission('self.attendance', ['EMPLOYEE']), async (req, res) => {
   try {
     const localDate = bankDate();
     if (await EmployeeTimeEntry.findOne({ where: { employeeId: req.employee.id, checkOutAt: null } }) || await EmployeeTimeEntry.findOne({ where: { employeeId: req.employee.id, localDate } })) return res.status(409).json({ status: 'error', message: 'Already checked in. Complete the open entry or ask HR for a correction.' });
@@ -168,7 +170,7 @@ router.post('/time/check-in', async (req, res) => {
     res.status(201).json({ data: row });
   } catch (err) { res.status(err.name === 'SequelizeUniqueConstraintError' ? 409 : 500).json({ status: 'error', message: err.message }); }
 });
-router.post('/time/check-out', async (req, res) => {
+router.post('/time/check-out', requireFeaturePermission('self.attendance', ['EMPLOYEE']), async (req, res) => {
   try {
     const row = await EmployeeTimeEntry.findOne({ where: { employeeId: req.employee.id, organizationId: req.user.organizationId, checkOutAt: null }, order: [['checkInAt', 'DESC']] });
     if (!row) return res.status(409).json({ status: 'error', message: 'No open check-in.' });
@@ -180,11 +182,11 @@ router.post('/time/check-out', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.get('/expenses', async (req, res) => {
+router.get('/expenses', requireFeaturePermission('self.claims', ['EMPLOYEE']), async (req, res) => {
   try { res.json({ data: await ExpenseClaim.findAll({ where: { employeeId: req.employee.id, organizationId: req.user.organizationId }, order: [['createdAt', 'DESC'], ['id', 'DESC']] }) }); }
   catch (err) { fail(res, err); }
 });
-router.post('/expenses', async (req, res) => {
+router.post('/expenses', requireFeaturePermission('self.claims', ['EMPLOYEE']), async (req, res) => {
   try {
     const { expenseDate, category, purpose, amount, receiptDataUrl } = req.body || {};
     const rupees = Number(amount);
@@ -199,7 +201,7 @@ router.post('/expenses', async (req, res) => {
     res.status(201).json({ data: row });
   } catch (err) { fail(res, err); }
 });
-router.get('/expenses/:id/receipt', async (req, res) => {
+router.get('/expenses/:id/receipt', requireFeaturePermission('self.claims', ['EMPLOYEE']), async (req, res) => {
   try {
     const row = await ExpenseClaim.findOne({ where: { id: req.params.id, employeeId: req.employee.id, organizationId: req.user.organizationId } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Claim not found.' });
@@ -208,7 +210,7 @@ router.get('/expenses/:id/receipt', async (req, res) => {
     documents.send(res, receipt);
   } catch (err) { fail(res, err); }
 });
-router.post('/expenses/:id/withdraw', async (req, res) => {
+router.post('/expenses/:id/withdraw', requireFeaturePermission('self.claims', ['EMPLOYEE']), async (req, res) => {
   try {
     const row = await ExpenseClaim.findOne({ where: { id: req.params.id, employeeId: req.employee.id, organizationId: req.user.organizationId } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Claim not found.' });

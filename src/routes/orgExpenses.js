@@ -1,29 +1,29 @@
 'use strict';
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const { ExpenseClaim, ExpenseReceipt, Employee } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const { hasProtectedConflict } = require('../services/accessControl');
 const documents = require('../services/documents');
 const { isDateOnly } = require('../services/dateUtils');
 const router = express.Router();
-router.use(authenticate, requireRole('ORG_ADMIN', 'HR_ADMIN', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'));
-const canPrepare = (role) => ['ACCOUNTS_OFFICER', 'PAYROLL_OFFICER'].includes(role);
-const canDecide = (role) => ['APPROVING_AUTHORITY', 'ORG_ADMIN'].includes(role);
-const canPay = (role) => role === 'ACCOUNTS_OFFICER';
+router.use(authenticate);
 const error = (res, err) => res.status(err.status || 500).json({ status: 'error', message: err.message });
 async function ownClaim(req, res) {
   const row = await ExpenseClaim.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
   if (!row) res.status(404).json({ status: 'error', message: 'Claim not found.' });
   return row;
 }
-router.get('/', async (req, res) => {
+router.get('/', requireFeaturePermission(['expenses.view', 'payments.view'], ['ORG_ADMIN', 'HR_ADMIN', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']), async (req, res) => {
   try {
-    const rows = await ExpenseClaim.findAll({ where: { organizationId: req.user.organizationId }, include: [{ model: Employee, attributes: ['id', 'empCode', 'name'] }], order: [['createdAt', 'DESC'], ['id', 'DESC']] });
+    const paymentOnly = req.access?.accessControlMode === 'PERMISSIONS' && req.permissionCode === 'payments.view';
+    const rows = await ExpenseClaim.findAll({ where: { organizationId: req.user.organizationId, ...(paymentOnly ? { status: ['APPROVED', 'PAID'] } : {}) }, ...(paymentOnly ? { attributes: ['id', 'employeeId', 'amount', 'status', 'paidAt', 'paymentReference'] } : {}), include: [{ model: Employee, attributes: ['id', 'empCode', 'name'] }], order: [['createdAt', 'DESC'], ['id', 'DESC']] });
     res.json({ data: rows });
   } catch (err) { error(res, err); }
 });
-router.get('/:id/receipt', async (req, res) => {
+router.get('/:id/receipt', requireFeaturePermission('expenses.view', ['ORG_ADMIN', 'HR_ADMIN', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'], resource('ExpenseClaim')), async (req, res) => {
   try {
     const row = await ownClaim(req, res); if (!row) return;
     const receipt = await ExpenseReceipt.findOne({ where: { claimId: row.id } });
@@ -31,8 +31,7 @@ router.get('/:id/receipt', async (req, res) => {
     documents.send(res, receipt);
   } catch (err) { error(res, err); }
 });
-router.post('/:id/prepare', async (req, res) => {
-  if (!canPrepare(req.user.role)) return res.status(403).json({ status: 'error', message: 'Accounts or payroll officer required.' });
+router.post('/:id/prepare', requireFeaturePermission('financialChanges.prepare', ['ACCOUNTS_OFFICER', 'PAYROLL_OFFICER'], resource('ExpenseClaim')), async (req, res) => {
   try {
     const row = await ownClaim(req, res); if (!row) return;
     if (row.status !== 'SUBMITTED') return res.status(409).json({ status: 'error', message: 'Only submitted claims can be prepared.' });
@@ -44,8 +43,7 @@ router.post('/:id/prepare', async (req, res) => {
     res.json({ data: row });
   } catch (err) { error(res, err); }
 });
-router.post('/:id/decide', async (req, res) => {
-  if (!canDecide(req.user.role)) return res.status(403).json({ status: 'error', message: 'Approving authority required.' });
+router.post('/:id/decide', requireFeaturePermission('expenses.approve', ['APPROVING_AUTHORITY', 'ORG_ADMIN'], resource('ExpenseClaim')), async (req, res) => {
   try {
     const row = await ownClaim(req, res); if (!row) return;
     if (row.status !== 'PREPARED') return res.status(409).json({ status: 'error', message: 'Only prepared claims can be decided.' });
@@ -60,8 +58,7 @@ router.post('/:id/decide', async (req, res) => {
     res.json({ data: row });
   } catch (err) { error(res, err); }
 });
-router.post('/:id/pay', async (req, res) => {
-  if (!canPay(req.user.role)) return res.status(403).json({ status: 'error', message: 'Accounts officer required.' });
+router.post('/:id/pay', requireFeaturePermission('payments.pay', ['ACCOUNTS_OFFICER'], resource('ExpenseClaim')), async (req, res) => {
   try {
     const row = await ownClaim(req, res); if (!row) return;
     if (row.status !== 'APPROVED') return res.status(409).json({ status: 'error', message: 'Only approved claims can be marked paid.' });

@@ -37,7 +37,7 @@
  * precision issues.
  */
 
-const { sequelize, Employee, PayScale, PayrollRun, PayrollRunLine, EmployeePayHistory, DaRevision, ArrearsCase, ArrearsMonthDetail, ArrearsInstallment } = require('../models');
+const { sequelize, EmployeeServiceHistory, Employee, PayScale, PayrollRun, PayrollRunLine, EmployeePayHistory, DaRevision, ArrearsCase, ArrearsMonthDetail, ArrearsInstallment } = require('../models');
 const { Op } = require('sequelize');
 const { toPaise, toRupees, add, percentOf, round, sum, min } = require('../utils/money');
 
@@ -278,14 +278,15 @@ async function adjustAmount(arrearsCase, { approvedAmount, reason, userId }) {
   const amtPaise = toPaise(approvedAmount);
   if (!Number.isFinite(amtPaise) || amtPaise < 0) throw new ArrearsError('Approved amount must be a non-negative number.');
   if (!reason || !String(reason).trim()) throw new ArrearsError('An adjustment reason is required.');
-  const paidCount = await ArrearsInstallment.count({ where: { arrearsCaseId: arrearsCase.id, status: 'PAID' } });
-  assertNoPaidInstallments(arrearsCase, paidCount);
   return sequelize.transaction(async (t) => {
+    await lockApprovalCase(arrearsCase, userId, t);
+    const paidCount = await ArrearsInstallment.count({ where: { arrearsCaseId: arrearsCase.id, status: 'PAID' }, transaction: t });
+    assertNoPaidInstallments(arrearsCase, paidCount);
     await ArrearsInstallment.destroy({ where: { arrearsCaseId: arrearsCase.id, status: 'PENDING' }, transaction: t });
     await arrearsCase.update({
       totalAdjustedAmount: toRupees(amtPaise), adjustmentReason: String(reason).trim().slice(0, 2000),
       adjustedBy: userId || null, adjustedAt: new Date(),
-      effectiveTotalAmount: toRupees(amtPaise), paymentMode: 'NONE',
+      effectiveTotalAmount: toRupees(amtPaise), paymentMode: 'NONE', planApprovedBy: null, planApprovedAt: null,
     }, { transaction: t });
     await refreshCaseStatus(arrearsCase.id, t);
     return arrearsCase;
@@ -293,16 +294,25 @@ async function adjustAmount(arrearsCase, { approvedAmount, reason, userId }) {
 }
 
 /** Removes the pending payment plan (installments not yet paid), reverting to CALCULATED (or PARTIALLY_PAID if some installments were already paid). */
-async function clearPaymentPlan(arrearsCase) {
+async function lockApprovalCase(row, userId, transaction) {
+  await row.reload({ transaction, lock: transaction.LOCK.UPDATE });
+  const org = await require('../models').Organization.findByPk(row.organizationId, { transaction });
+  if (org.accessControlMode === 'PERMISSIONS' && (!userId || !row.calculatedBy || String(row.calculatedBy) === String(userId))) throw new ArrearsError('A separate authority must approve the arrears plan or adjustment.', 403);
+}
+
+async function clearPaymentPlan(arrearsCase, userId) {
   return sequelize.transaction(async (t) => {
+    await lockApprovalCase(arrearsCase, userId, t);
     await ArrearsInstallment.destroy({ where: { arrearsCaseId: arrearsCase.id, status: 'PENDING' }, transaction: t });
-    await arrearsCase.update({ paymentMode: 'NONE' }, { transaction: t });
+    await arrearsCase.update({ paymentMode: 'NONE', planApprovedBy: null, planApprovedAt: null }, { transaction: t });
     await refreshCaseStatus(arrearsCase.id, t);
     return arrearsCase;
   });
 }
 
 async function replacePendingInstallments(arrearsCase, rows, paymentMode, userId, transaction) {
+  await lockApprovalCase(arrearsCase, userId, transaction);
+  if (sum(rows.map(row => toPaise(row.amount))) !== toPaise(arrearsCase.effectiveTotalAmount)) throw new ArrearsError('The arrears amount changed; reload before approving the plan.', 409);
   const paidCount = await ArrearsInstallment.count({ where: { arrearsCaseId: arrearsCase.id, status: 'PAID' }, transaction });
   assertNoPaidInstallments(arrearsCase, paidCount);
   await ArrearsInstallment.destroy({ where: { arrearsCaseId: arrearsCase.id, status: 'PENDING' }, transaction });
@@ -311,7 +321,7 @@ async function replacePendingInstallments(arrearsCase, rows, paymentMode, userId
     amount: toRupees(toPaise(r.amount)),
     createdBy: userId || null
   })), { transaction });
-  await arrearsCase.update({ paymentMode }, { transaction });
+  await arrearsCase.update({ paymentMode, planApprovedBy: userId || null, planApprovedAt: new Date() }, { transaction });
   await refreshCaseStatus(arrearsCase.id, transaction);
 }
 
@@ -389,13 +399,16 @@ async function loadInstallmentOr404(installmentId, arrearsCase) {
  * into a downloadable PDF on request rather than storing one.
  */
 async function payInstallment(arrearsCase, installmentId, userId) {
-  const installment = await loadInstallmentOr404(installmentId, arrearsCase);
-  if (installment.status === 'PAID') throw new ArrearsError('This installment has already been paid.', 409);
-
-  const daRevision = await DaRevision.findByPk(arrearsCase.daRevisionId);
-  const monthLabel = `${MONTH_NAMES[installment.month]} ${installment.year}`;
-
   return sequelize.transaction(async (t) => {
+    await arrearsCase.reload({ transaction: t, lock: t.LOCK.UPDATE });
+    const installment = await ArrearsInstallment.findOne({ where: { id: installmentId, arrearsCaseId: arrearsCase.id }, transaction: t, lock: t.LOCK.UPDATE });
+    if (!installment) throw new ArrearsError('Installment not found', 404);
+    if (installment.status !== 'PENDING') throw new ArrearsError('This installment has already been paid.', 409);
+    const org = await require('../models').Organization.findByPk(arrearsCase.organizationId, { transaction: t });
+    if (org.accessControlMode === 'PERMISSIONS' && (!userId || !arrearsCase.calculatedBy || !arrearsCase.planApprovedBy || arrearsCase.totalAdjustedAmount != null && !arrearsCase.adjustedBy || arrearsCase.paymentMode === 'NONE' || [arrearsCase.calculatedBy, arrearsCase.adjustedBy, arrearsCase.planApprovedBy].some(id => id != null && String(id) === String(userId)))) throw new ArrearsError('A separate accounts officer must pay an approved arrears plan.', 403);
+    const daRevision = await DaRevision.findByPk(arrearsCase.daRevisionId, { transaction: t });
+    const monthLabel = `${MONTH_NAMES[installment.month]} ${installment.year}`;
+
     const historyRow = await EmployeeServiceHistory.create({
       employeeId: arrearsCase.employeeId,
       eventType: 'DA_ARREARS_PAYMENT',

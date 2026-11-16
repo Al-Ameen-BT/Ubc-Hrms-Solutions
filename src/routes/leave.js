@@ -17,8 +17,10 @@
  */
 
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const { LeaveType, LeaveApplication, Employee } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const leave = require('../services/leave');
 
@@ -32,7 +34,7 @@ function orgIdFor(req) { return req.user.organizationId; }
 // ------------------------------------------------------------- Leave types
 
 const types = express.Router();
-types.use(authenticate, requireRole(...VIEWERS));
+types.use(authenticate);
 
 async function loadTypeOr404(req, res) {
   const row = await LeaveType.findByPk(req.params.id);
@@ -43,7 +45,7 @@ async function loadTypeOr404(req, res) {
   return row;
 }
 
-types.get('/', async (req, res) => {
+types.get('/', requireFeaturePermission('leave.view', VIEWERS), async (req, res) => {
   try {
     const where = { organizationId: orgIdFor(req) };
     if (req.user.role === 'SUPER_ADMIN' && req.query.organizationId) where.organizationId = req.query.organizationId;
@@ -51,8 +53,7 @@ types.get('/', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-types.post('/', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot create a leave type.' });
+types.post('/', requireFeaturePermission('leave.manage', WRITERS, req => ({ resourceType: 'Organization', id: req.user.organizationId })), async (req, res) => {
   try {
     const row = await leave.createType(orgIdFor(req), req.body);
     await audit(req, 'leave_type.create', { organizationId: row.organizationId, targetType: 'leave_type', targetId: row.id, details: { code: row.code } });
@@ -60,8 +61,7 @@ types.post('/', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-types.post('/seed-defaults', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot do this.' });
+types.post('/seed-defaults', requireFeaturePermission('leave.manage', WRITERS, req => ({ resourceType: 'Organization', id: req.user.organizationId })), async (req, res) => {
   try {
     const rows = await leave.seedDefaultLeaveTypes(orgIdFor(req));
     await audit(req, 'leave_type.seed_defaults', { organizationId: orgIdFor(req) });
@@ -69,8 +69,7 @@ types.post('/seed-defaults', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-types.put('/:id', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot edit this leave type.' });
+types.put('/:id', requireFeaturePermission('leave.manage', WRITERS, resource('LeaveType')), async (req, res) => {
   try {
     const row = await loadTypeOr404(req, res); if (!row) return;
     await leave.updateType(row, req.body);
@@ -79,8 +78,7 @@ types.put('/:id', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-types.post('/:id/status', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot change this.' });
+types.post('/:id/status', requireFeaturePermission('leave.manage', WRITERS, resource('LeaveType')), async (req, res) => {
   try {
     const row = await loadTypeOr404(req, res); if (!row) return;
     const status = req.body && req.body.status;
@@ -91,8 +89,7 @@ types.post('/:id/status', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-types.post('/:id/accrue', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot run accrual.' });
+types.post('/:id/accrue', requireFeaturePermission('leave.manage', WRITERS, resource('LeaveType')), async (req, res) => {
   try {
     const row = await loadTypeOr404(req, res); if (!row) return;
     const { year, month } = req.body || {};
@@ -107,7 +104,7 @@ types.post('/:id/accrue', async (req, res) => {
 // -------------------------------------------------------- Leave applications
 
 const applications = express.Router();
-applications.use(authenticate, requireRole(...VIEWERS));
+applications.use(authenticate);
 
 async function loadAppOr404(req, res) {
   const row = await LeaveApplication.findByPk(req.params.id, { include: [{ model: Employee }, { model: LeaveType }] });
@@ -119,8 +116,7 @@ async function loadAppOr404(req, res) {
   return row;
 }
 
-applications.post('/:id/decide', async (req, res) => {
-  if (!APPROVERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot decide a leave application.' });
+applications.post('/:id/decide', requireFeaturePermission('leave.approve', APPROVERS, resource('LeaveApplication')), async (req, res) => {
   try {
     const row = await loadAppOr404(req, res); if (!row) return;
     const { decision, reason } = req.body || {};
@@ -130,8 +126,7 @@ applications.post('/:id/decide', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-applications.post('/:id/cancel', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot cancel this.' });
+applications.post('/:id/cancel', requireFeaturePermission('leave.manage', WRITERS, resource('LeaveApplication')), async (req, res) => {
   try {
     const row = await loadAppOr404(req, res); if (!row) return;
     const updated = await leave.cancelLeave(row, req.user.id);
@@ -143,7 +138,7 @@ applications.post('/:id/cancel', async (req, res) => {
 // --------------------------------------------- Per-employee balances/applications
 
 const employeeLeave = express.Router();
-employeeLeave.use(authenticate, requireRole(...VIEWERS));
+employeeLeave.use(authenticate);
 
 async function loadEmployeeOr404(req, res) {
   const row = await Employee.findByPk(req.params.id);
@@ -154,7 +149,7 @@ async function loadEmployeeOr404(req, res) {
   return row;
 }
 
-employeeLeave.get('/:id/leave-balances', async (req, res) => {
+employeeLeave.get('/:id/leave-balances', requireFeaturePermission('leave.view', VIEWERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadEmployeeOr404(req, res); if (!employee) return;
     const year = req.query.year ? Number(req.query.year) : await leave.currentYearLabel(employee.organizationId);
@@ -162,7 +157,7 @@ employeeLeave.get('/:id/leave-balances', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-employeeLeave.get('/:id/leave-applications', async (req, res) => {
+employeeLeave.get('/:id/leave-applications', requireFeaturePermission('leave.view', VIEWERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadEmployeeOr404(req, res); if (!employee) return;
     const rows = await LeaveApplication.findAll({
@@ -172,8 +167,7 @@ employeeLeave.get('/:id/leave-applications', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-employeeLeave.post('/:id/leave-applications', async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot file a leave application.' });
+employeeLeave.post('/:id/leave-applications', requireFeaturePermission('leave.manage', WRITERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadEmployeeOr404(req, res); if (!employee) return;
     const b = req.body || {};

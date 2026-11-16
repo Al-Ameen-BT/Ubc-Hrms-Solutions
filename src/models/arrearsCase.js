@@ -30,6 +30,8 @@ const ArrearsCase = sequelize.define('ArrearsCase', {
 
   effectiveTotalAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0, field: 'effective_total_amount' },
 
+  planApprovedBy: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'plan_approved_by' },
+  planApprovedAt: { type: DataTypes.DATE, allowNull: true, field: 'plan_approved_at' },
   paymentMode: {
     type: DataTypes.ENUM('NONE', 'SINGLE_SHOT', 'INSTALLMENT', 'CUSTOM_INSTALLMENT'),
     allowNull: false,

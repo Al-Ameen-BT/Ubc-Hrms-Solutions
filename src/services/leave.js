@@ -19,7 +19,10 @@
  * figure is editable per organisation once created.
  */
 
-const { sequelize, LeaveType, EmployeeLeaveBalance, LeaveApplication, Employee } = require('../models');
+const { sequelize, LeaveType, EmployeeLeaveBalance, LeaveApplication, Employee, OrgPayrollSetting, Organization, User, OrganizationBranch, EmployeeOrganizationAssignment, OrganizationResponsibilityAssignment } = require('../models');
+const { Op } = require('sequelize');
+const { todayIST } = require('./orgAccess');
+const { effectiveAccess, can, scopedWhere } = require('./accessControl');
 const { getSettings } = require('./payrollSettings');
 const { yearLabelFor } = require('./dateUtils');
 
@@ -80,8 +83,8 @@ async function updateType(row, body) {
 }
 
 /** Current org "year" label for a given date, per the org's yearType. */
-async function currentYearLabel(organizationId, onDate) {
-  const settings = await getSettings(organizationId);
+async function currentYearLabel(organizationId, onDate, transaction) {
+  const settings = transaction ? await OrgPayrollSetting.findOne({ where: { organizationId }, transaction }) || await OrgPayrollSetting.create({ organizationId }, { transaction }) : await getSettings(organizationId);
   const d = onDate ? new Date(onDate) : new Date();
   return yearLabelFor(settings.yearType, d.getUTCFullYear(), d.getUTCMonth() + 1);
 }
@@ -143,6 +146,26 @@ function inclusiveDays(fromDate, toDate) {
   return Math.round((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 }
 
+const currentResponsibility = date => ({ status: 'ACTIVE', effectiveFrom: { [Op.lte]: date }, [Op.or]: [{ effectiveTo: null }, { effectiveTo: { [Op.gte]: date } }] });
+async function selectedLeaveApprover(employee, submittedBy, transaction) {
+  const date = todayIST(), organizationId = employee.organizationId;
+  const placements = await EmployeeOrganizationAssignment.findAll({ where: { organizationId, employeeId: employee.id, ...currentResponsibility(date) }, transaction, lock: transaction.LOCK.UPDATE });
+  if (placements.length !== 1 || !await OrganizationBranch.count({ where: { id: placements[0].branchId, organizationId, status: 'ACTIVE' }, transaction })) throw new LeaveError('A current branch assignment is required to select an approver.', 409);
+  const branchId = placements[0].branchId;
+  const responsibilities = await OrganizationResponsibilityAssignment.findAll({ where: { organizationId, ...currentResponsibility(date) }, transaction, lock: transaction.LOCK.UPDATE });
+  const inScope = row => row.scopeType === 'ORGANISATION' || row.scopeType === 'BRANCH' && String(row.branchId) === String(branchId);
+  const own = responsibilities.filter(row => String(row.employeeId) === String(employee.id) && inScope(row));
+  const target = own.some(row => row.responsibility === 'SENIOR_MANAGER') ? 'GENERAL_MANAGER' : own.some(row => row.responsibility === 'BRANCH_MANAGER') ? 'SENIOR_MANAGER' : 'BRANCH_MANAGER';
+  const holders = responsibilities.filter(row => row.responsibility === target && inScope(row));
+  if (holders.length !== 1) throw new LeaveError('Exactly one current in-scope approver is required.', 409);
+  const holder = holders[0];
+  const users = await User.findAll({ where: { organizationId, employeeId: holder.employeeId, status: 'ACTIVE', ...(holder.userId ? { id: holder.userId } : {}) }, transaction, lock: transaction.LOCK.UPDATE });
+  if (users.length !== 1 || String(holder.employeeId) === String(employee.id) || String(users[0].id) === String(submittedBy)) throw new LeaveError('A separate active linked approver is required.', 409);
+  const access = await effectiveAccess(users[0].id, date, transaction);
+  if (!can(access, 'leave.approve') || !await Employee.count({ where: { [Op.and]: [{ id: employee.id }, scopedWhere(access, 'leave.approve', 'Employee')] }, transaction })) throw new LeaveError('The selected approver is outside the permitted scope.', 409);
+  return users[0].id;
+}
+
 async function applyLeave(employee, { leaveTypeId, fromDate, toDate, reason }, userId) {
   const leaveType = await LeaveType.findByPk(leaveTypeId);
   if (!leaveType || String(leaveType.organizationId) !== String(employee.organizationId)) throw new LeaveError('Leave type not found.', 404);
@@ -161,21 +184,25 @@ async function applyLeave(employee, { leaveTypeId, fromDate, toDate, reason }, u
     }
   }
 
-  const application = await LeaveApplication.create({
-    employeeId: employee.id, leaveTypeId: leaveType.id, fromDate, toDate, days,
-    reason: reason ? String(reason).slice(0, 500) : null, appliedBy: userId || null,
-    status: 'PENDING',
+  return sequelize.transaction(async transaction => {
+    const org = await Organization.findByPk(employee.organizationId, { transaction, lock: transaction.LOCK.UPDATE });
+    const currentEmployee = await Employee.findOne({ where: { id: employee.id, organizationId: org.id, status: 'ACTIVE' }, transaction, lock: transaction.LOCK.UPDATE });
+    if (!currentEmployee) throw new LeaveError('Employee not found.', 404);
+    const selectedApproverUserId = org.accessControlMode === 'PERMISSIONS' && leaveType.requiresApproval ? await selectedLeaveApprover(currentEmployee, userId, transaction) : null;
+    const application = await LeaveApplication.create({
+      employeeId: employee.id, leaveTypeId: leaveType.id, fromDate, toDate, days,
+      reason: reason ? String(reason).slice(0, 500) : null, appliedBy: userId || null,
+      selectedApproverUserId, status: 'PENDING',
+    }, { transaction });
+    if (!leaveType.requiresApproval) await settleApproval(application, leaveType, employee, 'APPROVED', userId, null, transaction);
+    return application;
   });
-  if (!leaveType.requiresApproval) {
-    await settleApproval(application, leaveType, employee, 'APPROVED', userId, null);
-  }
-  return application;
 }
 
-async function settleApproval(application, leaveType, employee, decision, userId, reason) {
+async function settleApproval(application, leaveType, employee, decision, userId, reason, transaction) {
   const year = decision === 'APPROVED' && leaveType.accrualMethod !== 'NONE'
-    ? await currentYearLabel(employee.organizationId, application.fromDate) : null;
-  return sequelize.transaction(async (t) => {
+    ? await currentYearLabel(employee.organizationId, application.fromDate, transaction) : null;
+  const settle = async t => {
     const [changed] = await LeaveApplication.update({
       status: decision, decidedBy: userId || null, decidedAt: new Date(),
       decisionReason: reason ? String(reason).slice(0, 500) : null,
@@ -192,17 +219,28 @@ async function settleApproval(application, leaveType, employee, decision, userId
     }
     await application.reload({ transaction: t });
     return application;
-  });
+  };
+  return transaction ? settle(transaction) : sequelize.transaction(settle);
 }
 
 async function decideLeave(application, decision, userId, reason) {
-  if (application.status !== 'PENDING') throw new LeaveError(`This application is already ${application.status}.`, 409);
   if (!['APPROVED', 'REJECTED'].includes(decision)) throw new LeaveError('decision must be APPROVED or REJECTED.');
-  const [leaveType, employee] = await Promise.all([
-    LeaveType.findByPk(application.leaveTypeId),
-    Employee.findByPk(application.employeeId),
-  ]);
-  return settleApproval(application, leaveType, employee, decision, userId, reason);
+  return sequelize.transaction(async transaction => {
+    await application.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (application.status !== 'PENDING') throw new LeaveError(`This application is already ${application.status}.`, 409);
+    const employee = await Employee.findByPk(application.employeeId, { transaction, lock: transaction.LOCK.UPDATE });
+    const org = employee && await Organization.findByPk(employee.organizationId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!org) throw new LeaveError('Employee not found.', 404);
+    if (org.accessControlMode === 'PERMISSIONS') {
+      const actor = await User.findOne({ where: { id: userId, organizationId: org.id, status: 'ACTIVE' }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!actor || String(application.selectedApproverUserId) !== String(userId) || String(actor.employeeId) === String(employee.id) || String(application.appliedBy) === String(userId)) throw new LeaveError('Only the selected separate approver may decide this request.', 403);
+      const access = await effectiveAccess(actor.id, todayIST(), transaction);
+      if (!can(access, 'leave.approve') || !await Employee.count({ where: { [Op.and]: [{ id: employee.id }, scopedWhere(access, 'leave.approve', 'Employee')] }, transaction })) throw new LeaveError('The selected approver is inactive, unlinked or outside scope.', 403);
+    }
+    const leaveType = await LeaveType.findOne({ where: { id: application.leaveTypeId, organizationId: org.id }, transaction });
+    if (!leaveType) throw new LeaveError('Leave type not found.', 404);
+    return settleApproval(application, leaveType, employee, decision, userId, reason, transaction);
+  });
 }
 
 async function cancelLeave(application, userId) {

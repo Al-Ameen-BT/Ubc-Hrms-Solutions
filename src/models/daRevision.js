@@ -38,6 +38,9 @@ const DaRevision = sequelize.define('DaRevision', {
   }, // matches employee.employmentType
   applicablePayRevisionId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'applicable_pay_revision_id' }, // null = every pay revision
 
+  preparedBy: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'prepared_by' },
+  approvedBy: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'approved_by' },
+  approvedAt: { type: DataTypes.DATE, allowNull: true, field: 'approved_at' },
   remarks: { type: DataTypes.TEXT, allowNull: true },
   status: { type: DataTypes.ENUM('DRAFT', 'APPROVED', 'ACTIVE', 'CLOSED'), allowNull: false, defaultValue: 'DRAFT' },
 }, {

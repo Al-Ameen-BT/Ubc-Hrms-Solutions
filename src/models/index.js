@@ -338,6 +338,7 @@ LeaveApplication.belongsTo(Employee, { foreignKey: 'employeeId' });
 LeaveType.hasMany(LeaveApplication, { foreignKey: 'leaveTypeId' });
 LeaveApplication.belongsTo(LeaveType, { foreignKey: 'leaveTypeId' });
 LeaveApplication.belongsTo(User, { as: 'AppliedByUser', foreignKey: 'appliedBy' });
+LeaveApplication.belongsTo(User, { as: 'SelectedApproverUser', foreignKey: 'selectedApproverUserId', onDelete: 'RESTRICT', onUpdate: 'RESTRICT' });
 LeaveApplication.belongsTo(User, { as: 'DecidedByUser', foreignKey: 'decidedBy' });
 
 // Multiple bank accounts per employee (feature: OD/RD account numbers, routing)

@@ -218,21 +218,40 @@ const createPosition = o => positionWrite(o, true);
 const updatePosition = o => positionWrite(o, false);
 const deactivatePosition = o => updatePosition({ ...o, data: { status: 'INACTIVE' } });
 const overlaps = (a, b) => (!a.effectiveTo || a.effectiveTo >= b.effectiveFrom) && (!b.effectiveTo || b.effectiveTo >= a.effectiveFrom);
-async function assignEmployeeOrganization(options) {
-  return mutate(options, 'assignments.manage', async o => {
-    const data = o.data || {}, range = dates(data);
-    await row(Employee, data.employeeId, o.organizationId, o.transaction, true);
-    const { branch, department, position } = await validateOwnership(data, o);
-    const previous = await Assignment.findAll({ where: { organizationId: o.organizationId, employeeId: data.employeeId, status: 'ACTIVE' }, transaction: o.transaction, lock: o.transaction.LOCK.UPDATE });
-    if (previous.some(a => overlaps(a, range))) fail('Employee primary assignment dates must not overlap');
-    if (position) {
-      const occupants = await Assignment.findAll({ where: { organizationId: o.organizationId, positionId: position.id, status: 'ACTIVE' }, transaction: o.transaction, lock: o.transaction.LOCK.UPDATE });
-      checkCapacity([...occupants.filter(a => overlaps(a, range)), range], position.capacity);
-    }
-    const result = await Assignment.create({ organizationId: o.organizationId, employeeId: data.employeeId, branchId: branch.id, departmentId: department?.id || null, positionId: position?.id || null, ...range, assignedBy: o.actor.id }, { transaction: o.transaction });
-    await audit(o, 'org.assignment.create', result); return result;
-  });
+async function createOrganizationAssignment(o) {
+  const data = o.data || {}, range = dates(data);
+  await row(Employee, data.employeeId, o.organizationId, o.transaction, true);
+  const { branch, department, position } = await validateOwnership(data, o);
+  const previous = await Assignment.findAll({ where: { organizationId: o.organizationId, employeeId: data.employeeId, status: 'ACTIVE' }, transaction: o.transaction, lock: o.transaction.LOCK.UPDATE });
+  if (previous.some(a => overlaps(a, range))) fail('Employee primary assignment dates must not overlap');
+  if (position) {
+    const occupants = await Assignment.findAll({ where: { organizationId: o.organizationId, positionId: position.id, status: 'ACTIVE' }, transaction: o.transaction, lock: o.transaction.LOCK.UPDATE });
+    checkCapacity([...occupants.filter(a => overlaps(a, range)), range], position.capacity);
+  }
+  const result = await Assignment.create({ organizationId: o.organizationId, employeeId: data.employeeId, branchId: branch.id, departmentId: department?.id || null, positionId: position?.id || null, ...range, assignedBy: o.actor.id }, { transaction: o.transaction });
+  await audit(o, 'org.assignment.create', result); return result;
 }
+async function assignEmployeeOrganization(options) {
+  return mutate(options, 'assignments.manage', createOrganizationAssignment);
+}
+// This API creates the employee itself; people.create cannot attach assignments to existing employees.
+async function onboardEmployee(options) {
+  return mutate(options, 'people.create', async o => {
+    const destination = o.organizationAssignment;
+    if (!destination || typeof destination !== 'object' || Array.isArray(destination) || Object.keys(destination).some(key => !['branchId', 'departmentId', 'positionId', 'effectiveFrom', 'effectiveTo'].includes(key))) fail('An organizationAssignment with branchId and effectiveFrom is required');
+    dates(destination);
+    const { branch, department } = await validateOwnership(destination, o);
+    const access = await effectiveAccess(o.actor.id, todayIST(), o.transaction);
+    if (!can(access, 'people.create', { resourceType: 'Employee', organizationId: o.organizationId, branchId: branch.id, departmentId: department?.id || null })) throw Object.assign(new OrgFieldError('Employee destination is outside your creation scope'), { status: 403 });
+    if (o.data.id != null || o.data.status === 'INACTIVE') fail('Initial onboarding requires a new active employee');
+    if (o.organization.maxEmployees != null && await Employee.count({ where: { organizationId: o.organizationId, status: 'ACTIVE' }, transaction: o.transaction }) >= o.organization.maxEmployees) throw Object.assign(new OrgFieldError('Employee licence limit reached'), { status: 409 });
+    const employee = await Employee.create({ ...o.data, organizationId: o.organizationId }, { transaction: o.transaction });
+    await createOrganizationAssignment({ ...o, data: { ...destination, employeeId: employee.id } });
+    await audit(o, 'employee.onboard', employee);
+    return employee;
+  }).then(async employee => employee.reload({ transaction: options.transaction }));
+}
+
 async function assignResponsibility(options) {
   return mutate(options, 'assignments.manage', async o => {
     const data = o.data || {}, range = dates(data);
@@ -323,5 +342,5 @@ async function reconcileEffectiveAssignments(options) {
 module.exports = {
   configureHeadOffice, createBranch, updateBranch, deactivateBranch,
   createDepartment, updateDepartment, deactivateDepartment, createPosition, updatePosition, deactivatePosition,
-  assignEmployeeOrganization, assignResponsibility, currentResponsibility, reconcileEffectiveAssignments,
+  onboardEmployee, assignEmployeeOrganization, assignResponsibility, currentResponsibility, reconcileEffectiveAssignments,
 };

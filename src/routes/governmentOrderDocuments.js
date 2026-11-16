@@ -9,6 +9,8 @@
  * serviceBook.js — see services/attachments.js for the storage itself.
  */
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const { authenticate } = require('../middleware/auth');
 const { GovernmentOrder, GovernmentOrderDocument } = require('../models');
 const attachments = require('../services/attachments');
@@ -27,8 +29,7 @@ async function loadOwnGO(req, res) {
   return go;
 }
 
-router.get('/:id/document', authenticate, async (req, res) => {
-  if (!READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/document', requireFeaturePermission('compensation.view', READERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     const meta = await attachments.info(GovernmentOrderDocument, 'governmentOrderId', go.id);
@@ -36,8 +37,7 @@ router.get('/:id/document', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.get('/:id/document/file', authenticate, async (req, res) => {
-  if (!READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/document/file', requireFeaturePermission('compensation.view', READERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     const row = await attachments.get(GovernmentOrderDocument, 'governmentOrderId', go.id);
@@ -46,8 +46,7 @@ router.get('/:id/document/file', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/document', authenticate, async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot upload a document.' });
+router.post('/:id/document', requireFeaturePermission('compensation.prepare', WRITERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     const b = req.body || {};
@@ -57,8 +56,7 @@ router.post('/:id/document', authenticate, async (req, res) => {
   } catch (err) { res.status(err.status || 400).json({ status: 'error', message: err.message }); }
 });
 
-router.delete('/:id/document', authenticate, async (req, res) => {
-  if (!WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot delete this document.' });
+router.delete('/:id/document', requireFeaturePermission('compensation.prepare', WRITERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     await attachments.remove(GovernmentOrderDocument, 'governmentOrderId', go.id);

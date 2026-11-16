@@ -39,9 +39,9 @@ function boundary(group, Model) {
   };
 }
 router.use(authenticate); legacy.use(authenticate);
-router.get('/chart', handle(req => organizationChart({ actor: req.user, at: req.query.at, view: req.query.view })));
-router.get('/board/:id/photo', photoHandler('board'));
-router.post('/head-office', boundary('branches', models.OrganizationBranch), handle(async req => safe(await structure.configureHeadOffice({ organizationId: req.user.organizationId, actor: req.user, data: req.body }), 'branches'), 201));
+router.get('/chart', requirePermission('chart.view'), handle(req => organizationChart({ actor: req.user, at: req.query.at, view: req.query.view })));
+router.get('/board/:id/photo', requirePermission('chart.view'), photoHandler('board'));
+router.post('/head-office', requirePermission('branches.manage'), boundary('branches', models.OrganizationBranch), handle(async req => safe(await structure.configureHeadOffice({ organizationId: req.user.organizationId, actor: req.user, data: req.body }), 'branches'), 201));
 router.get('/branches/import/template', requirePermission('branches.manage'), async (req, res) => {
   try { res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').attachment('branches.xlsx').send(await workbook.writeBranchTemplate()); } catch (error) { sendError(res, error); }
 });
@@ -62,10 +62,10 @@ for (const [group, modelName, singular] of [['branches', 'OrganizationBranch', '
   const mount = (target, path) => {
     target.get(path, requirePermission(`${permission}.view`), handle(async req => (await Model.findAll({ where: scopedWhere(req.access, `${permission}.view`, modelName), attributes: columns[group], order: [['id', 'ASC']] })).map(row => safe(row, group))));
     const create = group === 'assignments' ? structure.assignEmployeeOrganization : group === 'responsibilities' ? structure.assignResponsibility : structure[`create${singular}`];
-    target.post(path, boundary(group, Model), handle(async req => safe(await create({ organizationId: req.user.organizationId, actor: req.user, data: req.body }), group), 201));
+    target.post(path, requirePermission(`${permission}.manage`), boundary(group, Model), handle(async req => safe(await create({ organizationId: req.user.organizationId, actor: req.user, data: req.body }), group), 201));
     if (['assignments', 'responsibilities'].includes(group)) return;
-    target.put(`${path}/:id`, boundary(group, Model), handle(async req => safe(await structure[`update${singular}`]({ organizationId: req.user.organizationId, actor: req.user, id: req.params.id, data: req.body }), group)));
-    target.delete(`${path}/:id`, boundary(group, Model), handle(async req => safe(await structure[`deactivate${singular}`]({ organizationId: req.user.organizationId, actor: req.user, id: req.params.id }), group)));
+    target.put(`${path}/:id`, requirePermission(`${permission}.manage`), boundary(group, Model), handle(async req => safe(await structure[`update${singular}`]({ organizationId: req.user.organizationId, actor: req.user, id: req.params.id, data: req.body }), group)));
+    target.delete(`${path}/:id`, requirePermission(`${permission}.manage`), boundary(group, Model), handle(async req => safe(await structure[`deactivate${singular}`]({ organizationId: req.user.organizationId, actor: req.user, id: req.params.id }), group)));
   };
   mount(router, `/${group}`);
   if (group === 'branches') mount(legacy, '/profile/branches');

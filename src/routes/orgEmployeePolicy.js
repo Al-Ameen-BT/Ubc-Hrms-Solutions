@@ -1,16 +1,18 @@
 'use strict';
 const express = require('express');
+const { requireFeaturePermission } = require('../middleware/permissions');
+
 const { EmployeePolicy } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const router = express.Router();
-router.use(authenticate, requireRole('ORG_ADMIN'));
+router.use(authenticate);
 const current = (organizationId) => EmployeePolicy.findOne({ where: { organizationId }, order: [['version', 'DESC']] });
-router.get('/', async (req, res) => {
+router.get('/', requireFeaturePermission('hr.view', ['ORG_ADMIN']), async (req, res) => {
   try { res.json({ data: await current(req.user.organizationId) }); }
   catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
-router.post('/', async (req, res) => {
+router.post('/', requireFeaturePermission('hr.manage', ['ORG_ADMIN'], req => ({ resourceType: 'Organization', id: req.user.organizationId })), async (req, res) => {
   try {
     const title = String(req.body?.title || '').trim();
     const body = String(req.body?.body || '').trim();

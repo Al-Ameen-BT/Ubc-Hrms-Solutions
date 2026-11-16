@@ -22,6 +22,13 @@ before(async () => {
     await OrganizationRolePermission.create({ organizationId: org.id, roleId: role.id, permissionCode });
     await UserRoleAssignment.create({ organizationId: org.id, userId: maker.id, roleId: role.id, scopeType: 'ORGANISATION', effectiveFrom: '2020-01-01' });
   }
+  for (const [actor, templateCode, permissionCode] of [[approver, 'APPROVING_AUTHORITY', 'expenses.approve'], [payer, 'ACCOUNTS_OFFICER', 'payments.pay']]) {
+    const linked = await Employee.create({ organizationId: org.id, postCadreId: post.id, empCode: actor.name, name: actor.name, doj: '2020-01-01' });
+    await actor.update({ employeeId: linked.id });
+    const role = await OrganizationRole.create({ organizationId: org.id, code: `EXTRA_${actor.id}`, templateCode, name: actor.name });
+    await OrganizationRolePermission.create({ organizationId: org.id, roleId: role.id, permissionCode });
+    await UserRoleAssignment.create({ organizationId: org.id, userId: actor.id, roleId: role.id, scopeType: 'ORGANISATION', effectiveFrom: '2020-01-01' });
+  }
   const app = express(); app.use(express.json()); app.use('/expenses', require('../src/routes/orgExpenses'));
   server = await new Promise((resolve, reject) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); s.on('error', reject); }); base = `http://127.0.0.1:${server.address().port}`;
 });

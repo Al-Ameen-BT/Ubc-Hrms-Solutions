@@ -1,22 +1,25 @@
 'use strict';
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const { Op } = require('sequelize');
+const { scopedWhere } = require('../services/accessControl');
 const { sequelize, EmployeeTimeEntry, Employee, AuditLog } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const router = express.Router();
-router.use(authenticate, requireRole('ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'));
-router.get('/', async (req, res) => {
+router.use(authenticate);
+router.get('/', requireFeaturePermission('attendance.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']), async (req, res) => {
   try {
     const year = Number(req.query.year || new Date().getUTCFullYear());
     const month = Number(req.query.month || new Date().getUTCMonth() + 1);
     if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) return res.status(400).json({ status: 'error', message: 'Invalid year or month.' });
     const start = `${year}-${String(month).padStart(2, '0')}-01`;
     const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
-    const rows = await EmployeeTimeEntry.findAll({ where: { organizationId: req.user.organizationId, localDate: { [Op.between]: [start, end] } }, include: [{ model: Employee, attributes: ['id', 'empCode', 'name'] }], order: [['localDate', 'DESC'], ['id', 'DESC']] });
+    const rows = await EmployeeTimeEntry.findAll({ where: { ...scopedWhere(req.access, 'attendance.view', 'EmployeeTimeEntry'), localDate: { [Op.between]: [start, end] } }, include: [{ model: Employee, attributes: ['id', 'empCode', 'name'] }], order: [['localDate', 'DESC'], ['id', 'DESC']] });
     res.json({ data: rows });
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
-router.put('/:id/correct', async (req, res) => {
+router.put('/:id/correct', requireFeaturePermission('attendance.manage', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'], resource('EmployeeTimeEntry')), async (req, res) => {
   try {
     const row = await EmployeeTimeEntry.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Time entry not found.' });

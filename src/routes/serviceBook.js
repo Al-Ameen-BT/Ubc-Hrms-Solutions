@@ -1,6 +1,8 @@
 'use strict';
 
 const express = require('express');
+const { requireFeaturePermission, requirePermission, resource } = require('../middleware/permissions');
+
 const crudRouter = require('./crudFactory');
 const { authenticate } = require('../middleware/auth');
 const {
@@ -33,7 +35,8 @@ const compensation = require('../services/compensationResolver');
 const { todayIST } = require('../services/orgAccess');
 
 const router = express.Router();
-router.get('/:id/photo', authenticate, require('../services/organizationChart').photoHandler('employee'));
+router.get('/:id/photo', authenticate, requirePermission('chart.view'), require('../services/organizationChart').photoHandler('employee'));
+const LOAN_WRITERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'ACCOUNTS_OFFICER'];
 const HR_RECORDERS = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
 
 const { stageBelongsToOrg } = require('./payScales');
@@ -124,8 +127,7 @@ const BULK_WRITERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
 const BOOL_TRUE = ['true', '1', 'yes', 'y'];
 const BOOL_FALSE = ['false', '0', 'no', 'n', ''];
 
-router.get('/bulk-template.csv', authenticate, async (req, res) => {
-  if (!BULK_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot download this.' });
+router.get('/bulk-template.csv', authenticate, requireFeaturePermission('people.export', BULK_READERS), async (req, res) => {
   const org = req.user.organizationId ? await Organization.findByPk(req.user.organizationId, { attributes: ['id', 'name', 'code'] }) : null;
   const csvContent = toCsv(BULK_EXAMPLES, BULK_COLUMNS, {
     title: (org && org.name) || 'Urban Co-operative Bank Ltd.',
@@ -159,8 +161,9 @@ function parseTriboolCell(v) {
   return null; // blank/unrecognised = automatic
 }
 
-router.post('/bulk-import', authenticate, async (req, res) => {
-  if (!BULK_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot bulk-create employees.' });
+router.post('/bulk-import', authenticate, requireFeaturePermission('people.create', BULK_WRITERS), async (req, res) => {
+  // shortcut: legacy CSV has no authoritative assignment contract; add atomic scoped import before enabling it in permission mode.
+  if (req.access?.accessControlMode === 'PERMISSIONS') return res.status(409).json({ status: 'error', message: 'Scoped bulk onboarding is unavailable. Create employees with an organizationAssignment.' });
   try {
     const organizationId = req.user.role === 'SUPER_ADMIN' ? Number(req.body.organizationId) : req.user.organizationId;
     if (!organizationId) return res.status(400).json({ status: 'error', message: 'organizationId is required.' });
@@ -230,6 +233,16 @@ router.post('/bulk-import', authenticate, async (req, res) => {
 // Employee master. Creating (or reactivating) an employee record takes a
 // licence seat (Organization.maxEmployees). Every referenced post / scale /
 // stage / policy must belong to the same organisation.
+const FINANCIAL_EMPLOYEE_FIELDS = ['currentPayScaleId', 'currentStageId', 'currentBasicPay', 'incrementPolicyId', 'payFixationPolicyId', 'riskAllowance', 'otherAllowance', 'vpfPercent', 'welfareFundOptIn', 'welfareFundAmount', 'gsliOptIn', 'gsliAmount', 'ptAmount', 'taxRegime', 'taxOtherDeductions', 'stagnationStagesGranted', 'daType', 'fixedDaAmount', 'hraType', 'fixedHraAmount', 'ccaOptIn', 'ccaAmount', 'conveyanceOptIn', 'conveyanceAmount', 'bankAccountNumber', 'bankIfsc', 'bankName'];
+function requireFinancialFields(req, payload, existing) {
+  if (req.access?.accessControlMode === 'PERMISSIONS' && FINANCIAL_EMPLOYEE_FIELDS.some(key => Object.hasOwn(payload, key) && (!existing || String(payload[key] ?? '') !== String(existing[key] ?? '')))) throw Object.assign(new Error('Use separately approved compensation and financial-change proposals for payroll fields.'), { status: 403 });
+}
+function validatePeopleFields(req, org, employee) {
+  const policy = req.access?.accessControlMode === 'PERMISSIONS'
+    ? { ...org.toJSON(), mandatoryEmployeeFields: { ...org.mandatoryEmployeeFields, currentPayScaleId: false, currentStageId: false, bankDetails: false } }
+    : org;
+  orgFields.validateEmployeeMandatoryFields(policy, employee);
+}
 const employeeCrud = crudRouter(Employee, {
     fields: [
       'organizationId', 'empCode', 'name', 'dob', 'doj', 'doa', 'postCadreId', 'grade', 'category',
@@ -266,6 +279,7 @@ const employeeCrud = crudRouter(Employee, {
       payFixationPolicyId: PayFixationPolicy,
     },
     beforeCreate: async (req, payload) => {
+      requireFinancialFields(req, payload);
       if (payload.directPay !== undefined && typeof payload.directPay !== 'boolean') throw Object.assign(new Error('directPay must be true or false.'), { status: 400 });
       const org = await Organization.findByPk(payload.organizationId);
       if (org?.requiresCatalogueAdoption) {
@@ -274,12 +288,13 @@ const employeeCrud = crudRouter(Employee, {
       }
       if (payload.directPay) {
         if (payload.currentPayScaleId || payload.currentStageId) throw Object.assign(new Error('Direct-pay staff cannot be assigned a government pay scale or stage.'), { status: 400 });
-        if (!org?.requiresCatalogueAdoption && !(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
+        if (req.access?.accessControlMode !== 'PERMISSIONS' && !org?.requiresCatalogueAdoption && !(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
       }
       if (payload.status !== 'INACTIVE') await assertCanAddEmployee(payload.organizationId);
-      orgFields.validateEmployeeMandatoryFields(org, payload);
+      validatePeopleFields(req, org, payload);
     },
     beforeUpdate: async (req, row, payload) => {
+      requireFinancialFields(req, payload, row);
       const monetaryFields = ['currentPayScaleId', 'currentStageId', 'currentBasicPay', 'incrementPolicyId', 'payFixationPolicyId', 'riskAllowance', 'otherAllowance', 'vpfPercent', 'welfareFundOptIn', 'welfareFundAmount', 'gsliOptIn', 'gsliAmount', 'ptAmount', 'taxRegime', 'taxOtherDeductions', 'stagnationStagesGranted', 'daType', 'fixedDaAmount', 'hraType', 'fixedHraAmount', 'ccaOptIn', 'ccaAmount', 'conveyanceOptIn', 'conveyanceAmount'];
       const org = await Organization.findByPk(row.organizationId);
       if (monetaryFields.some(key => Object.hasOwn(payload, key) && String(payload[key] ?? '') !== String(row[key] ?? '')) &&
@@ -293,12 +308,12 @@ const employeeCrud = crudRouter(Employee, {
       if (row.directPay && payload.currentBasicPay !== undefined && Number(payload.currentBasicPay) !== Number(row.currentBasicPay)) throw Object.assign(new Error('Use the direct-pay salary change action to record the Service Book entry.'), { status: 400 });
       if (payload.status === 'ACTIVE' && row.status !== 'ACTIVE') await assertCanAddEmployee(row.organizationId);
       const effective = Object.assign({}, row.toJSON(), payload);
-      orgFields.validateEmployeeMandatoryFields(org, effective);
+      validatePeopleFields(req, org, effective);
     },
   });
 
-router.put('/:id/direct-pay-salary', authenticate, async (req, res) => {
-  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can set direct-pay salary.' });
+router.put('/:id/direct-pay-salary', authenticate, requireFeaturePermission('compensation.prepare', HR_RECORDERS, resource('Employee')), async (req, res) => {
+  if (req.access?.accessControlMode === 'PERMISSIONS') return res.status(409).json({ status: 'error', message: 'Propose a compensation assignment for separate approval.' });
   try {
     const bank = await Organization.findByPk(req.user.organizationId);
     if (bank?.requiresCatalogueAdoption) return res.status(409).json({ status: 'error', message: 'Propose a direct-pay salary assignment for separate approval.' });
@@ -334,10 +349,7 @@ router.put('/:id/direct-pay-salary', authenticate, async (req, res) => {
  */
 const SERVICE_BOOK_READERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'EMPLOYEE'];
 
-router.get('/:id/service-book', authenticate, async (req, res) => {
-  if (!SERVICE_BOOK_READERS.includes(req.user.role)) {
-    return res.status(403).json({ status: 'error', message: 'Your role cannot view service books.' });
-  }
+router.get('/:id/service-book', authenticate, requireFeaturePermission(['hr.view', 'self.profile'], SERVICE_BOOK_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await Employee.findByPk(req.params.id, {
       include: [
@@ -350,7 +362,7 @@ router.get('/:id/service-book', authenticate, async (req, res) => {
     if (req.user.role !== 'SUPER_ADMIN' && String(employee.organizationId) !== String(req.user.organizationId)) {
       return res.status(404).json({ status: 'error', message: 'Employee not found' });
     }
-    if (req.user.role === 'EMPLOYEE' && String(employee.id) !== String(req.user.employeeId)) {
+    if (req.access?.accessControlMode !== 'PERMISSIONS' && req.user.role === 'EMPLOYEE' && String(employee.id) !== String(req.user.employeeId)) {
       return res.status(404).json({ status: 'error', message: 'Employee not found' });
     }
 
@@ -416,11 +428,8 @@ router.get('/:id/service-book', authenticate, async (req, res) => {
 const NON_PAY_EVENTS = ['APPOINTMENT', 'PROBATION', 'CONFIRMATION', 'TRANSFER', 'SUSPENSION', 'LWA', 'BREAK_IN_SERVICE', 'DISCIPLINARY', 'RETIREMENT', 'OTHER'];
 const SERVICE_BOOK_WRITERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
 
-router.post('/:id/service-book/events', authenticate, async (req, res) => {
+router.post('/:id/service-book/events', authenticate, requireFeaturePermission('hr.manage', SERVICE_BOOK_WRITERS, resource('Employee')), async (req, res) => {
   try {
-    if (!SERVICE_BOOK_WRITERS.includes(req.user.role)) {
-      return res.status(403).json({ status: 'error', message: 'Your role cannot add service book entries.' });
-    }
     const employee = await Employee.findByPk(req.params.id);
     if (!employee || (req.user.role !== 'SUPER_ADMIN' && String(employee.organizationId) !== String(req.user.organizationId))) {
       return res.status(404).json({ status: 'error', message: 'Employee not found' });
@@ -469,15 +478,13 @@ router.post('/:id/service-book/events', authenticate, async (req, res) => {
  * are append-only, so there is no separate upload/replace/delete route —
  * a mistake is corrected by adding a further entry, as with the entry text).
  */
-router.get('/:id/service-book/events/:eventId/document/file', authenticate, async (req, res) => {
-  if (!SERVICE_BOOK_READERS.includes(req.user.role)) {
-    return res.status(403).json({ status: 'error', message: 'Your role cannot view service books.' });
-  }
+router.get('/:id/service-book/events/:eventId/document/file', authenticate, requireFeaturePermission(['documents.view', 'self.documents'], SERVICE_BOOK_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await Employee.findByPk(req.params.id);
     if (!employee || (req.user.role !== 'SUPER_ADMIN' && String(employee.organizationId) !== String(req.user.organizationId))) {
       return res.status(404).json({ status: 'error', message: 'Employee not found' });
     }
+    if (req.user.role === 'EMPLOYEE' && req.access?.accessControlMode !== 'PERMISSIONS' && String(employee.id) !== String(req.user.employeeId)) return res.status(404).json({ status: 'error', message: 'Employee not found' });
     const event = await EmployeeServiceHistory.findOne({ where: { id: req.params.eventId, employeeId: employee.id } });
     if (!event) return res.status(404).json({ status: 'error', message: 'Service book entry not found' });
     const row = await attachments.get(ServiceHistoryDocument, 'serviceHistoryId', event.id);
@@ -496,10 +503,7 @@ router.get('/:id/service-book/events/:eventId/document/file', authenticate, asyn
  */
 const PAYSLIP_READERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'];
 
-router.get('/:id/payslip', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) {
-    return res.status(403).json({ status: 'error', message: 'Your role cannot view payslips.' });
-  }
+router.get('/:id/payslip', authenticate, requireFeaturePermission('payroll.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await Employee.findByPk(req.params.id, { include: [{ model: PayScale, as: 'CurrentPayScale' }] });
     if (!employee) return res.status(404).json({ status: 'error', message: 'Employee not found' });
@@ -537,10 +541,7 @@ router.get('/:id/payslip', authenticate, async (req, res) => {
  * screen — for an employee (or HR on their behalf) to keep a copy before
  * an actual payroll run exists for that month.
  */
-router.get('/:id/payslip.pdf', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) {
-    return res.status(403).json({ status: 'error', message: 'Your role cannot view payslips.' });
-  }
+router.get('/:id/payslip.pdf', authenticate, requireFeaturePermission('payroll.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await Employee.findByPk(req.params.id, { include: [{ model: PayScale, as: 'CurrentPayScale' }, { model: PostCadre }] });
     if (!employee) return res.status(404).json({ status: 'error', message: 'Employee not found' });
@@ -588,8 +589,7 @@ const MONTH_ABBR = ['', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 
  * calendar month (see models/employeeAttendance.js). GET returns the whole
  * year at once (for the yearly grid); POST upserts one month.
  */
-router.get('/:id/attendance', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/attendance', authenticate, requireFeaturePermission('attendance.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const year = req.query.year ? Number(req.query.year) : attendance.yearForMonth();
@@ -600,8 +600,7 @@ router.get('/:id/attendance', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/attendance', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot mark attendance.' });
+router.post('/:id/attendance', authenticate, requireFeaturePermission('attendance.manage', LOAN_WRITERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -623,7 +622,7 @@ router.post('/:id/attendance', authenticate, async (req, res) => {
 // services/loans.js), not posted month by month. Writers = same roles as
 // the rest of the employee master; readers = same as the payslip itself.
 // ---------------------------------------------------------------------
-const LOAN_WRITERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'ACCOUNTS_OFFICER'];
+
 // Editing or deleting an existing loan-style record (as opposed to
 // recording a new one) is restricted more tightly than LOAN_WRITERS above —
 // only an Org Admin, HR Admin, or Super Admin may change or remove one once
@@ -646,8 +645,7 @@ async function loadOwnEmployee(req, res) {
  * repeated six times.
  */
 function registerDeleteRoute(path, Model, label, auditAction) {
-  router.delete(`/:id/${path}/:rowId`, authenticate, async (req, res) => {
-    if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can delete this.' });
+  router.delete(`/:id/${path}/:rowId`, authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
     try {
       const employee = await loadOwnEmployee(req, res); if (!employee) return;
       const row = await Model.findOne({ where: { id: req.params.rowId, employeeId: employee.id } });
@@ -665,8 +663,7 @@ function registerDeleteRoute(path, Model, label, auditAction) {
 // master form itself) remain the fallback salary account; setting
 // Employee.salaryCreditAccountId (below) routes net pay to one of these
 // instead — e.g. straight into the employee's Overdraft account. ----
-router.get('/:id/bank-accounts', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/bank-accounts', authenticate, requireFeaturePermission('compensation.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeBankAccount.findAll({ where: { employeeId: employee.id }, order: [['id', 'ASC']] });
@@ -674,8 +671,7 @@ router.get('/:id/bank-accounts', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/bank-accounts', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot add a bank account.' });
+router.post('/:id/bank-accounts', authenticate, requireFeaturePermission('compensation.prepare', LOAN_WRITERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -694,8 +690,7 @@ router.post('/:id/bank-accounts', authenticate, async (req, res) => {
   }
 });
 
-router.put('/:id/bank-accounts/:accountId', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can change this.' });
+router.put('/:id/bank-accounts/:accountId', authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await EmployeeBankAccount.findOne({ where: { id: req.params.accountId, employeeId: employee.id } });
@@ -715,8 +710,7 @@ router.put('/:id/bank-accounts/:accountId', authenticate, async (req, res) => {
 // Which account net pay is credited to — one of this employee's own
 // EmployeeBankAccount rows, or null to fall back to the legacy
 // bankAccountNumber/bankIfsc fields on the employee record itself.
-router.put('/:id/salary-credit-account', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can change this.' });
+router.put('/:id/salary-credit-account', authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const accountId = req.body && req.body.accountId;
@@ -734,8 +728,7 @@ router.put('/:id/salary-credit-account', authenticate, async (req, res) => {
 registerDeleteRoute('bank-accounts', EmployeeBankAccount, 'Bank account', 'employee.bank_account.delete');
 
 // ---- Festival Advance ----
-router.get('/:id/festival-advances', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/festival-advances', authenticate, requireFeaturePermission('compensation.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeFestivalAdvance.findAll({ where: { employeeId: employee.id }, order: [['availedDate', 'DESC']] });
@@ -744,8 +737,7 @@ router.get('/:id/festival-advances', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/festival-advances', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot record a Festival Advance.' });
+router.post('/:id/festival-advances', authenticate, requireFeaturePermission('compensation.prepare', LOAN_WRITERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -779,8 +771,7 @@ router.post('/:id/festival-advances', authenticate, async (req, res) => {
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
 
-router.put('/:id/festival-advances/:advId', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can change this.' });
+router.put('/:id/festival-advances/:advId', authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await EmployeeFestivalAdvance.findOne({ where: { id: req.params.advId, employeeId: employee.id } });
@@ -796,8 +787,7 @@ router.put('/:id/festival-advances/:advId', authenticate, async (req, res) => {
 });
 
 // ---- Employee Overdraft ----
-router.get('/:id/overdrafts', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/overdrafts', authenticate, requireFeaturePermission('compensation.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeOverdraft.findAll({ where: { employeeId: employee.id }, order: [['availedDate', 'DESC']] });
@@ -814,8 +804,7 @@ router.get('/:id/overdrafts', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/overdrafts', authenticate, async (req, res) => {
-  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record an Overdraft.' });
+router.post('/:id/overdrafts', authenticate, requireFeaturePermission('compensation.prepare', HR_RECORDERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -860,8 +849,7 @@ router.post('/:id/overdrafts', authenticate, async (req, res) => {
 });
 
 // ---- Recurring Deposit (optional; usually linked to an Overdraft) ----
-router.get('/:id/recurring-deposits', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/recurring-deposits', authenticate, requireFeaturePermission('compensation.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeRecurringDeposit.findAll({ where: { employeeId: employee.id }, order: [['id', 'DESC']] });
@@ -869,8 +857,7 @@ router.get('/:id/recurring-deposits', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/recurring-deposits', authenticate, async (req, res) => {
-  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record a Recurring Deposit.' });
+router.post('/:id/recurring-deposits', authenticate, requireFeaturePermission('compensation.prepare', HR_RECORDERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -909,8 +896,7 @@ router.post('/:id/recurring-deposits', authenticate, async (req, res) => {
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
 
-router.put('/:id/recurring-deposits/:rdId', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can change this.' });
+router.put('/:id/recurring-deposits/:rdId', authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await EmployeeRecurringDeposit.findOne({ where: { id: req.params.rdId, employeeId: employee.id } });
@@ -931,8 +917,7 @@ router.put('/:id/recurring-deposits/:rdId', authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 
 // ---- LIC policies ----
-router.get('/:id/lic-policies', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/lic-policies', authenticate, requireFeaturePermission('compensation.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeLic.findAll({ where: { employeeId: employee.id }, order: [['openingDate', 'DESC']] });
@@ -941,8 +926,7 @@ router.get('/:id/lic-policies', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/lic-policies', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot record an LIC policy.' });
+router.post('/:id/lic-policies', authenticate, requireFeaturePermission('compensation.prepare', LOAN_WRITERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -964,8 +948,7 @@ router.post('/:id/lic-policies', authenticate, async (req, res) => {
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
 
-router.put('/:id/lic-policies/:licId', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can change this.' });
+router.put('/:id/lic-policies/:licId', authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await EmployeeLic.findOne({ where: { id: req.params.licId, employeeId: employee.id } });
@@ -981,8 +964,7 @@ router.put('/:id/lic-policies/:licId', authenticate, async (req, res) => {
 });
 
 // ---- Housing Loans ----
-router.get('/:id/housing-loans', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/housing-loans', authenticate, requireFeaturePermission('compensation.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeHousingLoan.findAll({ where: { employeeId: employee.id }, order: [['emiStartDate', 'DESC']] });
@@ -991,8 +973,7 @@ router.get('/:id/housing-loans', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/housing-loans', authenticate, async (req, res) => {
-  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record a Housing Loan.' });
+router.post('/:id/housing-loans', authenticate, requireFeaturePermission('compensation.prepare', HR_RECORDERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -1020,8 +1001,7 @@ router.post('/:id/housing-loans', authenticate, async (req, res) => {
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
 
-router.put('/:id/housing-loans/:loanId', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can change this.' });
+router.put('/:id/housing-loans/:loanId', authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await EmployeeHousingLoan.findOne({ where: { id: req.params.loanId, employeeId: employee.id } });
@@ -1035,8 +1015,7 @@ router.put('/:id/housing-loans/:loanId', authenticate, async (req, res) => {
 });
 
 // ---- Vehicle Loans ----
-router.get('/:id/vehicle-loans', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/vehicle-loans', authenticate, requireFeaturePermission('compensation.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await EmployeeVehicleLoan.findAll({ where: { employeeId: employee.id }, order: [['startDate', 'DESC']] });
@@ -1049,8 +1028,7 @@ router.get('/:id/vehicle-loans', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/vehicle-loans', authenticate, async (req, res) => {
-  if (!HR_RECORDERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only bank HR can record a Vehicle Loan.' });
+router.post('/:id/vehicle-loans', authenticate, requireFeaturePermission('compensation.prepare', HR_RECORDERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -1093,8 +1071,7 @@ router.post('/:id/vehicle-loans', authenticate, async (req, res) => {
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });
 
-router.put('/:id/vehicle-loans/:loanId', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can change this.' });
+router.put('/:id/vehicle-loans/:loanId', authenticate, requireFeaturePermission('compensation.prepare', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await EmployeeVehicleLoan.findOne({ where: { id: req.params.loanId, employeeId: employee.id } });
@@ -1113,8 +1090,7 @@ router.put('/:id/vehicle-loans/:loanId', authenticate, async (req, res) => {
 // the same broad/narrow role split as the loan resources above: anyone in
 // LOAN_WRITERS can add a document, only LOAN_EDIT_DELETE can remove one.
 // ---------------------------------------------------------------------
-router.get('/:id/documents', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/documents', authenticate, requireFeaturePermission(['documents.view', 'self.documents'], PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const rows = await documents.list(employee.id);
@@ -1122,8 +1098,7 @@ router.get('/:id/documents', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/documents', authenticate, async (req, res) => {
-  if (!LOAN_WRITERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot upload a document.' });
+router.post('/:id/documents', authenticate, requireFeaturePermission('documents.manage', LOAN_WRITERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const b = req.body || {};
@@ -1134,8 +1109,7 @@ router.post('/:id/documents', authenticate, async (req, res) => {
   } catch (err) { res.status(err.status || 400).json({ status: 'error', message: err.message }); }
 });
 
-router.get('/:id/documents/:docId/file', authenticate, async (req, res) => {
-  if (!PAYSLIP_READERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot view this.' });
+router.get('/:id/documents/:docId/file', authenticate, requireFeaturePermission(['documents.view', 'self.documents'], PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await documents.get(employee.id, req.params.docId);
@@ -1144,8 +1118,7 @@ router.get('/:id/documents/:docId/file', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.delete('/:id/documents/:docId', authenticate, async (req, res) => {
-  if (!LOAN_EDIT_DELETE.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Only an Org Admin, HR Admin, or Super Admin can delete this.' });
+router.delete('/:id/documents/:docId', authenticate, requireFeaturePermission('documents.manage', LOAN_EDIT_DELETE, resource('Employee')), async (req, res) => {
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const row = await documents.get(employee.id, req.params.docId);

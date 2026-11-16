@@ -16,7 +16,7 @@ const express = require('express');
 const models = require('../models');
 const { User, Organization } = models;
 const { authenticate } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requireFeaturePermission } = require('../middleware/permissions');
 const users = require('../services/userAdmin');
 
 const router = express.Router({ mergeParams: true });
@@ -50,7 +50,7 @@ router.use(async (req, res, next) => {
     next();
   } catch (error) { sendError(res, error); }
 });
-router.use((req, res, next) => req.user.role === 'SUPER_ADMIN' ? next() : requirePermission('users.manage')(req, res, next));
+router.use(requireFeaturePermission('users.manage', ['SUPER_ADMIN', 'ORG_ADMIN']));
 
 async function loadOrgOr404(req, res) {
   const org = await Organization.findByPk(req.params.orgId);

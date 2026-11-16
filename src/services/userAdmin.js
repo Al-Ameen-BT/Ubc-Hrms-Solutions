@@ -7,7 +7,7 @@
  * email and audit entry are identical no matter which screen it came from.
  */
 
-const { sequelize, User, Organization, Employee, AuditLog, EmployeeMobileDevice, EmployeeDeviceLink, OrganizationRole, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = require('../models');
+const { sequelize, User, Organization, Employee, LeaveApplication, ArrearsCase, ArrearsInstallment, AuditLog, EmployeeMobileDevice, EmployeeDeviceLink, OrganizationRole, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = require('../models');
 const { Op } = require('sequelize');
 const { hashPassword, generateTempPassword } = require('./authService');
 const { assertCanAddUser } = require('./license');
@@ -516,9 +516,15 @@ async function previewUserAccess(options) {
 }
 async function permissionModeReadiness(o) {
   const readiness = await require('./accessBootstrap').accessReadiness(o.organizationId, { transaction: o.transaction, lock: true });
-  if (readiness.bootstrapUserId) return { ...readiness, ready: false, blockers: [...readiness.blockers, { userId: readiness.bootstrapUserId, reason: 'BOOTSTRAP_ADMIN_LINK_REQUIRED' }] };
-  return readiness;
+  const blockers = [...readiness.blockers];
+  if (readiness.bootstrapUserId) blockers.push({ userId: readiness.bootstrapUserId, reason: 'BOOTSTRAP_ADMIN_LINK_REQUIRED' });
+  const pendingLeave = await LeaveApplication.count({ where: { status: 'PENDING', selectedApproverUserId: null }, include: [{ model: Employee, required: true, attributes: [], where: { organizationId: o.organizationId } }], transaction: o.transaction });
+  if (pendingLeave) blockers.push({ reason: 'PENDING_LEAVE_APPROVER_REQUIRED', count: pendingLeave });
+  const legacyArrears = await ArrearsCase.count({ where: { organizationId: o.organizationId, [Op.or]: [{ calculatedBy: null }, { planApprovedBy: null }, { totalAdjustedAmount: { [Op.ne]: null }, adjustedBy: null }] }, include: [{ model: ArrearsInstallment, required: true, attributes: [], where: { status: 'PENDING' } }], distinct: true, transaction: o.transaction });
+  if (legacyArrears) blockers.push({ reason: 'LEGACY_ARREARS_ACTOR_HISTORY_REQUIRED', count: legacyArrears });
+  return { ...readiness, ready: readiness.ready && !blockers.length, blockers };
 }
+
 async function previewAccessReadiness(options) {
   return accessTransaction(options, async o => { await authorizeAccess(o); return permissionModeReadiness(o); });
 }

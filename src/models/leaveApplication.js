@@ -18,6 +18,7 @@ const LeaveApplication = sequelize.define('LeaveApplication', {
   reason: { type: DataTypes.STRING(500), allowNull: true },
   status: { type: DataTypes.ENUM('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'), allowNull: false, defaultValue: 'PENDING' },
   appliedBy: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'applied_by' },
+  selectedApproverUserId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'selected_approver_user_id' },
   decidedBy: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'decided_by' },
   decidedAt: { type: DataTypes.DATE, allowNull: true, field: 'decided_at' },
   decisionReason: { type: DataTypes.STRING(500), allowNull: true, field: 'decision_reason' },

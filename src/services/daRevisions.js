@@ -14,7 +14,7 @@
  * final (matching the pay-history "never rewrite" rule used elsewhere).
  */
 
-const { DaRevision, PayRevision } = require('../models');
+const { sequelize, Organization, DaRevision, PayRevision } = require('../models');
 
 class DaRevisionError extends Error {
   constructor(message, status) { super(message); this.status = status || 400; }
@@ -82,31 +82,37 @@ async function validateForSave(payload, organizationId) {
   }
 }
 
-async function create(organizationId, body) {
+async function create(organizationId, body, userId) {
   const payload = fields(body, null);
   await validateForSave(payload, organizationId);
-  return DaRevision.create({ organizationId, status: 'DRAFT', ...payload });
+  return DaRevision.create({ organizationId, status: 'DRAFT', ...payload, preparedBy: userId || null });
 }
 
-async function update(row, body) {
-  if (row.status !== 'DRAFT') throw new DaRevisionError(`Only a Draft revision can be edited (this one is ${row.status}).`, 409);
-  const payload = fields(body, row);
-  await validateForSave(payload, row.organizationId);
-  await row.update(payload);
-  return row;
+async function update(row, body, userId) {
+  return sequelize.transaction(async transaction => {
+    await row.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (row.status !== 'DRAFT') throw new DaRevisionError(`Only a Draft revision can be edited (this one is ${row.status}).`, 409);
+    const payload = fields(body, row);
+    await validateForSave(payload, row.organizationId);
+    await row.update({ ...payload, ...(userId ? { preparedBy: userId } : {}) }, { transaction });
+    return row;
+  });
 }
 
-function advanceStatus(row, toStatus) {
+async function advanceStatus(row, toStatus, userId) {
   if (!STATUSES.includes(toStatus)) throw new DaRevisionError(`Status must be one of ${STATUSES.join(', ')}.`);
-  if (toStatus === row.status) return row;
-  // Only the forward step from the current status is allowed in one call —
-  // keeps the lifecycle a straight line, same reasoning as PayrollRun's
-  // PROCESSED -> APPROVED -> PAID chain.
-  if (NEXT_STATUS[row.status] !== toStatus) {
-    throw new DaRevisionError(`A ${row.status} revision can only move to ${NEXT_STATUS[row.status] || 'no further status'}.`, 409);
-  }
-  row.status = toStatus;
-  return row.save();
+  return sequelize.transaction(async transaction => {
+    await row.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (toStatus === row.status) return row;
+    if (NEXT_STATUS[row.status] !== toStatus) throw new DaRevisionError(`A ${row.status} revision can only move to ${NEXT_STATUS[row.status] || 'no further status'}.`, 409);
+    if (toStatus === 'APPROVED') {
+      const org = await Organization.findByPk(row.organizationId, { transaction });
+      if (org.accessControlMode === 'PERMISSIONS' && (!userId || !row.preparedBy || String(userId) === String(row.preparedBy))) throw new DaRevisionError('A separate authority must approve this revision.', 403);
+      row.approvedBy = userId || null; row.approvedAt = new Date();
+    }
+    row.status = toStatus;
+    return row.save({ transaction });
+  });
 }
 
 module.exports = { DaRevisionError, STATUSES, SERVICE_CATEGORIES, fields, validateForSave, create, update, advanceStatus };

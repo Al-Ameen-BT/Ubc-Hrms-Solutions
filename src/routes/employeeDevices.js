@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { requireFeaturePermission } = require('../middleware/permissions');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const { Op } = require('sequelize');
@@ -14,6 +15,10 @@ const { audit } = require('../services/audit');
 
 const employee = express.Router();
 const mobile = express.Router();
+function deviceOwn(handler) {
+  handler.authorization = Object.freeze({ kind: 'device-own', description: 'Device/link handlers validate hashed device secrets, current unique employee link, access version, expiry and revocation before issuing or changing sessions.' });
+  return handler;
+}
 const LINK_MS = 2 * 60 * 1000;
 const INACTIVE_MS = 30 * 24 * 60 * 60 * 1000;
 const error = (res, status, code, message) => res.status(status).json({ status: 'error', code, message });
@@ -44,6 +49,8 @@ employee.use(async (req, res, next) => {
     next();
   } catch (err) { fail(res, err); }
 });
+
+employee.use(requireFeaturePermission('self.devices', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'BRANCH_MANAGER', 'EMPLOYEE']));
 
 employee.get('/', async (req, res) => {
   try {
@@ -114,7 +121,7 @@ employee.post('/:id/revoke', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-mobile.post('/link/claim', async (req, res) => {
+mobile.post('/link/claim', deviceOwn(async (req, res) => {
   try {
     const { challenge, claimSecret, platform, deviceName } = req.body || {};
     if (!validSecret(challenge) || !validSecret(claimSecret) || !['android', 'ios'].includes(platform) || typeof deviceName !== 'string' || !deviceName.trim() || deviceName.length > 80) return error(res, 400, 'LINK_INVALID', 'Invalid link request.');
@@ -130,9 +137,9 @@ mobile.post('/link/claim', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({ data: { linkId: link.id, verificationCode, organizationName: user.Organization.name, expiresAt: link.expiresAt } });
   } catch (err) { fail(res, err); }
-});
+}));
 
-mobile.post('/link/status', async (req, res) => {
+mobile.post('/link/status', deviceOwn(async (req, res) => {
   try {
     const id = idOf(req.body?.linkId), claimSecret = req.body?.claimSecret;
     if (!id || !validSecret(claimSecret)) return error(res, 400, 'LINK_INVALID', 'Invalid link request.');
@@ -159,9 +166,9 @@ mobile.post('/link/status', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({ data: tokens });
   } catch (err) { fail(res, err); }
-});
+}));
 
-mobile.post('/session/refresh', async (req, res) => {
+mobile.post('/session/refresh', deviceOwn(async (req, res) => {
   try {
     let payload;
     try { payload = verifyDeviceRefreshToken(req.body?.refreshToken); } catch { return error(res, 401, 'DEVICE_SESSION_INVALID', 'Link this device again from your portal.'); }
@@ -186,15 +193,15 @@ mobile.post('/session/refresh', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({ data: { accessToken: signDeviceAccessToken(user, device.id), refreshToken, user: await mobileUser(user) } });
   } catch (err) { fail(res, err); }
-});
+}));
 
-mobile.post('/session/revoke', async (req, res) => {
+mobile.post('/session/revoke', deviceOwn(async (req, res) => {
   try {
     let payload;
     try { payload = verifyDeviceRefreshToken(req.body?.refreshToken); } catch { return error(res, 401, 'DEVICE_SESSION_INVALID', 'Invalid device session.'); }
     await EmployeeMobileDevice.update({ revokedAt: new Date() }, { where: { id: payload.deviceId, userId: payload.sub, revokedAt: null } });
     res.json({ data: { revoked: true } });
   } catch (err) { fail(res, err); }
-});
+}));
 
 module.exports = { employee, mobile };

@@ -33,10 +33,12 @@
  */
 
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const {
   DaRevision, DaRevisionDocument, ArrearsCase, ArrearsMonthDetail, ArrearsInstallment, PayrollRun, Employee, Organization, PostCadre,
 } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const attachments = require('../services/attachments');
 const daRevisions = require('../services/daRevisions');
@@ -59,7 +61,7 @@ function orgIdFor(req) {
 // ---------------------------------------------------------- DA Revisions
 
 const revisions = express.Router();
-revisions.use(authenticate, requireRole(...VIEWERS));
+revisions.use(authenticate);
 
 async function loadRevisionOr404(req, res) {
   const row = await DaRevision.findByPk(req.params.id);
@@ -70,14 +72,14 @@ async function loadRevisionOr404(req, res) {
   return row;
 }
 
-revisions.get('/', async (req, res) => {
+revisions.get('/', requireFeaturePermission('arrears.view', VIEWERS), async (req, res) => {
   try {
     const rows = await DaRevision.findAll({ where: { organizationId: orgIdFor(req) }, order: [['effectiveFrom', 'DESC'], ['id', 'DESC']] });
     res.json({ data: rows });
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.get('/:id', async (req, res) => {
+revisions.get('/:id', requireFeaturePermission('arrears.view', VIEWERS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     const doc = await attachments.info(DaRevisionDocument, 'daRevisionId', row.id);
@@ -85,47 +87,49 @@ revisions.get('/:id', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.post('/', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot create a DA Revision.' });
+revisions.post('/', requireFeaturePermission('arrears.prepare', PROCESSORS), async (req, res) => {
   try {
-    const row = await daRevisions.create(orgIdFor(req), req.body);
+    const row = await daRevisions.create(orgIdFor(req), req.body, req.user.id);
     await audit(req, 'da_revision.create', { organizationId: row.organizationId, targetType: 'da_revision', targetId: row.id, details: { orderNumber: row.orderNumber } });
     res.status(201).json({ data: row });
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.put('/:id', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot edit a DA Revision.' });
+revisions.put('/:id', requireFeaturePermission('arrears.prepare', PROCESSORS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
-    await daRevisions.update(row, req.body);
+    await daRevisions.update(row, req.body, req.user.id);
     await audit(req, 'da_revision.update', { organizationId: row.organizationId, targetType: 'da_revision', targetId: row.id });
     res.json({ data: row });
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.post('/:id/status', async (req, res) => {
+revisions.post('/:id/status', requireFeaturePermission(['arrears.prepare', 'arrears.approve'], VIEWERS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     const toStatus = req.body && req.body.status;
     const needsApprover = row.status === 'DRAFT' && toStatus === 'APPROVED';
     const allowed = needsApprover ? APPROVERS : PROCESSORS;
-    if (!allowed.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot make this status change.' });
-    await daRevisions.advanceStatus(row, toStatus);
+    if (req.access?.accessControlMode !== 'PERMISSIONS' && !allowed.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot make this status change.' });
+    if (req.access?.accessControlMode === 'PERMISSIONS') {
+      const code = needsApprover ? 'arrears.approve' : 'arrears.prepare';
+      if (!require('../services/accessControl').can(req.access, code)) return res.status(403).json({ status: 'error', message: 'Permission denied' });
+    }
+    await daRevisions.advanceStatus(row, toStatus, req.user.id);
     await audit(req, 'da_revision.status', { organizationId: row.organizationId, targetType: 'da_revision', targetId: row.id, details: { status: row.status } });
     res.json({ data: row });
   } catch (err) { sendErr(res, err); }
 });
 
 // ---- Government Order scan (mirrors routes/governmentOrderDocuments.js) ----
-revisions.get('/:id/document', async (req, res) => {
+revisions.get('/:id/document', requireFeaturePermission('arrears.view', VIEWERS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     res.json({ data: await attachments.info(DaRevisionDocument, 'daRevisionId', row.id) });
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.get('/:id/document/file', async (req, res) => {
+revisions.get('/:id/document/file', requireFeaturePermission('arrears.view', VIEWERS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     const doc = await attachments.get(DaRevisionDocument, 'daRevisionId', row.id);
@@ -134,8 +138,7 @@ revisions.get('/:id/document/file', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.post('/:id/document', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot upload a document.' });
+revisions.post('/:id/document', requireFeaturePermission('arrears.prepare', PROCESSORS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     const b = req.body || {};
@@ -145,8 +148,7 @@ revisions.post('/:id/document', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.delete('/:id/document', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot delete this document.' });
+revisions.delete('/:id/document', requireFeaturePermission('arrears.prepare', PROCESSORS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     await attachments.remove(DaRevisionDocument, 'daRevisionId', row.id);
@@ -156,8 +158,7 @@ revisions.delete('/:id/document', async (req, res) => {
 });
 
 // ---- Calculation ----
-revisions.post('/:id/calculate', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot calculate arrears.' });
+revisions.post('/:id/calculate', requireFeaturePermission('arrears.prepare', PROCESSORS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     const cases = await arrears.calculateForRevision(row, req.user.id);
@@ -166,7 +167,7 @@ revisions.post('/:id/calculate', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-revisions.get('/:id/cases', async (req, res) => {
+revisions.get('/:id/cases', requireFeaturePermission('arrears.view', VIEWERS, resource('DaRevision')), async (req, res) => {
   try {
     const row = await loadRevisionOr404(req, res); if (!row) return;
     const rows = await ArrearsCase.findAll({ where: { daRevisionId: row.id }, order: [['empCode', 'ASC']] });
@@ -177,7 +178,7 @@ revisions.get('/:id/cases', async (req, res) => {
 // ---------------------------------------------------------- Arrears Cases
 
 const cases = express.Router();
-cases.use(authenticate, requireRole(...VIEWERS));
+cases.use(authenticate);
 
 async function loadCaseOr404(req, res) {
   try {
@@ -192,7 +193,7 @@ async function loadCaseOr404(req, res) {
   }
 }
 
-cases.get('/:id', async (req, res) => {
+cases.get('/:id', requireFeaturePermission('arrears.view', VIEWERS, resource('ArrearsCase')), async (req, res) => {
   try {
     const row = await loadCaseOr404(req, res); if (!row) return;
     const [months, installments, revision] = await Promise.all([
@@ -208,8 +209,7 @@ cases.get('/:id', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-cases.put('/:id/adjust', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot adjust arrears.' });
+cases.put('/:id/adjust', requireFeaturePermission('arrears.approve', PROCESSORS, resource('ArrearsCase')), async (req, res) => {
   try {
     const row = await loadCaseOr404(req, res); if (!row) return;
     const b = req.body || {};
@@ -219,8 +219,7 @@ cases.put('/:id/adjust', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-cases.post('/:id/payment-plan', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot set a payment plan.' });
+cases.post('/:id/payment-plan', requireFeaturePermission('arrears.approve', PROCESSORS, resource('ArrearsCase')), async (req, res) => {
   try {
     const row = await loadCaseOr404(req, res); if (!row) return;
     const b = req.body || {};
@@ -235,11 +234,10 @@ cases.post('/:id/payment-plan', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-cases.delete('/:id/payment-plan', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot clear a payment plan.' });
+cases.delete('/:id/payment-plan', requireFeaturePermission('arrears.approve', PROCESSORS, resource('ArrearsCase')), async (req, res) => {
   try {
     const row = await loadCaseOr404(req, res); if (!row) return;
-    await arrears.clearPaymentPlan(row);
+    await arrears.clearPaymentPlan(row, req.user.id);
     await audit(req, 'arrears_case.payment_plan.clear', { organizationId: row.organizationId, targetType: 'arrears_case', targetId: row.id });
     await row.reload();
     res.json({ data: row });
@@ -248,8 +246,7 @@ cases.delete('/:id/payment-plan', async (req, res) => {
 
 // ---- Standalone installment payment + receipt (arrears are paid separately from salary) ----
 
-cases.post('/:id/installments/:installmentId/pay', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot pay an arrears installment.' });
+cases.post('/:id/installments/:installmentId/pay', requireFeaturePermission('payments.pay', PROCESSORS, resource('ArrearsCase')), async (req, res) => {
   try {
     const row = await loadCaseOr404(req, res); if (!row) return;
     const installment = await arrears.payInstallment(row, req.params.installmentId, req.user.id);
@@ -263,7 +260,7 @@ cases.post('/:id/installments/:installmentId/pay', async (req, res) => {
   } catch (err) { sendErr(res, err); }
 });
 
-cases.get('/:id/installments/:installmentId/receipt.pdf', async (req, res) => {
+cases.get('/:id/installments/:installmentId/receipt.pdf', requireFeaturePermission('arrears.view', VIEWERS, resource('ArrearsCase')), async (req, res) => {
   try {
     const row = await loadCaseOr404(req, res); if (!row) return;
     const { installment, daRevision, monthLabel, receiptNumber } = await arrears.receiptData(row, req.params.installmentId);

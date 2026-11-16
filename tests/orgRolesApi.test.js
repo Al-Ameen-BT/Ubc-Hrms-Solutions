@@ -206,3 +206,36 @@ test('permission mode rejects combined deactivation/unlink and inactive unlink u
   assert.equal((await updateAccount(f, target, { employeeId: null })).status, 200);
   assert.equal((await target.reload()).employeeId, null); assert.equal((await m.UserRoleAssignment.findByPk(assigned.body.data.id)).status, 'INACTIVE');
 });
+test('activation blocks legacy pending leave without exposing request details and clears after legacy finalization', async () => {
+  const f = await fixture(), other = await fixture();
+  async function pending(bank) {
+    const type = await m.LeaveType.create({ organizationId: bank.org.id, code: 'PRIVATE', name: 'Private leave type', accrualMethod: 'NONE' });
+    return m.LeaveApplication.create({ employeeId: bank.admin.employeeId, leaveTypeId: type.id, fromDate: '2026-11-20', toDate: '2026-11-20', days: 1, reason: 'Private request', status: 'PENDING' });
+  }
+  await pending(other);
+  assert.equal((await f.request('/roles/readiness')).body.data.ready, true);
+  const request = await pending(f);
+  const readiness = (await f.request('/roles/readiness')).body.data;
+  assert.equal(readiness.ready, false);
+  assert.deepEqual(readiness.blockers.find(b => b.reason === 'PENDING_LEAVE_APPROVER_REQUIRED'), { reason: 'PENDING_LEAVE_APPROVER_REQUIRED', count: 1 });
+  assert.equal(JSON.stringify(readiness).includes('Private request'), false);
+  assert.equal((await f.request('/roles/activate', 'POST', {})).status, 409);
+  assert.equal((await f.org.reload()).accessControlMode, 'LEGACY');
+  await request.update({ status: 'REJECTED', decidedBy: f.admin.id, decidedAt: new Date() });
+  assert.equal((await f.request('/roles/activate', 'POST', {})).status, 200);
+});
+test('activation blocks payable legacy arrears with missing calculator, plan approver or adjusted-total actor history', async () => {
+  const f = await fixture();
+  const revision = await m.DaRevision.create({ organizationId: f.org.id, orderNumber: 'GO', orderDate: '2026-01-01', effectiveFrom: '2026-01-01', previousDaPercent: 5, increasePercent: 1, revisedDaPercent: 6, status: 'ACTIVE' });
+  const row = await m.ArrearsCase.create({ organizationId: f.org.id, daRevisionId: revision.id, employeeId: f.admin.employeeId, empCode: 'PRIVATE', employeeName: 'Private employee', effectiveTotalAmount: 100, totalCalculatedAmount: 100, paymentMode: 'SINGLE_SHOT' });
+  const installment = await m.ArrearsInstallment.create({ arrearsCaseId: row.id, year: 2026, month: 12, amount: 100 });
+  for (const history of [{ calculatedBy: null, planApprovedBy: f.admin.id, totalAdjustedAmount: null, adjustedBy: null }, { calculatedBy: f.admin.id, planApprovedBy: null, totalAdjustedAmount: null }, { calculatedBy: f.admin.id, planApprovedBy: f.admin.id, totalAdjustedAmount: 100, adjustedBy: null }]) {
+    await row.update(history);
+    const readiness = (await f.request('/roles/readiness')).body.data;
+    assert.equal(readiness.ready, false);
+    assert.deepEqual(readiness.blockers.find(b => b.reason === 'LEGACY_ARREARS_ACTOR_HISTORY_REQUIRED'), { reason: 'LEGACY_ARREARS_ACTOR_HISTORY_REQUIRED', count: 1 });
+    assert.equal((await f.request('/roles/activate', 'POST', {})).status, 409);
+  }
+  await installment.update({ status: 'PAID' });
+  assert.equal((await f.request('/roles/activate', 'POST', {})).status, 200);
+});

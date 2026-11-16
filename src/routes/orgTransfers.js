@@ -12,7 +12,7 @@ const safe = row => Object.fromEntries(attributes.map(key => [key, row[key]]));
 const handle = (work, status = 200) => async (req, res) => { try { res.status(status).json({ data: await work(req) }); } catch (error) { sendError(res, error); } };
 async function load(req, res, next) { try { req.transfer = await tenantResource(models.EmployeeTransfer, req.params.id, req.user.organizationId); next(); } catch (error) { sendError(res, error); } }
 router.get('/', requirePermission('transfers.view'), handle(async req => (await models.EmployeeTransfer.findAll({ where: scopedWhere(req.access, 'transfers.view', 'EmployeeTransfer'), attributes, order: [['id', 'DESC']] })).map(safe)));
-router.post('/', handle(async req => {
+router.post('/', requirePermission('transfers.manage'), handle(async req => {
   const body = inputShape(req.body || {}, ['employeeId', 'branchId', 'departmentId', 'positionId', 'effectiveDate', 'reason', 'compensation', 'compensationProposalId', 'roleChanges']);
   for (const [key, type] of [['employeeId', 'Employee'], ['branchId', 'OrganizationBranch'], ['departmentId', 'OrganizationDepartment'], ['positionId', 'OrganizationPosition'], ['compensationProposalId', 'EmployeeCompensationAssignment']]) if (body[key] != null) await tenantResource(models[type], body[key], req.user.organizationId);
   if (body.roleChanges && typeof body.roleChanges === 'object') {

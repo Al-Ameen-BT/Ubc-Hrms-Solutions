@@ -8,9 +8,10 @@
  */
 
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
 const { Op } = require('sequelize');
 const { Organization, AuditLog, OrganizationBranch, OrganizationBoardMember } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { licenseSummary } = require('../services/orgAccess');
 const license = require('../services/license');
 const brand = require('../services/brandAssets');
@@ -24,13 +25,13 @@ const { getPlatformSettings } = require('../services/settings');
 const orgDomains = require('../services/orgDomains');
 
 const router = express.Router();
-router.use(authenticate, requireRole('ORG_ADMIN'));
+router.use(authenticate);
 
 async function ownOrg(req) {
   return Organization.findByPk(req.user.organizationId);
 }
 
-router.get('/settings', async (req, res) => {
+router.get('/settings', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
   try {
     const org = await ownOrg(req);
     const [usage, logo, favicon, smtpRow, platformSmtp] = await Promise.all([
@@ -59,7 +60,7 @@ router.get('/settings', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.put('/settings', async (req, res) => {
+router.put('/settings', requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
   try {
     const org = await ownOrg(req);
     Object.assign(org, orgFields.orgAdminFields(req.body));
@@ -71,14 +72,14 @@ router.put('/settings', async (req, res) => {
 
 for (const kind of ['logo', 'favicon']) {
   const assetKind = kind.toUpperCase();
-  router.put(`/settings/${kind}`, async (req, res) => {
+  router.put(`/settings/${kind}`, requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
     try {
       const info = await brand.save(req.user.organizationId, assetKind, (req.body || {}).dataUrl, req.user.id);
       await audit(req, `org.${kind}.update`, { targetType: 'organization', targetId: req.user.organizationId, details: info });
       res.json({ data: info });
     } catch (err) { sendError(res, err); }
   });
-  router.delete(`/settings/${kind}`, async (req, res) => {
+  router.delete(`/settings/${kind}`, requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
     try {
       await brand.remove(req.user.organizationId, assetKind);
       await audit(req, `org.${kind}.remove`, { targetType: 'organization', targetId: req.user.organizationId });
@@ -87,11 +88,11 @@ for (const kind of ['logo', 'favicon']) {
   });
 }
 
-router.get('/settings/smtp', async (req, res) => {
+router.get('/settings/smtp', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
   try { res.json({ data: mailer.publicView(await mailer.getConfigRow(req.user.organizationId)) }); } catch (err) { sendError(res, err); }
 });
 
-router.put('/settings/smtp', async (req, res) => {
+router.put('/settings/smtp', requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
   try {
     const row = await mailer.updateConfig(req.user.organizationId, req.body);
     await audit(req, 'org.smtp.update', { details: { host: row.host, enabled: row.enabled } });
@@ -99,7 +100,7 @@ router.put('/settings/smtp', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.post('/settings/smtp/test', async (req, res) => {
+router.post('/settings/smtp/test', requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
   try {
     const to = String((req.body || {}).to || req.user.email).trim();
     const r = await mailer.testConfig(req.user.organizationId, to);
@@ -115,11 +116,11 @@ router.post('/settings/smtp/test', async (req, res) => {
 // (DA/HRA %, PF %, GSLI default/cutoff, Professional Tax schedule, Overdraft
 // limits, Festival Advance repayment window, stagnation-increment policy).
 // Lazily created with defaults on first read.
-router.get('/settings/payroll', async (req, res) => {
+router.get('/settings/payroll', requireFeaturePermission('compensation.view', ['ORG_ADMIN']), async (req, res) => {
   try { res.json({ data: await require('../services/financialChanges').settingsForDate(req.user.organizationId, new Date().toISOString().slice(0, 10)) }); } catch (err) { sendError(res, err); }
 });
 
-router.put('/settings/payroll', async (req, res) => {
+router.put('/settings/payroll', requireFeaturePermission('compensation.prepare', ['ORG_ADMIN']), async (req, res) => {
   try {
     if (await require('../models').OrganizationCatalogueAdoption.count({ where: { organizationId: req.user.organizationId, status: 'APPROVED' } })) {
       return res.status(409).json({ status: 'error', message: 'Propose payroll setting changes for a separate financial approval.' });
@@ -133,14 +134,14 @@ router.put('/settings/payroll', async (req, res) => {
 // Per-organisation mandatory Employee fields (task 73). Every field defaults
 // to mandatory; an Org Admin may switch individual ones off for their own
 // bank only — see services/orgFields.js MANDATORY_FIELD_DEFS.
-router.get('/mandatory-fields', async (req, res) => {
+router.get('/mandatory-fields', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
   try {
     const org = await ownOrg(req);
     res.json({ data: { fields: orgFields.MANDATORY_FIELD_DEFS, config: orgFields.mandatoryConfigFor(org) } });
   } catch (err) { sendError(res, err); }
 });
 
-router.put('/mandatory-fields', async (req, res) => {
+router.put('/mandatory-fields', requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
   try {
     const org = await ownOrg(req);
     const config = orgFields.normaliseMandatoryConfig(req.body && req.body.config);
@@ -156,7 +157,7 @@ router.put('/mandatory-fields', async (req, res) => {
 // 76, services/documentHeader.js). Address is directly editable here too
 // (task 79), reusing the existing `address` field rather than duplicating
 // it — same column Settings → Organisation and the document footer use.
-router.get('/profile', async (req, res) => {
+router.get('/profile', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
   try {
     const org = await ownOrg(req);
     const [logo, branches, board, documents] = await Promise.all([
@@ -187,7 +188,7 @@ router.get('/profile', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.put('/profile', async (req, res) => {
+router.put('/profile', requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
   try {
     const org = await ownOrg(req);
     Object.assign(org, orgFields.orgProfileFields(req.body));
@@ -197,49 +198,11 @@ router.put('/profile', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-// ---- Branch offices ----
-router.get('/profile/branches', async (req, res) => {
-  try {
-    const rows = await OrganizationBranch.findAll({ where: { organizationId: req.user.organizationId }, order: [['isHeadOffice', 'DESC'], ['name', 'ASC']] });
-    res.json({ data: rows });
-  } catch (err) { sendError(res, err); }
-});
-
-router.post('/profile/branches', async (req, res) => {
-  try {
-    const fields = orgFields.branchFields(req.body);
-    if (!fields.name) throw new orgFields.OrgFieldError('Branch name is required');
-    const row = await OrganizationBranch.create({ organizationId: req.user.organizationId, ...fields, isHeadOffice: !!(req.body && req.body.isHeadOffice) });
-    await audit(req, 'org.branch.create', { targetType: 'organization_branch', targetId: row.id });
-    res.status(201).json({ data: row });
-  } catch (err) { sendError(res, err); }
-});
-
-router.put('/profile/branches/:id', async (req, res) => {
-  try {
-    const row = await OrganizationBranch.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
-    if (!row) return res.status(404).json({ status: 'error', message: 'Branch not found' });
-    const fields = orgFields.branchFields(req.body);
-    if (req.body && req.body.isHeadOffice !== undefined) fields.isHeadOffice = !!req.body.isHeadOffice;
-    await row.update(fields);
-    await audit(req, 'org.branch.update', { targetType: 'organization_branch', targetId: row.id });
-    res.json({ data: row });
-  } catch (err) { sendError(res, err); }
-});
-
-router.delete('/profile/branches/:id', async (req, res) => {
-  try {
-    const row = await OrganizationBranch.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
-    if (!row) return res.status(404).json({ status: 'error', message: 'Branch not found' });
-    await row.destroy();
-    await audit(req, 'org.branch.delete', { targetType: 'organization_branch', targetId: req.params.id });
-    res.json({ status: 'ok' });
-  } catch (err) { sendError(res, err); }
-});
+// Branch CRUD is mounted from orgStructure.legacy and uses the authoritative structure service.
 
 // ---- Board / management members (Chairman, Vice Chairman, MD, GM, AGM,
 // other board members), with an optional photo ----
-router.get('/profile/board', async (req, res) => {
+router.get('/profile/board', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
   try {
     const rows = await OrganizationBoardMember.findAll({
       where: { organizationId: req.user.organizationId },
@@ -250,7 +213,7 @@ router.get('/profile/board', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.post('/profile/board', async (req, res) => {
+router.post('/profile/board', requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
   try {
     const fields = orgFields.boardMemberFields(req.body);
     if (!fields.name || !fields.role) throw new orgFields.OrgFieldError('Name and role are required');
@@ -266,7 +229,7 @@ router.post('/profile/board', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.put('/profile/board/:id', async (req, res) => {
+router.put('/profile/board/:id', requireFeaturePermission('settings.configure', ['ORG_ADMIN'], resource('OrganizationBoardMember')), async (req, res) => {
   try {
     const row = await OrganizationBoardMember.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Board member not found' });
@@ -288,7 +251,7 @@ router.put('/profile/board/:id', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.delete('/profile/board/:id', async (req, res) => {
+router.delete('/profile/board/:id', requireFeaturePermission('settings.configure', ['ORG_ADMIN'], resource('OrganizationBoardMember')), async (req, res) => {
   try {
     const row = await OrganizationBoardMember.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Board member not found' });
@@ -301,30 +264,17 @@ router.delete('/profile/board/:id', async (req, res) => {
 // Photo bytes — public within the authenticated app (same auth as the rest
 // of this router); no sha256 on this model, so served inline rather than via
 // brand.send(), which expects a BrandAsset-shaped row.
-router.get('/profile/board/:id/photo', async (req, res) => {
-  try {
-    const row = await OrganizationBoardMember.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
-    if (!row || !row.photoData) return res.status(404).end();
-    res.set({
-      'Content-Type': row.photoMimeType,
-      'Content-Length': String(row.photoSizeBytes || row.photoData.length),
-      'Cache-Control': 'private, max-age=300',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'none'",
-    });
-    res.end(Buffer.from(row.photoData));
-  } catch (err) { sendError(res, err); }
-});
+router.get('/profile/board/:id/photo', requireFeaturePermission('chart.view', ['ORG_ADMIN']), require('../services/organizationChart').photoHandler('board'));
 
 // ---- Statutory document uploads (task 79): RBI licence, incorporation /
 // registration certificate, PAN, GSTN, TAN, or OTHER with a free-text
 // label. Several rows may share a docType (e.g. a renewed licence uploaded
 // without deleting the old one first) — list returns all of them. ----
-router.get('/profile/documents', async (req, res) => {
+router.get('/profile/documents', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
   try { res.json({ data: await orgDocuments.list(req.user.organizationId) }); } catch (err) { sendError(res, err); }
 });
 
-router.post('/profile/documents', async (req, res) => {
+router.post('/profile/documents', requireFeaturePermission('settings.configure', ['ORG_ADMIN']), async (req, res) => {
   try {
     const row = await orgDocuments.create(req.user.organizationId, req.body, req.user.id);
     await audit(req, 'org.document.upload', { targetType: 'organization_document', targetId: row.id, details: { docType: row.docType } });
@@ -332,7 +282,7 @@ router.post('/profile/documents', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-router.delete('/profile/documents/:id', async (req, res) => {
+router.delete('/profile/documents/:id', requireFeaturePermission('settings.configure', ['ORG_ADMIN'], resource('OrganizationDocument')), async (req, res) => {
   try {
     const row = await orgDocuments.remove(req.user.organizationId, req.params.id);
     if (!row) return res.status(404).json({ status: 'error', message: 'Document not found' });
@@ -342,7 +292,7 @@ router.delete('/profile/documents/:id', async (req, res) => {
 });
 
 // File bytes — downloads with the original filename where one was given.
-router.get('/profile/documents/:id/file', async (req, res) => {
+router.get('/profile/documents/:id/file', requireFeaturePermission('settings.view', ['ORG_ADMIN'], resource('OrganizationDocument')), async (req, res) => {
   try {
     const row = await orgDocuments.find(req.user.organizationId, req.params.id);
     if (!row) return res.status(404).end();
@@ -362,7 +312,7 @@ router.get('/profile/documents/:id/file', async (req, res) => {
 // Audit trail for this organisation only. Retention (how far back it goes
 // before the nightly purge removes rows) is a platform-wide setting — see
 // GET /admin/audit/retention — shown here read-only for context.
-router.get('/audit', async (req, res) => {
+router.get('/audit', requireFeaturePermission('audit.view', ['ORG_ADMIN']), async (req, res) => {
   try {
     const where = {
       organizationId: req.user.organizationId,

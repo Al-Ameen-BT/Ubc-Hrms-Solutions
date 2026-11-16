@@ -22,7 +22,9 @@ async function fixture(mode = 'PERMISSIONS', legacyRole = 'EMPLOYEE') {
   const department = await Department.create({ organizationId: org.id, branchId: branch.id, code: 'HR', name: 'HR' });
   const employees = [];
   for (const [i, branchId, departmentId] of [[1, branch.id, department.id], [2, branch.id, department.id], [3, second.id, null]]) {
-    employees.push(await Employee.create({ organizationId: org.id, empCode: `E${i}`, name: `Employee ${i}`, doj: '2020-01-01', postCadreId: post.id, branchId, departmentId }));
+    const employee = await Employee.create({ organizationId: org.id, empCode: `E${i}`, name: `Employee ${i}`, doj: '2020-01-01', postCadreId: post.id, branchId, departmentId });
+    await models.EmployeeOrganizationAssignment.create({ organizationId: org.id, employeeId: employee.id, branchId, departmentId, effectiveFrom: '2026-01-01' });
+    employees.push(employee);
   }
   const user = await User.create({ organizationId: org.id, employeeId: employees[0].id, email: `access${++serial}@example.invalid`, name: 'User', passwordHash: 'unused', role: legacyRole });
   return { org, branch, second, department, employees, user };

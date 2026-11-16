@@ -1,16 +1,18 @@
 'use strict';
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const { OrganizationHoliday } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const { isDateOnly } = require('../services/dateUtils');
 const router = express.Router();
-router.use(authenticate, requireRole('ORG_ADMIN', 'HR_ADMIN'));
-router.get('/', async (req, res) => {
+router.use(authenticate);
+router.get('/', requireFeaturePermission('hr.view', ['ORG_ADMIN', 'HR_ADMIN']), async (req, res) => {
   try { res.json({ data: await OrganizationHoliday.findAll({ where: { organizationId: req.user.organizationId }, order: [['date', 'ASC']] }) }); }
   catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
-router.post('/', async (req, res) => {
+router.post('/', requireFeaturePermission('hr.manage', ['ORG_ADMIN', 'HR_ADMIN'], req => ({ resourceType: 'Organization', id: req.user.organizationId })), async (req, res) => {
   try {
     const { date, name, remarks } = req.body || {};
     if (!isDateOnly(date) || !String(name || '').trim()) return res.status(400).json({ status: 'error', message: 'Valid date and name are required.' });
@@ -20,7 +22,7 @@ router.post('/', async (req, res) => {
     res.status(201).json({ data: row });
   } catch (err) { res.status(err.name === 'SequelizeUniqueConstraintError' ? 409 : 500).json({ status: 'error', message: err.message }); }
 });
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireFeaturePermission('hr.manage', ['ORG_ADMIN', 'HR_ADMIN'], resource('OrganizationHoliday')), async (req, res) => {
   try {
     const row = await OrganizationHoliday.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });
     if (!row) return res.status(404).json({ status: 'error', message: 'Holiday not found.' });

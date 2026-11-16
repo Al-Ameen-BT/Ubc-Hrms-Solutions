@@ -1,9 +1,10 @@
 'use strict';
 const express = require('express');
+const { requirePermission } = require('../middleware/permissions');
 const { authenticate } = require('../middleware/auth');
 const users = require('../services/userAdmin');
 const router = express.Router();
-router.use(authenticate);
+router.use(authenticate, requirePermission('roles.manage'));
 const options = req => ({ organizationId: req.user.organizationId, actor: req.user, id: req.params.id, userId: req.params.userId, data: req.body || {} });
 const handle = (work, status = 200) => async (req, res) => { try { res.status(status).json({ data: await work(req) }); } catch (error) { users.sendError(res, error); } };
 router.get('/roles/readiness', handle(req => users.previewAccessReadiness(options(req))));

@@ -25,8 +25,10 @@
  */
 
 const express = require('express');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
+
 const { Organization, Employee, PayrollRun, PayrollRunLine } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const { toCsv } = require('../services/csv');
 const engine = require('../services/payrollEngine');
@@ -40,7 +42,7 @@ const VIEWERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS
 const PROCESSORS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'];
 const APPROVERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'APPROVING_AUTHORITY'];
 
-router.use(authenticate, requireRole(...VIEWERS));
+router.use(authenticate);
 
 router.use((req, res, next) => {
   if (req.user.role !== 'SUPER_ADMIN' && String(req.params.orgId) !== String(req.user.organizationId)) {
@@ -48,6 +50,12 @@ router.use((req, res, next) => {
   }
   next();
 });
+
+const paymentOnly = req => req.access?.accessControlMode === 'PERMISSIONS' && req.permissionCode === 'payments.view';
+const paymentRunFields = ['id', 'organizationId', 'year', 'month', 'status', 'employeeCount', 'totalNetPay', 'approvedAt', 'paidAt'];
+const paymentLineFields = ['id', 'payrollRunId', 'employeeId', 'empCode', 'employeeName', 'bankName', 'bankAccountNumber', 'bankIfsc', 'netPay', 'hasBankDetails'];
+const paymentRun = run => Object.fromEntries(paymentRunFields.map(key => [key, run[key]]));
+const maskPaymentLine = line => ({ ...line.toJSON(), bankAccountNumber: line.bankAccountNumber ? `****${line.bankAccountNumber.slice(-4)}` : null });
 
 async function loadOrgOr404(req, res) {
   const org = await Organization.findByPk(req.params.orgId);
@@ -67,6 +75,7 @@ async function loadRunOr404(req, res) {
     res.status(404).json({ status: 'error', message: 'Payroll run not found' });
     return null;
   }
+  if (paymentOnly(req) && !['APPROVED', 'PAID'].includes(run.status)) { res.status(404).json({ status: 'error', message: 'Payroll run not found' }); return null; }
   return run;
 }
 
@@ -75,8 +84,7 @@ function sendEngineError(res, err) {
 }
 
 // ------------------------------------------------------------- process
-router.post('/', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot process payroll.' });
+router.post('/', requireFeaturePermission('payroll.prepare', PROCESSORS), async (req, res) => {
   try {
     const org = await loadOrgOr404(req, res); if (!org) return;
     const b = req.body || {};
@@ -90,35 +98,35 @@ router.post('/', async (req, res) => {
 });
 
 // ------------------------------------------------------------- list
-router.get('/', async (req, res) => {
+router.get('/', requireFeaturePermission(['payroll.view', 'payments.view'], VIEWERS), async (req, res) => {
   try {
     const org = await loadOrgOr404(req, res); if (!org) return;
-    const runs = await PayrollRun.findAll({ where: { organizationId: org.id }, order: [['year', 'DESC'], ['month', 'DESC'], ['id', 'DESC']] });
+    const runs = await PayrollRun.findAll({ where: { organizationId: org.id, ...(paymentOnly(req) ? { status: ['APPROVED', 'PAID'] } : {}) }, ...(paymentOnly(req) ? { attributes: paymentRunFields } : {}), order: [['year', 'DESC'], ['month', 'DESC'], ['id', 'DESC']] });
     res.json({ data: runs });
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
 // ------------------------------------------------------------- one run
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireFeaturePermission(['payroll.view', 'payments.view'], VIEWERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
-    res.json({ data: run });
+    res.json({ data: paymentOnly(req) ? paymentRun(run) : run });
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.get('/:id/lines', async (req, res) => {
+router.get('/:id/lines', requireFeaturePermission(['payroll.view', 'payments.view'], VIEWERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     const lines = await PayrollRunLine.findAll({
       where: { payrollRunId: run.id },
-      attributes: { exclude: ['payslipJson'] },
+      attributes: paymentOnly(req) ? paymentLineFields : { exclude: ['payslipJson'] },
       order: [['empCode', 'ASC']],
     });
-    res.json({ data: lines });
+    res.json({ data: paymentOnly(req) ? lines.map(maskPaymentLine) : lines });
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.get('/:id/lines/:empId', async (req, res) => {
+router.get('/:id/lines/:empId', requireFeaturePermission('payroll.view', VIEWERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     const line = await PayrollRunLine.findOne({ where: { payrollRunId: run.id, employeeId: req.params.empId } });
@@ -130,7 +138,7 @@ router.get('/:id/lines/:empId', async (req, res) => {
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.get('/:id/lines/:empId/payslip.pdf', async (req, res) => {
+router.get('/:id/lines/:empId/payslip.pdf', requireFeaturePermission('payroll.view', VIEWERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     const line = await PayrollRunLine.findOne({ where: { payrollRunId: run.id, employeeId: req.params.empId } });
@@ -153,8 +161,7 @@ router.get('/:id/lines/:empId/payslip.pdf', async (req, res) => {
 // numbers were wrong, so its payslips should never reach anyone), and at
 // any time after processing — not just right after it, so a run can be
 // re-sent later or sent to stragglers whose email was fixed afterwards.
-router.post('/:id/send-payslips', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot send payslips.' });
+router.post('/:id/send-payslips', requireFeaturePermission('payroll.prepare', PROCESSORS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     if (run.status === 'REJECTED') {
@@ -191,20 +198,18 @@ router.post('/:id/send-payslips', async (req, res) => {
 });
 
 // ------------------------------------------------------------- workflow
-router.post('/:id/approve', async (req, res) => {
-  if (!APPROVERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot approve payroll.' });
+router.post('/:id/approve', requireFeaturePermission('payroll.approve', APPROVERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     const monthEnd = new Date(Date.UTC(run.year, run.month, 0)).toISOString().slice(0, 10);
-    if (await require('../services/catalogueAdoption').adoptionForDate(run.organizationId, monthEnd) && req.user.role !== 'APPROVING_AUTHORITY') return res.status(403).json({ status: 'error', message: 'An Approving Authority must sign off this bank payroll.' });
+    if (await require('../services/catalogueAdoption').adoptionForDate(run.organizationId, monthEnd) && req.access?.accessControlMode !== 'PERMISSIONS' && req.user.role !== 'APPROVING_AUTHORITY') return res.status(403).json({ status: 'error', message: 'An Approving Authority must sign off this bank payroll.' });
     await engine.approveRun(run, req.user.id);
     await audit(req, 'payroll.run.approved', { organizationId: run.organizationId, targetType: 'payroll_run', targetId: run.id, details: { year: run.year, month: run.month } });
     res.json({ data: run });
   } catch (err) { sendEngineError(res, err); }
 });
 
-router.post('/:id/reject', async (req, res) => {
-  if (!APPROVERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot reject payroll.' });
+router.post('/:id/reject', requireFeaturePermission('payroll.approve', APPROVERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     await engine.rejectRun(run, req.user.id, (req.body || {}).reason);
@@ -213,8 +218,7 @@ router.post('/:id/reject', async (req, res) => {
   } catch (err) { sendEngineError(res, err); }
 });
 
-router.post('/:id/mark-paid', async (req, res) => {
-  if (!APPROVERS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot mark payroll as paid.' });
+router.post('/:id/mark-paid', requireFeaturePermission('payments.pay', APPROVERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     await engine.markPaid(run, req.user.id);
@@ -223,8 +227,7 @@ router.post('/:id/mark-paid', async (req, res) => {
   } catch (err) { sendEngineError(res, err); }
 });
 
-router.delete('/:id', async (req, res) => {
-  if (!PROCESSORS.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Your role cannot delete a payroll run.' });
+router.delete('/:id', requireFeaturePermission('payroll.prepare', PROCESSORS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     await engine.deleteRun(run);
@@ -274,7 +277,7 @@ const REGISTER_COLUMNS = [
   { key: 'netPay', label: 'NET PAYABLE (₹)', format: fmtAmount },
 ];
 
-router.get('/:id/register.csv', async (req, res) => {
+router.get('/:id/register.csv', requireFeaturePermission('payroll.export', VIEWERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     const org = await Organization.findByPk(run.organizationId, { attributes: ['id', 'name', 'shortName', 'code'] });
@@ -346,7 +349,7 @@ const BANK_COLUMNS = [
   { key: 'paymentMode', label: 'Payment Mode' },
 ];
 
-router.get('/:id/bank-transfer.csv', async (req, res) => {
+router.get('/:id/bank-transfer.csv', requireFeaturePermission('payments.export', VIEWERS, resource('PayrollRun')), async (req, res) => {
   try {
     const run = await loadRunOr404(req, res); if (!run) return;
     if (!['APPROVED', 'PAID'].includes(run.status)) {
@@ -360,6 +363,7 @@ router.get('/:id/bank-transfer.csv', async (req, res) => {
 
     const rows = lines.map((l) => ({
       ...l.toJSON(),
+      ...(req.access?.accessControlMode === 'PERMISSIONS' ? { bankAccountNumber: l.bankAccountNumber ? `****${l.bankAccountNumber.slice(-4)}` : null } : {}),
       paymentMode: 'Direct Credit / NEFT',
     }));
 
