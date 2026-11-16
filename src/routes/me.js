@@ -3,12 +3,13 @@
 const express = require('express');
 const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { sequelize, User, Employee, PostCadre, BankRuleCatalogue, EmployeeCompensationAssignment, PayrollRun, PayrollRunLine, LeaveType, LeaveApplication, Organization, EmployeePolicy, EmployeePolicyAcknowledgement, OrganizationHoliday, EmployeeTimeEntry, ExpenseClaim, ExpenseReceipt } = require('../models');
+const { sequelize, User, Employee, PayrollRun, PayrollRunLine, LeaveType, LeaveApplication, Organization, EmployeePolicy, EmployeePolicyAcknowledgement, OrganizationHoliday, EmployeeTimeEntry, ExpenseClaim, ExpenseReceipt } = require('../models');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const leave = require('../services/leave');
 const { buildPayslipPdf } = require('../services/payslipPdf');
 const documents = require('../services/documents');
+const { organizationChart } = require('../services/organizationChart');
 const { isDateOnly } = require('../services/dateUtils');
 
 const router = express.Router();
@@ -131,19 +132,20 @@ router.get('/calendar', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+router.get('/chart', async (req, res) => {
+  try { res.json({ data: await organizationChart({ actor: req.user, at: req.query.at, view: 'employee' }) }); }
+  catch (err) { fail(res, err); }
+});
 router.get('/workplace', async (req, res) => {
   try {
-    const employees = await Employee.findAll({ where: { organizationId: req.user.organizationId, status: 'ACTIVE' }, attributes: ['id', 'empCode', 'name', 'branchName', 'department', 'designation'], include: [{ model: PostCadre, attributes: ['name'] }], order: [['branchName', 'ASC'], ['department', 'ASC'], ['name', 'ASC']] });
-    const assignments = await EmployeeCompensationAssignment.findAll({ where: { organizationId: req.user.organizationId, status: 'APPROVED', effectiveDate: { [Op.lte]: bankDate() }, employeeId: { [Op.in]: employees.map(row => row.id) } }, order: [['effectiveDate', 'DESC'], ['id', 'DESC']] });
-    const byEmployee = new Map();
-    for (const assignment of assignments) if (!byEmployee.has(assignment.employeeId)) byEmployee.set(assignment.employeeId, assignment);
-    const catalogues = await BankRuleCatalogue.findAll({ where: { id: { [Op.in]: [...new Set(assignments.map(row => row.catalogueId).filter(Boolean))] } } });
-    const byCatalogue = new Map(catalogues.map(row => [row.id, row]));
-    res.json({ data: employees.map(row => {
-      const assignment = byEmployee.get(row.id);
-      const post = byCatalogue.get(assignment?.catalogueId)?.posts?.find(item => item.code === assignment.postCode);
-      return { id: row.id, empCode: row.empCode, name: row.name, branchName: row.branchName, department: row.department, designation: row.designation, postName: post?.name || row.PostCadre?.name || null };
-    }) });
+    const chart = await organizationChart({ actor: req.user, at: req.query.at, view: 'employee' });
+    res.json({ data: chart.employees.map(row => ({
+      id: row.id, empCode: row.empCode, name: row.name, photoRef: row.photoRef,
+      branchId: row.branch.id, branchName: row.branch.name,
+      departmentId: row.department?.id || null, department: row.department?.name || null,
+      positionId: row.position?.id || null, designation: row.position?.name || null, postName: row.position?.name || null,
+      reportsToPositionId: row.position?.reportsToPositionId || null,
+    })), context: chart.context, leadership: chart.leadership });
   } catch (err) { fail(res, err); }
 });
 router.get('/time', async (req, res) => {

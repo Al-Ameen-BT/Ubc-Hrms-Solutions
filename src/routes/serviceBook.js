@@ -33,6 +33,7 @@ const compensation = require('../services/compensationResolver');
 const { todayIST } = require('../services/orgAccess');
 
 const router = express.Router();
+router.get('/:id/photo', authenticate, require('../services/organizationChart').photoHandler('employee'));
 const HR_RECORDERS = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
 
 const { stageBelongsToOrg } = require('./payScales');

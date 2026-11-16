@@ -231,28 +231,8 @@ app.get('/assets/org/:code/favicon', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Board/management member headshots (Organisation Profile, task 75) — public
-// like the logo above rather than behind the org-settings router's own
-// authenticate+requireRole('ORG_ADMIN') middleware, because a plain <img>
-// tag can't carry an Authorization header, and these photos are meant to
-// appear on public-facing documents anyway (same reasoning as the logo).
-app.get('/assets/org/:code/board/:memberId/photo', async (req, res, next) => {
-  try {
-    const org = await findOrgByCode(req.params.code);
-    if (!org) return res.status(404).end();
-    const { OrganizationBoardMember } = require('./models');
-    const row = await OrganizationBoardMember.findOne({ where: { id: req.params.memberId, organizationId: org.id } });
-    if (!row || !row.photoData) return res.status(404).end();
-    res.set({
-      'Content-Type': row.photoMimeType,
-      'Content-Length': String(row.photoSizeBytes || row.photoData.length),
-      'Cache-Control': 'public, max-age=300',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'none'",
-    });
-    res.end(Buffer.from(row.photoData));
-  } catch (err) { next(err); }
-});
+// Private leadership photos are available only through authenticated chart endpoints.
+app.get('/assets/org/:code/board/:memberId/photo', require('./routes/public').unavailablePhoto);
 
 // Each bank's own sign-in page: /o/<CODE>. Same single-page console; the
 // script reads the code from the path and brands/scopes the login to it.
@@ -499,12 +479,14 @@ function enforceProductionGuards() {
   }
 }
 
-enforceProductionGuards();
+if (require.main === module) {
+  enforceProductionGuards();
 
-prepareDatabase().then(() => app.listen(PORT, () => {
-  console.log(`ucb-hrms-payroll listening on port ${PORT} (dialect: ${sequelize.getDialect()})`);
-  console.log(`web console root: ${WEB_ROOT}`);
-  scheduleDailyPurge();
-}));
+  prepareDatabase().then(() => app.listen(PORT, () => {
+    console.log(`ucb-hrms-payroll listening on port ${PORT} (dialect: ${sequelize.getDialect()})`);
+    console.log(`web console root: ${WEB_ROOT}`);
+    scheduleDailyPurge();
+  }));
+}
 
 module.exports = app;

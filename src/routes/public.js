@@ -15,6 +15,8 @@ const { getPlatformSettings } = require('../services/settings');
 const orgDomains = require('../services/orgDomains');
 
 const router = express.Router();
+const unavailablePhoto = (_req, res) => res.status(404).end();
+router.get('/org/:code/board/:id/photo', unavailablePhoto);
 
 async function platformBranding() {
   const s = await getPlatformSettings();
@@ -87,3 +89,5 @@ router.get('/org/:code', async (req, res) => {
 
 module.exports = router;
 module.exports.findOrgByCode = findOrgByCode;
+
+module.exports.unavailablePhoto = unavailablePhoto;

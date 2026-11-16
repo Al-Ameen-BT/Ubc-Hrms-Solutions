@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const models = require('../models');
 const structure = require('../services/organizationStructure');
+const { organizationChart, photoHandler } = require('../services/organizationChart');
 const workbook = require('../services/branchWorkbook');
 const { scopedWhere } = require('../services/accessControl');
 const { inputShape, tenantResource, sendError, UserAdminError } = require('../services/userAdmin');
@@ -38,6 +39,8 @@ function boundary(group, Model) {
   };
 }
 router.use(authenticate); legacy.use(authenticate);
+router.get('/chart', handle(req => organizationChart({ actor: req.user, at: req.query.at, view: req.query.view })));
+router.get('/board/:id/photo', photoHandler('board'));
 router.post('/head-office', boundary('branches', models.OrganizationBranch), handle(async req => safe(await structure.configureHeadOffice({ organizationId: req.user.organizationId, actor: req.user, data: req.body }), 'branches'), 201));
 router.get('/branches/import/template', requirePermission('branches.manage'), async (req, res) => {
   try { res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').attachment('branches.xlsx').send(await workbook.writeBranchTemplate()); } catch (error) { sendError(res, error); }

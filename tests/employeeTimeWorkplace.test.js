@@ -5,7 +5,7 @@ process.env.JWT_SECRET = 'employee-time-test-secret';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { sequelize, Organization, PostCadre, Employee, User, EmployeeTimeEntry, AuditLog, BankRuleCatalogue, EmployeeCompensationAssignment } = require('../src/models');
+const { sequelize, Organization, PostCadre, Employee, User, EmployeeTimeEntry, AuditLog, BankRuleCatalogue, EmployeeCompensationAssignment, OrganizationBranch, OrganizationDepartment, OrganizationPosition, EmployeeOrganizationAssignment } = require('../src/models');
 const { signToken } = require('../src/services/authService');
 const routes = require('../src/routes');
 let server, base, employeeToken, otherToken, hrToken, employeeId;
@@ -19,6 +19,10 @@ before(async () => {
   const foreignOrg = await Organization.create({ code: 'TIME2', name: 'Foreign Bank' });
   const post = await PostCadre.create({ organizationId: org.id, code: 'CLERK', name: 'Clerk' });
   const employee = await Employee.create({ organizationId: org.id, empCode: 'T1', name: 'One', doj: '2020-01-01', postCadreId: post.id, branchName: 'Main', department: 'Operations', designation: 'Clerk', panNumber: 'AAAAA1234A', currentBasicPay: 10000 }); employeeId = employee.id;
+  const branch = await OrganizationBranch.create({ organizationId: org.id, code: 'MAIN', name: 'Authoritative Main', unitType: 'BRANCH' });
+  const department = await OrganizationDepartment.create({ organizationId: org.id, branchId: branch.id, code: 'OPS', name: 'Authoritative Operations' });
+  const position = await OrganizationPosition.create({ organizationId: org.id, branchId: branch.id, departmentId: department.id, code: 'OFFICER', name: 'Authoritative Officer' });
+  await EmployeeOrganizationAssignment.create({ organizationId: org.id, employeeId, branchId: branch.id, departmentId: department.id, positionId: position.id, effectiveFrom: '2020-01-01' });
   const other = await Employee.create({ organizationId: foreignOrg.id, empCode: 'T2', name: 'Foreign', doj: '2020-01-01', postCadreId: post.id });
   const owner = await User.create({ organizationId: org.id, employeeId: employee.id, email: 'one@time.invalid', name: 'One', role: 'EMPLOYEE', passwordHash: 'unused' });
   const foreign = await User.create({ organizationId: foreignOrg.id, employeeId: other.id, email: 'other@time.invalid', name: 'Foreign', role: 'EMPLOYEE', passwordHash: 'unused' });
@@ -37,15 +41,18 @@ test('workplace directory exposes only same-bank work identity', async () => {
   assert.equal(result.body.data[0].name, 'One');
   assert.equal('panNumber' in result.body.data[0], false);
   assert.equal('currentBasicPay' in result.body.data[0], false);
-  assert.equal((await call('/me/workplace', otherToken)).body.data.length, 1);
+  assert.equal((await call('/me/workplace', otherToken)).body.data.length, 0);
+  assert.equal(result.body.data[0].branchName, 'Authoritative Main');
+  assert.equal(result.body.data[0].department, 'Authoritative Operations');
+  assert.equal(result.body.data[0].designation, 'Authoritative Officer');
 });
 
-test('workplace directory shows the current approved catalogue role', async () => {
+test('workplace role comes from the organisation position even when catalogue compensation differs', async () => {
   const employee = await Employee.findByPk(employeeId);
   const catalogue = await BankRuleCatalogue.create({ name: 'Roles', bankClass: 'CLASS_I', status: 'PUBLISHED', effectiveDate: '2026-01-01', posts: [{ code: 'MANAGER', name: 'Manager', stages: [20000], payableDays: 30 }], rules: [], payrollDefaults: {}, createdByUserId: 1 });
   await EmployeeCompensationAssignment.create({ organizationId: employee.organizationId, employeeId, catalogueId: catalogue.id, postCode: 'MANAGER', stageNo: 1, amount: 20000, previousAmount: 10000, effectiveDate: '2026-01-01', reason: 'Role assignment', status: 'APPROVED', preparedBy: 1, decidedBy: 2 });
   const result = await call('/me/workplace', employeeToken);
-  assert.equal(result.body.data[0].postName, 'Manager');
+  assert.equal(result.body.data[0].postName, 'Authoritative Officer');
 });
 
 test('check-in/out permits one daily entry and staff correction needs a reason', async () => {
