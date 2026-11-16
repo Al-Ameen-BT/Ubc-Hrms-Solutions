@@ -31,24 +31,80 @@ const PARTS = {
   'docProps/app.xml': 'application/vnd.openxmlformats-officedocument.extended-properties+xml',
 };
 const ALLOWED = new Set([...Object.keys(PARTS), '[Content_Types].xml', '_rels/.rels', 'xl/_rels/workbook.xml.rels']);
-const words = value => new Set(value.split(' '));
-const ELEMENTS = {
-  'xl/workbook.xml': words('workbook fileVersion workbookPr bookViews workbookView sheets sheet calcPr'),
-  'xl/worksheets/sheet1.xml': words('worksheet dimension sheetViews sheetView selection pane sheetFormatPr cols col sheetData row c v is t pageMargins pageSetup printOptions'),
-  'xl/sharedStrings.xml': words('sst si t'),
-  'xl/styles.xml': words('styleSheet numFmts numFmt fonts font color family scheme sz name b i u strike vertAlign charset outline shadow condense extend fills fill patternFill fgColor bgColor borders border left right top bottom diagonal vertical horizontal start end cellStyleXfs xf alignment protection cellXfs cellStyles cellStyle dxfs tableStyles colors indexedColors rgbColor mruColors extLst ext slicerStyles timelineStyles'),
-  'xl/theme/theme1.xml': words('theme themeElements clrScheme dk1 sysClr lt1 dk2 srgbClr lt2 accent1 accent2 accent3 accent4 accent5 accent6 hlink folHlink fontScheme majorFont latin ea cs font minorFont fmtScheme fillStyleLst solidFill schemeClr gradFill gsLst gs tint satMod lin shade lnStyleLst ln prstDash effectStyleLst effectStyle effectLst outerShdw alpha scene3d camera rot lightRig sp3d bevelT bgFillStyleLst path fillToRect objectDefaults spDef spPr bodyPr lstStyle style lnRef fillRef effectRef fontRef lnDef extraClrSchemeLst'),
-  'docProps/core.xml': words('coreProperties creator title subject description keywords category lastModifiedBy created modified revision lastPrinted contentStatus identifier language version'),
-  'docProps/app.xml': words('Properties Application DocSecurity ScaleCrop HeadingPairs vector variant lpstr i4 TitlesOfParts Company Manager LinksUpToDate SharedDoc HyperlinksChanged AppVersion TotalTime Pages Words Characters CharactersWithSpaces Lines Paragraphs'),
-  '[Content_Types].xml': words('Types Default Override'),
-  '_rels/.rels': words('Relationships Relationship'),
-  'xl/_rels/workbook.xml.rels': words('Relationships Relationship'),
+function elementNamespace(part, local) {
+  if (part === 'docProps/core.xml') {
+    if (['creator', 'title', 'subject', 'description', 'identifier', 'language'].includes(local)) return 'http://purl.org/dc/elements/1.1/';
+    return ['created', 'modified'].includes(local) ? 'http://purl.org/dc/terms/' : 'http://schemas.openxmlformats.org/package/2006/metadata/core-properties';
+  }
+  if (part === 'docProps/app.xml') return ['vector', 'variant', 'lpstr', 'i4'].includes(local) ? 'http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes' : 'http://schemas.openxmlformats.org/officeDocument/2006/extended-properties';
+  if (part === 'xl/styles.xml' && ['slicerStyles', 'timelineStyles'].includes(local)) return local === 'slicerStyles' ? 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main' : 'http://schemas.microsoft.com/office/spreadsheetml/2010/11/main';
+  return part.endsWith('.rels') ? REL : part === '[Content_Types].xml' ? TYPES : part.includes('/theme/') ? DRAWING : SPREADSHEET;
+}
+
+// Child sequences for the supported template subset: ? optional, * repeated, + required repeated.
+// & denotes an unordered XML choice/all group; | denotes mutually exclusive child names.
+const STRUCTURE = {
+  'xl/workbook.xml': { workbook: 'fileVersion? workbookPr? bookViews? sheets calcPr?', bookViews: 'workbookView+', sheets: 'sheet' },
+  'xl/worksheets/sheet1.xml': {
+    worksheet: 'dimension? sheetViews? sheetFormatPr? cols? sheetData printOptions? pageMargins? pageSetup?',
+    sheetViews: 'sheetView+', sheetView: 'pane? selection*', cols: 'col+', sheetData: 'row*', row: 'c*', c: 'v|is?', is: 't',
+  },
+  'xl/sharedStrings.xml': { sst: 'si*', si: 't' },
+  'xl/styles.xml': {
+    styleSheet: 'numFmts? fonts? fills? borders? cellStyleXfs? cellXfs? cellStyles? dxfs? tableStyles? colors? extLst?',
+    numFmts: 'numFmt+', fonts: 'font+', fills: 'fill+', borders: 'border+', cellStyleXfs: 'xf+', cellXfs: 'xf+', cellStyles: 'cellStyle+',
+    font: '&color? family? scheme? sz? name? b? i? u? strike? vertAlign? charset? outline? shadow? condense? extend?',
+    fill: 'patternFill', patternFill: 'fgColor? bgColor?',
+    border: 'start? end? left? right? top? bottom? diagonal? vertical? horizontal?',
+    left: 'color?', right: 'color?', top: 'color?', bottom: 'color?', diagonal: 'color?', vertical: 'color?', horizontal: 'color?', start: 'color?', end: 'color?',
+    xf: 'alignment? protection?', colors: 'indexedColors? mruColors?', indexedColors: 'rgbColor+', mruColors: 'color+',
+    extLst: 'ext+', ext: 'slicerStyles|timelineStyles',
+  },
+  'xl/theme/theme1.xml': {
+    theme: 'themeElements objectDefaults? extraClrSchemeLst?', themeElements: 'clrScheme fontScheme fmtScheme',
+    clrScheme: 'dk1 lt1 dk2 lt2 accent1 accent2 accent3 accent4 accent5 accent6 hlink folHlink',
+    dk1: 'sysClr|srgbClr', lt1: 'sysClr|srgbClr', dk2: 'sysClr|srgbClr', lt2: 'sysClr|srgbClr',
+    accent1: 'sysClr|srgbClr', accent2: 'sysClr|srgbClr', accent3: 'sysClr|srgbClr', accent4: 'sysClr|srgbClr', accent5: 'sysClr|srgbClr', accent6: 'sysClr|srgbClr', hlink: 'sysClr|srgbClr', folHlink: 'sysClr|srgbClr',
+    fontScheme: 'majorFont minorFont', majorFont: 'latin ea cs font*', minorFont: 'latin ea cs font*',
+    fmtScheme: 'fillStyleLst lnStyleLst effectStyleLst bgFillStyleLst',
+    fillStyleLst: 'solidFill|gradFill+', bgFillStyleLst: 'solidFill|gradFill+', solidFill: 'schemeClr|srgbClr',
+    schemeClr: '&tint? shade? satMod? alpha?', srgbClr: '&tint? shade? satMod? alpha?', sysClr: '&tint? shade? satMod? alpha?',
+    gradFill: 'gsLst lin|path? tileRect?', gsLst: 'gs+', gs: 'schemeClr|srgbClr', path: 'fillToRect?',
+    lnStyleLst: 'ln+', ln: 'solidFill prstDash? miter?', effectStyleLst: 'effectStyle+', effectStyle: 'effectLst scene3d? sp3d?',
+    effectLst: 'outerShdw?', outerShdw: 'srgbClr|schemeClr', scene3d: 'camera lightRig', camera: 'rot?', lightRig: 'rot?', sp3d: 'bevelT?',
+    objectDefaults: 'spDef? lnDef?', spDef: 'spPr bodyPr lstStyle style', lnDef: 'spPr bodyPr lstStyle style',
+    style: 'lnRef fillRef effectRef fontRef', lnRef: 'schemeClr|srgbClr', fillRef: 'schemeClr|srgbClr', effectRef: 'schemeClr|srgbClr', fontRef: 'schemeClr|srgbClr',
+  },
+  'docProps/core.xml': { coreProperties: '&creator? title? subject? description? keywords? category? lastModifiedBy? created? modified? revision? lastPrinted? contentStatus? identifier? language? version?' },
+  'docProps/app.xml': {
+    Properties: '&Application? DocSecurity? ScaleCrop? HeadingPairs? TitlesOfParts? Company? Manager? LinksUpToDate? SharedDoc? HyperlinksChanged? AppVersion? TotalTime? Pages? Words? Characters? CharactersWithSpaces? Lines? Paragraphs?',
+    HeadingPairs: 'vector', TitlesOfParts: 'vector', vector: 'variant|lpstr+', variant: 'lpstr|i4',
+  },
+  '[Content_Types].xml': { Types: '&Default* Override*' },
+  '_rels/.rels': { Relationships: 'Relationship+' },
+  'xl/_rels/workbook.xml.rels': { Relationships: 'Relationship+' },
 };
-const NAMESPACES = {
-  'docProps/core.xml': words('http://schemas.openxmlformats.org/package/2006/metadata/core-properties http://purl.org/dc/elements/1.1/ http://purl.org/dc/terms/'),
-  'docProps/app.xml': words('http://schemas.openxmlformats.org/officeDocument/2006/extended-properties http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes'),
-  'xl/styles.xml': new Set([SPREADSHEET, 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main', 'http://schemas.microsoft.com/office/spreadsheetml/2010/11/main']),
-};
+function structureFrame(part, tag, parent) {
+  const schema = STRUCTURE[part], root = Object.keys(schema)[0];
+  if (!parent && tag.local !== root) fail('Malformed workbook XML root');
+  if (parent) {
+    const index = parent.rules.findIndex(rule => rule.names.includes(tag.local)), rule = parent.rules[index];
+    if (!rule || parent.ordered && index < parent.last || ++rule.count > rule.max) fail('Malformed workbook XML child order or cardinality');
+    if (parent.name === 'c' && (tag.local === 'is') !== (parent.type === 'inlineStr') || parent.name === 'vector' && tag.local !== parent.type) fail('Malformed workbook XML value structure');
+    parent.last = index;
+  }
+  const grammar = schema[tag.local] || '';
+  const rules = grammar.replace(/^&/, '').split(' ').filter(Boolean).map(token => {
+    const suffix = /[?*+]$/.exec(token)?.[0];
+    return { names: token.replace(/[?*+]$/, '').split('|'), count: 0, min: !suffix || suffix === '+' ? 1 : 0, max: suffix === '*' || suffix === '+' ? Infinity : 1 };
+  });
+  return { name: tag.local, rules, ordered: !grammar.startsWith('&'), last: -1, type: tag.attributes.t?.value || tag.attributes.baseType?.value, attributes: tag.attributes };
+}
+function structureClose(frame) {
+  if (frame.rules.some(rule => rule.count < rule.min)) fail('Malformed workbook XML missing child');
+  const count = frame.attributes[frame.name === 'vector' ? 'size' : frame.name === 'sst' ? 'uniqueCount' : 'count']?.value;
+  if (count !== undefined && (!/^\d+$/.test(count) || Number(count) !== frame.rules.reduce((sum, rule) => sum + rule.count, 0))) fail('Malformed workbook XML count');
+}
 
 // Read the ZIP directory first and bound inflation before handing bytes to ExcelJS.
 function zipParts(buffer) {
@@ -110,20 +166,30 @@ function inspectXml(parts) {
     let xml;
     try { xml = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { fail('Workbook XML must be UTF-8'); }
     const parser = new SaxesParser({ xmlns: true });
-    const ns = NAMESPACES[name] || new Set([name.endsWith('.rels') ? REL : name === '[Content_Types].xml' ? TYPES : name.includes('/theme/') ? DRAWING : SPREADSHEET]);
     let depth = 0, elements = 0, rows = 0, cells = 0, lastRow = 0, lastColumn = 0;
-    const relationIds = new Set(), defaults = new Set();
+    const relationIds = new Set(), defaults = new Set(), stack = [], extensionIds = new Set();
     parser.on('doctype', () => fail('Workbook XML DTDs are unsupported'));
     parser.on('processinginstruction', () => fail('Workbook XML processing instructions are unsupported'));
     parser.on('xmldecl', d => { if (d.encoding && d.encoding.toUpperCase() !== 'UTF-8') fail('Workbook XML must be UTF-8'); });
     parser.on('opentag', tag => {
-      if (++depth > 64 || ++elements > 60000 || !ns.has(tag.uri) || !ELEMENTS[name].has(tag.local)) fail('Unsupported workbook XML content');
+      if (++depth > 64 || ++elements > 60000 || tag.uri !== elementNamespace(name, tag.local)) fail('Unsupported workbook XML content');
+      // ExcelJS matches spreadsheet tag names literally; aliases could hide ignored rows.
+      if (tag.uri === SPREADSHEET && tag.name !== tag.local) fail('Unsupported workbook XML element prefix');
+      const parent = stack.at(-1), frame = structureFrame(name, tag, parent);
+      stack.push(frame);
       for (const attr of Object.values(tag.attributes)) {
         if (attr.uri && !['http://www.w3.org/2000/xmlns/', 'http://www.w3.org/XML/1998/namespace', OFFICE_REL.slice(0, -1), 'http://www.w3.org/2001/XMLSchema-instance', 'http://schemas.openxmlformats.org/markup-compatibility/2006', 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac'].includes(attr.uri)) fail('Unsupported workbook XML attribute');
         if (attr.uri === 'http://www.w3.org/XML/1998/namespace' && !['space', 'lang'].includes(attr.local)) fail('Unsupported XML base or attribute');
         if (attr.uri === 'http://www.w3.org/2001/XMLSchema-instance' && attr.local !== 'type' || attr.local === 'schemaLocation') fail('Unsupported external XML schema');
       }
       const a = key => tag.attributes[key]?.value;
+      if (name === 'xl/styles.xml' && tag.local === 'ext') {
+        const uri = a('uri');
+        if (!['{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}', '{9260A510-F301-46a8-8635-F512D64BE5F5}'].includes(uri) || extensionIds.has(uri)) fail('Unsupported or duplicate workbook style extension');
+        extensionIds.add(uri);
+      }
+      if (name === 'xl/styles.xml' && ['slicerStyles', 'timelineStyles'].includes(tag.local) && parent.attributes.uri?.value !== (tag.local === 'slicerStyles' ? '{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}' : '{9260A510-F301-46a8-8635-F512D64BE5F5}')) fail('Malformed workbook style extension');
+      if (name === 'docProps/app.xml' && tag.local === 'vector' && a('baseType') !== (parent.name === 'HeadingPairs' ? 'variant' : 'lpstr')) fail('Unsupported workbook property vector');
       if (tag.local === 'Relationship') {
         const type = a('Type'), target = a('Target'), id = a('Id');
         if (!id || relationIds.has(id) || a('TargetMode') && a('TargetMode') !== 'Internal' || !target || /[:\\%?#]/.test(target)) fail('External or malformed workbook relationship');
@@ -170,7 +236,13 @@ function inspectXml(parts) {
         if (tag.local === 'col' && (!/^[1-5]$/.test(a('min') || '') || !/^[1-5]$/.test(a('max') || ''))) fail('Workbook exceeds five columns');
       }
     });
-    parser.on('closetag', () => depth--);
+    parser.on('text', value => {
+      const frame = stack.at(-1);
+      const textLeaf = name === 'xl/worksheets/sheet1.xml' && ['v', 't'].includes(frame?.name) || name === 'xl/sharedStrings.xml' && frame?.name === 't' || name.startsWith('docProps/') && frame && !frame.rules.length;
+      if (value.trim() && !textLeaf) fail('Malformed workbook XML text');
+    });
+    parser.on('cdata', () => fail('Unsupported workbook XML CDATA'));
+    parser.on('closetag', () => { structureClose(stack.pop()); depth--; });
     parser.on('error', () => fail('Malformed workbook XML'));
     try { parser.write(xml).close(); } catch (e) { if (e instanceof OrgFieldError) throw e; fail('Malformed workbook XML'); }
   }

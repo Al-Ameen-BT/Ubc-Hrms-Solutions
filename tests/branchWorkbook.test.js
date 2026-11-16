@@ -177,3 +177,45 @@ test('database duplicate checks cover each identity independently and remain ten
   for (const [row, field] of [[2, 'name'], [3, 'number'], [4, 'code']]) assert.ok(result.errors.some(e => e.row === row && e.field === field), `${field} database conflict missing`);
   assert.equal(result.previewSignature, null);
 });
+
+test('malformed nested sheetData cannot hide an invalid row behind a clean preview', async () => {
+  const { org } = await fixture(), before = await AuditLog.count();
+  const hidden = `<pageMargins><sheetData><row r="3"><c r="A3" t="str"><v>002</v></c><c r="B3" t="str"><v>BR2</v></c><c r="C3" t="str"><v>${'x'.repeat(300)}</v></c></row></sheetData></pageMargins>`;
+  const bad = await zipEdit(await workbook(), async z => z.file('xl/worksheets/sheet1.xml', (await z.file('xl/worksheets/sheet1.xml').async('string')).replace(/<pageMargins[^>]*\/>/, hidden)));
+  await assert.rejects(s.previewBranchWorkbook(bad, org.id), e => e.status === 400);
+  assert.equal(await Branch.count({ where: { organizationId: org.id } }), 1);
+  assert.equal(await AuditLog.count(), before);
+});
+
+test('rejects wrong roots, duplicate singleton containers and misnested or unordered XML in every supported part', async () => {
+  const { org } = await fixture(), good = await workbook(), before = await AuditLog.count();
+  const cases = [
+    ['xl/worksheets/sheet1.xml', x => x.replace('</worksheet>', '<sheetData/></worksheet>')],
+    ['xl/worksheets/sheet1.xml', x => x.replace('<worksheet ', '<worksheet xmlns:m="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ').replace('</sheetData>', `<m:row r="3"><m:c r="A3" t="str"><m:v>002</m:v></m:c><m:c r="B3" t="str"><m:v>BR2</m:v></m:c><m:c r="C3" t="str"><m:v>${'x'.repeat(300)}</m:v></m:c></m:row></sheetData>`)],
+    ['xl/worksheets/sheet1.xml', x => x.replace(/<dimension[^>]*\/>/, '').replace('</worksheet>', '<dimension ref="A1:E2"/></worksheet>')],
+    ['xl/worksheets/sheet1.xml', x => x.replace('<worksheet ', '<sheetData ').replace('</worksheet>', '</sheetData>')],
+    ['xl/workbook.xml', x => x.replace('</workbook>', '<sheets/></workbook>')],
+    ['xl/workbook.xml', x => x.replace('</sheets>', '<workbookPr/></sheets>')],
+    ['xl/sharedStrings.xml', x => x.replace('</sst>', '<sst/></sst>')],
+    ['xl/sharedStrings.xml', x => x.replace('</si>', '<t>hidden</t></si>')],
+    ['xl/styles.xml', x => x.replace('</styleSheet>', '<fonts count="0"/></styleSheet>')],
+    ['xl/styles.xml', x => x.replace('</fonts>', '<xf/></fonts>')],
+    ['xl/theme/theme1.xml', x => x.replace('</a:theme>', '<a:themeElements/></a:theme>')],
+    ['_rels/.rels', x => x.replace('</Relationships>', '<Relationships/></Relationships>')],
+    ['xl/_rels/workbook.xml.rels', x => x.replace('<Relationships ', '<Relationship ').replace('</Relationships>', '</Relationship>')],
+    ['[Content_Types].xml', x => x.replace('</Types>', '<Types/></Types>')],
+    ['docProps/core.xml', x => x.replace('</cp:coreProperties>', '<dc:title>duplicate</dc:title></cp:coreProperties>')],
+    ['docProps/core.xml', x => x.replaceAll('cp:coreProperties', 'dc:coreProperties')],
+    ['docProps/app.xml', x => x.replace('</Properties>', '<HeadingPairs/></Properties>')],
+  ];
+  for (const [part, change] of cases) {
+    const bad = await zipEdit(good, async z => {
+      const xml = await z.file(part).async('string'), altered = change(xml);
+      assert.notEqual(altered, xml, `fixture did not change ${part}`);
+      z.file(part, altered);
+    });
+    await assert.rejects(s.previewBranchWorkbook(bad, org.id), e => e.status === 400, part);
+  }
+  assert.equal(await Branch.count({ where: { organizationId: org.id } }), 1);
+  assert.equal(await AuditLog.count(), before);
+});
