@@ -7,7 +7,7 @@
  * email and audit entry are identical no matter which screen it came from.
  */
 
-const { sequelize, User, Organization, Employee, EmployeeMobileDevice, EmployeeDeviceLink } = require('../models');
+const { sequelize, User, Organization, Employee, EmployeeMobileDevice, EmployeeDeviceLink, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = require('../models');
 const { Op } = require('sequelize');
 const { hashPassword, generateTempPassword } = require('./authService');
 const { assertCanAddUser } = require('./license');
@@ -129,9 +129,15 @@ async function createAccount(req, { organizationId, email, name, role, employeeI
     mustChangePassword: true,
     status: 'ACTIVE',
   };
-  const user = employeeId
-    ? await withEmployeeLink(organizationId, employeeId, null, transaction => User.create(values, { transaction }))
-    : await User.create(values);
+  const user = await sequelize.transaction(async transaction => {
+    const organization = organizationId && await Organization.findByPk(organizationId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (employeeId) await assertEmployeeLink(organizationId, employeeId, null, transaction);
+    const created = await User.create(values, { transaction });
+    if (organization?.accessControlMode === 'LEGACY') {
+      await require('./accessBootstrap').bootstrapOrganizationAccess({ organizationId, transaction });
+    }
+    return created;
+  });
 
   const { emailResult, loginUrl } = await deliverTempPasswordEmail(req, user, tempPassword, sendEmail, organizationId);
   await audit(req, 'user.create', {
@@ -152,8 +158,13 @@ async function assertEmployeeLink(organizationId, employeeId, exceptUserId, tran
 
 async function withEmployeeLink(organizationId, employeeId, exceptUserId, write) {
   return sequelize.transaction(async transaction => {
+    const organization = await Organization.findByPk(organizationId, { transaction, lock: transaction.LOCK.UPDATE });
     await assertEmployeeLink(organizationId, employeeId, exceptUserId, transaction);
-    return write(transaction);
+    const result = await write(transaction);
+    if (organization?.accessControlMode === 'LEGACY') {
+      await require('./accessBootstrap').bootstrapOrganizationAccess({ organizationId, transaction });
+    }
+    return result;
   });
 }
 
@@ -230,6 +241,15 @@ async function hardDelete(req, user) {
   const { PasswordResetToken } = require('../models');
   const email = user.email; const organizationId = user.organizationId; const userId = user.id;
   await sequelize.transaction(async transaction => {
+    const organization = organizationId && await Organization.findByPk(organizationId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (organization?.accessControlMode === 'LEGACY') {
+      // Preserve legacy account deletion without cascading into employee or audit history.
+      const assignments = await UserRoleAssignment.findAll({ where: { organizationId, userId }, attributes: ['id'], transaction });
+      const scopeWhere = { organizationId, userRoleAssignmentId: assignments.map(a => a.id) };
+      await UserRoleBranch.destroy({ where: scopeWhere, transaction });
+      await UserRoleDepartment.destroy({ where: scopeWhere, transaction });
+      await UserRoleAssignment.destroy({ where: { organizationId, userId }, transaction });
+    }
     await PasswordResetToken.destroy({ where: { userId }, transaction });
     await EmployeeDeviceLink.destroy({ where: { userId }, transaction });
     await EmployeeMobileDevice.destroy({ where: { userId }, transaction });
