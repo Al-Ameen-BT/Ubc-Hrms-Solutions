@@ -1,5 +1,7 @@
 'use strict';
 
+const { hasProtectedConflict } = require('./accessControl');
+
 /**
  * The monthly payroll RUN — turns the per-employee live "estimated payslip"
  * preview (services/payslip.js, still used as-is for on-screen previews)
@@ -177,7 +179,8 @@ async function processRun({ organizationId, year, month, userId }) {
   return sequelize.transaction(async (t) => {
     let run;
     if (existing) {
-      run = existing;
+      run = await existing.reload({ transaction: t, lock: t.LOCK.UPDATE });
+      if (run.status !== 'PROCESSED') throw new PayrollEngineError('Payroll status changed during processing. Reload this payroll run.', 409);
       await PayrollRunLine.destroy({ where: { payrollRunId: run.id }, transaction: t });
     } else {
       run = await PayrollRun.create({ organizationId, year, month }, { transaction: t });
@@ -217,41 +220,51 @@ function assertOwnRun(run, user) {
 }
 
 async function approveRun(run, userId) {
-  if (run.status !== 'PROCESSED') throw new PayrollEngineError(`Only a processed run can be approved (this one is ${run.status}).`, 409);
-  const monthEnd = new Date(Date.UTC(run.year, run.month, 0)).toISOString().slice(0, 10);
-  const adopted = await require('./catalogueAdoption').adoptionForDate(run.organizationId, monthEnd);
-  if (adopted && run.processedByUserId && Number(run.processedByUserId) === Number(userId)) throw new PayrollEngineError('A different approving authority must approve this payroll run.', 403);
-  if (run.inputFingerprint && run.inputFingerprint !== await payrollInputFingerprint(run.organizationId, run.year, run.month)) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
-const changedSinceProcessing = { status: 'APPROVED', decidedAt: { [Op.gt]: run.processedAt }, effectiveDate: { [Op.lte]: monthEnd } };
-  const [salaryChanges, adoptions, financialChanges] = await Promise.all([
-    EmployeeCompensationAssignment.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId } }),
-    OrganizationCatalogueAdoption.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId } }),
-    require('../models').FinancialChangeProposal.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId } }),
-  ]);
-  if (salaryChanges || adoptions || financialChanges) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
-  run.status = 'APPROVED';
-  run.approvedAt = new Date();
-  run.approvedByUserId = userId;
-  run.rejectionReason = null;
-  await run.save();
-  return run;
+  return sequelize.transaction(async transaction => {
+    await run.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (run.status !== 'PROCESSED') throw new PayrollEngineError(`Only a processed run can be approved (this one is ${run.status}).`, 409);
+    const monthEnd = new Date(Date.UTC(run.year, run.month, 0)).toISOString().slice(0, 10);
+    if (hasProtectedConflict('payroll.approve', run, userId)) throw new PayrollEngineError('A different approving authority must approve this payroll run.', 403);
+    if (run.inputFingerprint && run.inputFingerprint !== await payrollInputFingerprint(run.organizationId, run.year, run.month)) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
+    const changedSinceProcessing = { status: 'APPROVED', decidedAt: { [Op.gt]: run.processedAt }, effectiveDate: { [Op.lte]: monthEnd } };
+    const [salaryChanges, adoptions, financialChanges] = await Promise.all([
+      EmployeeCompensationAssignment.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId }, transaction }),
+      OrganizationCatalogueAdoption.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId }, transaction }),
+      require('../models').FinancialChangeProposal.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId }, transaction }),
+    ]);
+    if (salaryChanges || adoptions || financialChanges) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
+    run.status = 'APPROVED';
+    run.approvedAt = new Date();
+    run.approvedByUserId = userId;
+    run.rejectionReason = null;
+    await run.save({ transaction });
+    return run;
+  });
 }
 
 async function rejectRun(run, userId, reason) {
-  if (run.status !== 'PROCESSED') throw new PayrollEngineError(`Only a processed run can be rejected (this one is ${run.status}).`, 409);
-  run.status = 'REJECTED';
-  run.rejectionReason = reason ? String(reason).slice(0, 2000) : null;
-  await run.save();
-  return run;
+  return sequelize.transaction(async transaction => {
+    await run.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (run.status !== 'PROCESSED') throw new PayrollEngineError(`Only a processed run can be rejected (this one is ${run.status}).`, 409);
+    if (hasProtectedConflict('payroll.approve', run, userId)) throw new PayrollEngineError('A different approving authority must decide this payroll run.', 403);
+    run.status = 'REJECTED';
+    run.rejectionReason = reason ? String(reason).slice(0, 2000) : null;
+    await run.save({ transaction });
+    return run;
+  });
 }
 
 async function markPaid(run, userId) {
-  if (run.status !== 'APPROVED') throw new PayrollEngineError(`Only an approved run can be marked as paid (this one is ${run.status}).`, 409);
-  run.status = 'PAID';
-  run.paidAt = new Date();
-  run.paidByUserId = userId;
-  await run.save();
-  return run;
+  return sequelize.transaction(async transaction => {
+    await run.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (run.status !== 'APPROVED') throw new PayrollEngineError(`Only an approved run can be marked as paid (this one is ${run.status}).`, 409);
+    if (hasProtectedConflict('payments.pay', run, userId)) throw new PayrollEngineError('A separate accounts officer must record payment.', 403);
+    run.status = 'PAID';
+    run.paidAt = new Date();
+    run.paidByUserId = userId;
+    await run.save({ transaction });
+    return run;
+  });
 }
 
 async function deleteRun(run) {

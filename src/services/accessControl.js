@@ -116,8 +116,12 @@ function guardFields(permissionCode, resourceType) {
     else if (resourceType === 'ExpenseClaim') fields.push('decidedBy');
     else return null;
   }
-  if (resourceType === 'ExpenseClaim' && permissionCode === 'expenses.approve') fields.push('submittedBy');
+  if (resourceType === 'ExpenseClaim' && ['expenses.prepare', 'expenses.approve', 'payments.pay'].includes(permissionCode)) fields.push('submittedBy');
   return fields;
+}
+function hasProtectedConflict(permissionCode, resource, actorId) {
+  const fields = guardFields(permissionCode, typeOf(resource));
+  return !actorId || !fields || fields.some(field => !Object.hasOwn(resource.dataValues || resource, field) || sameId(resource[field], actorId));
 }
 function can(access, permissionCode, resource) {
   const grants = access?.grants?.filter(g => g.action === permissionCode) || [];
@@ -127,8 +131,7 @@ function can(access, permissionCode, resource) {
   const resourceType = typeOf(resource);
   const model = resourceModel(resourceType);
   if (!validResource(access, resource, model)) return false;
-  const fields = guardFields(permissionCode, resourceType);
-  if (!fields || fields.some(field => !Object.hasOwn(resource.dataValues || resource, field) || sameId(resource[field], access.userId))) return false;
+  if (hasProtectedConflict(permissionCode, resource, access.userId)) return false;
   if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY') && resource.status !== 'APPROVED') return false;
   const employeeId = model === Employee ? resource.id : model.rawAttributes.employeeId ? resource.employeeId : null;
   const scoped = { id: employeeId, branchId: model === OrganizationBranch ? resource.id : resource.branchId, departmentId: model === OrganizationDepartment ? resource.id : resource.departmentId };
@@ -171,4 +174,4 @@ function scopedWhere(access, permissionCode, resourceType) {
   if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY')) clauses.push({ status: 'APPROVED' });
   return { [Op.and]: clauses };
 }
-module.exports = { effectiveAccess, can, scopedWhere, resourceModel };
+module.exports = { effectiveAccess, can, scopedWhere, resourceModel, hasProtectedConflict };

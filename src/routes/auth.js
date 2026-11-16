@@ -14,7 +14,7 @@
 
 const express = require('express');
 const { Op } = require('sequelize');
-const { sequelize, User, Organization, PasswordResetToken, EmployeeMobileDevice, EmployeeDeviceLink } = require('../models');
+const { sequelize, User, Organization, PasswordResetToken } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { checkOrgAccess, licenseSummary } = require('../services/orgAccess');
 const brand = require('../services/brandAssets');
@@ -22,6 +22,7 @@ const secretBox = require('../services/secretBox');
 const mailer = require('../services/mailer');
 const { appBaseUrl } = require('../services/settings');
 const { audit } = require('../services/audit');
+const { revokeEmployeeDevices } = require('../services/userAdmin');
 const { findOrgByCode } = require('./public');
 const {
   hashPassword, verifyPassword, signToken, signMfaChallengeToken, verifyMfaChallengeToken,
@@ -194,8 +195,7 @@ router.post('/change-password', authenticate, async (req, res) => {
       user.passwordHash = await hashPassword(newPassword);
       user.mustChangePassword = false;
       await user.save({ transaction });
-      await EmployeeMobileDevice.update({ revokedAt: new Date() }, { where: { userId: user.id, revokedAt: null }, transaction });
-      await EmployeeDeviceLink.update({ status: 'CANCELLED' }, { where: { userId: user.id, status: ['PENDING', 'CLAIMED', 'APPROVED'] }, transaction });
+      await revokeEmployeeDevices(user.id, transaction);
     });
     await audit(req, 'auth.password.change', { targetType: 'user', targetId: user.id });
     res.json({ status: 'ok', message: 'Password changed' });
@@ -259,8 +259,7 @@ router.post('/reset-password', async (req, res) => {
       await user.save({ transaction });
       row.usedAt = new Date();
       await row.save({ transaction });
-      await EmployeeMobileDevice.update({ revokedAt: new Date() }, { where: { userId: user.id, revokedAt: null }, transaction });
-      await EmployeeDeviceLink.update({ status: 'CANCELLED' }, { where: { userId: user.id, status: ['PENDING', 'CLAIMED', 'APPROVED'] }, transaction });
+      await revokeEmployeeDevices(user.id, transaction);
     });
     await audit(req, 'auth.reset.completed', { actor: actorOf(user), organizationId: user.organizationId, targetType: 'user', targetId: user.id });
     // MFA is deliberately left as-is: a reset link proves control of the

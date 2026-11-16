@@ -7,7 +7,7 @@
  * email and audit entry are identical no matter which screen it came from.
  */
 
-const { sequelize, User, Organization, Employee, EmployeeMobileDevice, EmployeeDeviceLink, OrganizationRole, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = require('../models');
+const { sequelize, User, Organization, Employee, AuditLog, EmployeeMobileDevice, EmployeeDeviceLink, OrganizationRole, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = require('../models');
 const { Op } = require('sequelize');
 const { hashPassword, generateTempPassword } = require('./authService');
 const { assertCanAddUser } = require('./license');
@@ -183,6 +183,16 @@ async function revokeEmployeeDevices(userId, transaction) {
   await EmployeeDeviceLink.update({ status: 'CANCELLED' }, { where: { userId, status: ['PENDING', 'CLAIMED', 'APPROVED'] }, transaction });
 }
 
+async function invalidateUserAccess(userIds, { transaction, reason = 'access.changed', actor } = {}) {
+  if (!transaction) return sequelize.transaction(transaction => invalidateUserAccess(userIds, { transaction, reason, actor }));
+  const ids = [...new Set(userIds)].sort((a, b) => a - b);
+  if (!ids.length) return;
+  const affected = await User.findAll({ where: { id: ids }, attributes: ['id', 'organizationId'], order: [['id', 'ASC']], transaction, lock: transaction.LOCK.UPDATE });
+  await User.increment('accessVersion', { where: { id: ids }, transaction });
+  await revokeEmployeeDevices(ids, transaction);
+  await AuditLog.bulkCreate(affected.map(user => ({ organizationId: user.organizationId, actorUserId: actor?.id || null, action: 'user.access.invalidate', targetType: 'user', targetId: String(user.id), details: { reason } })), { transaction });
+}
+
 async function resetPassword(req, user, sendEmail) {
   const tempPassword = generateTempPassword();
   await sequelize.transaction(async transaction => {
@@ -279,5 +289,5 @@ function sendError(res, err) {
 }
 
 module.exports = {
-  publicUser, createAccount, assertEmployeeLink, withEmployeeLink, revokeEmployeeDevices, resetPassword, resetMfa, setStatus, hardDelete, sendError, loginUrlFor, smtpAvailability, UserAdminError,
+  publicUser, createAccount, assertEmployeeLink, withEmployeeLink, revokeEmployeeDevices, invalidateUserAccess, resetPassword, resetMfa, setStatus, hardDelete, sendError, loginUrlFor, smtpAvailability, UserAdminError,
 };

@@ -1,8 +1,8 @@
 'use strict';
 
-const { verifyToken } = require('../services/authService');
+const { verifyToken, hasActiveEmployeeLink } = require('../services/authService');
 const { checkOrgAccess } = require('../services/orgAccess');
-const { User, Organization, Employee, EmployeeMobileDevice } = require('../models');
+const { User, Organization, EmployeeMobileDevice } = require('../models');
 
 /**
  * Verifies the Bearer token and attaches req.user = { id, role, organizationId }.
@@ -25,14 +25,16 @@ async function authenticate(req, res, next) {
   try {
     const payload = verifyToken(token);
     const user = await User.findByPk(payload.sub);
-    if (!user || user.status !== 'ACTIVE') {
+    if (!user) {
       return res.status(401).json({ status: 'error', message: 'User not found or inactive' });
     }
+    if (!Number.isInteger(payload.av) || payload.av !== user.accessVersion) {
+      return res.status(401).json({ status: 'error', code: 'ACCESS_CHANGED', message: 'Your access has changed. Sign in again; mobile devices must scan a new portal QR code.' });
+    }
+    if (user.status !== 'ACTIVE') return res.status(401).json({ status: 'error', message: 'User not found or inactive' });
     if (payload.deviceId) {
       const device = await EmployeeMobileDevice.findOne({ where: { id: payload.deviceId, userId: user.id, organizationId: user.organizationId, revokedAt: null } });
-      const linked = user.role === 'EMPLOYEE' && !user.mustChangePassword && user.employeeId &&
-        await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' } }) &&
-        await User.count({ where: { employeeId: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' } }) === 1;
+      const linked = await hasActiveEmployeeLink(user);
       if (!device || !linked) return res.status(401).json({ status: 'error', code: 'DEVICE_REVOKED', message: 'This device is no longer linked. Scan a new QR code from your portal.' });
     }
     let accessControlMode = null;

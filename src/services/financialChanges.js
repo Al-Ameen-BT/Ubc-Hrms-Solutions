@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { sequelize, Organization, Employee, OrgPayrollSetting, BankRuleCatalogue, FinancialChangeProposal } = require('../models');
 const { getSettings, FIELDS } = require('./payrollSettings');
 const { adoptionForDate } = require('./catalogueAdoption');
+const { hasProtectedConflict } = require('./accessControl');
 const { isDateOnly } = require('./dateUtils');
 
 const EMPLOYEE_FIELDS = ['riskAllowance', 'otherAllowance', 'vpfPercent', 'welfareFundOptIn', 'welfareFundAmount', 'gsliOptIn', 'gsliAmount', 'ptAmount', 'taxRegime', 'taxOtherDeductions', 'daType', 'fixedDaAmount', 'hraType', 'fixedHraAmount', 'ccaOptIn', 'ccaAmount', 'conveyanceOptIn', 'conveyanceAmount'];
@@ -66,10 +67,10 @@ async function decideFinancialChange({ organizationId, proposalId, decision, act
   if (!['APPROVED', 'REJECTED'].includes(decision)) throw new FinancialChangeError('Decision must be APPROVED or REJECTED.');
   return sequelize.transaction(async transaction => {
     await Organization.findByPk(organizationId, { transaction, lock: transaction.LOCK.UPDATE });
-    const row = await FinancialChangeProposal.findOne({ where: { id: proposalId, organizationId }, transaction });
+    const row = await FinancialChangeProposal.findOne({ where: { id: proposalId, organizationId }, transaction, lock: transaction.LOCK.UPDATE });
     if (!row) throw new FinancialChangeError('Financial proposal not found.', 404);
     if (row.status !== 'PENDING') throw new FinancialChangeError('This proposal has already changed.', 409);
-    if (Number(row.preparedBy) === Number(actorId)) throw new FinancialChangeError('A different approving authority must decide this proposal.', 403);
+    if (hasProtectedConflict('financialChanges.approve', row, actorId)) throw new FinancialChangeError('A different approving authority must decide this proposal.', 403);
     if (decision === 'APPROVED') await validate(row.toJSON(), transaction);
     const [changed] = await FinancialChangeProposal.update({ status: decision, decidedBy: actorId, decidedAt: new Date() }, { where: { id: row.id, status: 'PENDING' }, transaction });
     if (!changed) throw new FinancialChangeError('This proposal has already changed.', 409);

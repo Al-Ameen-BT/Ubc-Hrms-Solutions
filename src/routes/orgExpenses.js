@@ -3,6 +3,7 @@ const express = require('express');
 const { ExpenseClaim, ExpenseReceipt, Employee } = require('../models');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { audit } = require('../services/audit');
+const { hasProtectedConflict } = require('../services/accessControl');
 const documents = require('../services/documents');
 const { isDateOnly } = require('../services/dateUtils');
 const router = express.Router();
@@ -35,7 +36,7 @@ router.post('/:id/prepare', async (req, res) => {
   try {
     const row = await ownClaim(req, res); if (!row) return;
     if (row.status !== 'SUBMITTED') return res.status(409).json({ status: 'error', message: 'Only submitted claims can be prepared.' });
-    if (row.submittedBy === req.user.id) return res.status(403).json({ status: 'error', message: 'You cannot prepare your own claim.' });
+    if (hasProtectedConflict('expenses.prepare', row, req.user.id)) return res.status(403).json({ status: 'error', message: 'You cannot prepare your own claim.' });
     const [changed] = await ExpenseClaim.update({ status: 'PREPARED', preparedBy: req.user.id, preparedAt: new Date() }, { where: { id: row.id, organizationId: req.user.organizationId, status: 'SUBMITTED' } });
     if (!changed) return res.status(409).json({ status: 'error', message: 'This claim has already changed status.' });
     await row.reload();
@@ -48,7 +49,7 @@ router.post('/:id/decide', async (req, res) => {
   try {
     const row = await ownClaim(req, res); if (!row) return;
     if (row.status !== 'PREPARED') return res.status(409).json({ status: 'error', message: 'Only prepared claims can be decided.' });
-    if (row.submittedBy === req.user.id || row.preparedBy === req.user.id) return res.status(403).json({ status: 'error', message: 'A separate authority must decide this claim.' });
+    if (hasProtectedConflict('expenses.approve', row, req.user.id)) return res.status(403).json({ status: 'error', message: 'A separate authority must decide this claim.' });
     const decision = req.body?.decision;
     const reason = String(req.body?.reason || '').trim();
     if (!['APPROVED', 'REJECTED'].includes(decision) || (decision === 'REJECTED' && !reason)) return res.status(400).json({ status: 'error', message: 'APPROVED or REJECTED decision and a rejection reason are required.' });
@@ -64,7 +65,7 @@ router.post('/:id/pay', async (req, res) => {
   try {
     const row = await ownClaim(req, res); if (!row) return;
     if (row.status !== 'APPROVED') return res.status(409).json({ status: 'error', message: 'Only approved claims can be marked paid.' });
-    if (row.submittedBy === req.user.id || row.decidedBy === req.user.id) return res.status(403).json({ status: 'error', message: 'A separate accounts officer must record payment.' });
+    if (hasProtectedConflict('payments.pay', row, req.user.id)) return res.status(403).json({ status: 'error', message: 'A separate accounts officer must record payment.' });
     const paymentReference = String(req.body?.paymentReference || '').trim();
     const paidAt = req.body?.paidAt;
     if (!paymentReference || paymentReference.length > 128 || !isDateOnly(paidAt)) return res.status(400).json({ status: 'error', message: 'Payment reference and valid date are required.' });

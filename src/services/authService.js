@@ -53,14 +53,21 @@ function generateTempPassword() {
  */
 function signToken(user) {
   return jwt.sign(
-    { sub: user.id, role: user.role, organizationId: user.organizationId, typ: 'access' },
+    { sub: user.id, role: user.role, organizationId: user.organizationId, av: user.accessVersion ?? 0, typ: 'access' },
     getSecret(),
     { expiresIn: JWT_EXPIRY }
   );
 }
 
 function signDeviceAccessToken(user, deviceId) {
-  return jwt.sign({ sub: user.id, role: user.role, organizationId: user.organizationId, deviceId, typ: 'access' }, getSecret(), { expiresIn: '15m' });
+  return jwt.sign({ sub: user.id, role: user.role, organizationId: user.organizationId, av: user.accessVersion ?? 0, deviceId, typ: 'access' }, getSecret(), { expiresIn: '15m' });
+}
+
+async function hasActiveEmployeeLink(user, transaction) {
+  if (!user || user.status !== 'ACTIVE' || user.mustChangePassword || !user.employeeId || !user.organizationId) return false;
+  const { Employee, User } = require('../models');
+  const employee = await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' }, transaction });
+  return Boolean(employee) && await User.count({ where: { employeeId: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' }, transaction }) === 1;
 }
 
 function signDeviceRefreshToken(user, deviceId, rotation) {
@@ -146,6 +153,7 @@ module.exports = {
   signToken,
   signDeviceAccessToken,
   signDeviceRefreshToken,
+  hasActiveEmployeeLink,
   verifyDeviceRefreshToken,
   verifyToken,
   signMfaChallengeToken,

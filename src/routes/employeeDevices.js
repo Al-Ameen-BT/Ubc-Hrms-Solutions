@@ -4,9 +4,9 @@ const express = require('express');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const { Op } = require('sequelize');
-const { sequelize, User, Employee, Organization, EmployeeDeviceLink, EmployeeMobileDevice } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
-const { verifyPassword, signDeviceAccessToken, signDeviceRefreshToken, verifyDeviceRefreshToken } = require('../services/authService');
+const { sequelize, User, Organization, EmployeeDeviceLink, EmployeeMobileDevice } = require('../models');
+const { authenticate } = require('../middleware/auth');
+const { verifyPassword, hasActiveEmployeeLink, signDeviceAccessToken, signDeviceRefreshToken, verifyDeviceRefreshToken } = require('../services/authService');
 const { checkOrgAccess } = require('../services/orgAccess');
 const secretBox = require('../services/secretBox');
 const brand = require('../services/brandAssets');
@@ -24,10 +24,8 @@ const idOf = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ?
 
 async function eligibleUser(id) {
   const user = await User.findByPk(id, { include: [{ model: Organization }] });
-  if (!user || user.role !== 'EMPLOYEE' || user.status !== 'ACTIVE' || user.mustChangePassword || !user.employeeId || !user.Organization || !checkOrgAccess(user.Organization).ok) return null;
-  if (await User.count({ where: { employeeId: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' } }) !== 1) return null;
-  const employeeRow = await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' } });
-  return employeeRow ? user : null;
+  if (!user?.Organization || !checkOrgAccess(user.Organization).ok || !await hasActiveEmployeeLink(user)) return null;
+  return user;
 }
 
 async function mobileUser(user) {
@@ -36,10 +34,11 @@ async function mobileUser(user) {
     organization: { code: user.Organization.code, name: user.Organization.name, logoUrl: logo ? `/assets/org/${encodeURIComponent(user.Organization.code)}/logo?v=${logo.version}` : null } };
 }
 
-employee.use(authenticate, requireRole('EMPLOYEE'));
+employee.use(authenticate);
 employee.use(async (req, res, next) => {
   try {
     if (req.user.deviceId) return error(res, 403, 'PORTAL_REQUIRED', 'Manage linked devices from your web portal.');
+    if (!req.user.employeeId && req.user.role !== 'EMPLOYEE') return error(res, 403, 'EMPLOYEE_NOT_LINKED', 'An active employee account is required.');
     req.deviceUser = await eligibleUser(req.user.id);
     if (!req.deviceUser) return error(res, 409, 'EMPLOYEE_NOT_LINKED', 'An active, unique employee account is required.');
     next();
@@ -145,6 +144,8 @@ mobile.post('/link/status', async (req, res) => {
     if (!user || user.organizationId !== link.organizationId) return error(res, 409, 'LINK_UNAVAILABLE', 'This account is no longer available.');
     let tokens;
     await sequelize.transaction(async transaction => {
+      // Serialize issuance with access invalidation before creating a new device.
+      await User.findByPk(user.id, { transaction, lock: transaction.LOCK.UPDATE });
       const [changed] = await EmployeeDeviceLink.update({ status: 'ISSUED' }, { where: { id: link.id, status: 'APPROVED', expiresAt: { [Op.gt]: new Date() } }, transaction });
       if (!changed) return;
       const device = await EmployeeMobileDevice.create({ userId: user.id, organizationId: user.organizationId, name: link.deviceName, platform: link.platform, refreshHash: '0'.repeat(64), rotation: 0, lastUsedAt: new Date() }, { transaction });
