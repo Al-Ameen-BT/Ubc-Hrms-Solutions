@@ -15,8 +15,10 @@ const { audit } = require('../services/audit');
 
 const employee = express.Router();
 const mobile = express.Router();
+const deviceGuards = new WeakSet();
 function deviceOwn(handler) {
-  handler.authorization = Object.freeze({ kind: 'device-own', description: 'Device/link handlers validate hashed device secrets, current unique employee link, access version, expiry and revocation before issuing or changing sessions.' });
+  Object.defineProperty(handler, 'authorization', { value: Object.freeze({ kind: 'device-own', description: 'Device/link handlers validate hashed device secrets, current unique employee link, access version, expiry and revocation before issuing or changing sessions.' }) });
+  deviceGuards.add(handler);
   return handler;
 }
 const LINK_MS = 2 * 60 * 1000;
@@ -204,4 +206,4 @@ mobile.post('/session/revoke', deviceOwn(async (req, res) => {
   } catch (err) { fail(res, err); }
 }));
 
-module.exports = { employee, mobile };
+module.exports = { employee, mobile, isDeviceOwnGuard: handler => deviceGuards.has(handler) };

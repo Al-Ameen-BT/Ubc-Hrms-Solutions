@@ -156,7 +156,7 @@ async function processRun({ organizationId, year, month, userId }) {
     const resolvedAccountNumber = creditAccount ? creditAccount.accountNumber : employee.bankAccountNumber;
     const resolvedIfsc = creditAccount ? creditAccount.ifsc : employee.bankIfsc;
     const hasBankDetails = !!(resolvedAccountNumber && resolvedIfsc);
-    if (org.accessControlMode === 'PERMISSIONS' && (!hasBankDetails || creditAccount && (creditAccount.status !== 'ACTIVE' || String(creditAccount.employeeId) !== String(employee.id)))) throw new PayrollEngineError(`Employee ${employee.empCode} needs an active own bank account before payroll.`, 409);
+    if (org.accessControlMode === 'PERMISSIONS' && (!creditAccount || !hasBankDetails || creditAccount.status !== 'ACTIVE' || String(creditAccount.employeeId) !== String(employee.id))) throw new PayrollEngineError(`Employee ${employee.empCode} needs an active own bank account before payroll.`, 409);
     lines.push({
       employeeId: employee.id,
       empCode: employee.empCode,

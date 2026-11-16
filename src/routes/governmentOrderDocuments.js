@@ -29,7 +29,7 @@ async function loadOwnGO(req, res) {
   return go;
 }
 
-router.get('/:id/document', requireFeaturePermission('compensation.view', READERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
+router.get('/:id/document', authenticate, requireFeaturePermission('compensation.view', READERS, resource('GovernmentOrder')), async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     const meta = await attachments.info(GovernmentOrderDocument, 'governmentOrderId', go.id);
@@ -37,7 +37,7 @@ router.get('/:id/document', requireFeaturePermission('compensation.view', READER
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.get('/:id/document/file', requireFeaturePermission('compensation.view', READERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
+router.get('/:id/document/file', authenticate, requireFeaturePermission('compensation.view', READERS, resource('GovernmentOrder')), async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     const row = await attachments.get(GovernmentOrderDocument, 'governmentOrderId', go.id);
@@ -46,7 +46,7 @@ router.get('/:id/document/file', requireFeaturePermission('compensation.view', R
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
 });
 
-router.post('/:id/document', requireFeaturePermission('compensation.prepare', WRITERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
+router.post('/:id/document', authenticate, requireFeaturePermission('compensation.prepare', WRITERS, resource('GovernmentOrder')), async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     const b = req.body || {};
@@ -56,7 +56,7 @@ router.post('/:id/document', requireFeaturePermission('compensation.prepare', WR
   } catch (err) { res.status(err.status || 400).json({ status: 'error', message: err.message }); }
 });
 
-router.delete('/:id/document', requireFeaturePermission('compensation.prepare', WRITERS, resource('GovernmentOrder')), authenticate, async (req, res) => {
+router.delete('/:id/document', authenticate, requireFeaturePermission('compensation.prepare', WRITERS, resource('GovernmentOrder')), async (req, res) => {
   try {
     const go = await loadOwnGO(req, res); if (!go) return;
     await attachments.remove(GovernmentOrderDocument, 'governmentOrderId', go.id);

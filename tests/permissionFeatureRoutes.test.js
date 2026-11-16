@@ -195,3 +195,54 @@ test('approved direct-pay compensation works after finance bank setup and fails 
   assert.equal(ready.status, 201, JSON.stringify(ready.body));
   assert.equal(await m.PayrollRunLine.count({ where: { payrollRunId: ready.body.data.id } }), f.people.length);
 });
+test('government order metadata, upload, download and delete authenticate before authorization in both modes', async () => {
+  const bytes = Buffer.from('%PDF-1.4\nGovernment order test');
+  for (const mode of ['LEGACY', 'PERMISSIONS']) {
+    const f = await fixture(mode, mode === 'LEGACY' ? 'ORG_ADMIN' : 'EMPLOYEE', 'PAYROLL_OFFICER', ['compensation.view', 'compensation.prepare']);
+    const go = await m.GovernmentOrder.create({ organizationId: f.org.id, goNumber: 'GO-1', goDate: '2026-11-16', subject: 'Order' });
+    const path = `/government-orders/${go.id}/document`;
+    const before = await call(f.actor, path);
+    assert.equal(before.status, 200, `${mode}: ${JSON.stringify(before.body)}`); assert.equal(before.body.data, null);
+    const uploaded = await call(f.actor, path, 'POST', { label: 'Order scan', dataUrl: `data:application/pdf;base64,${bytes.toString('base64')}` });
+    assert.equal(uploaded.status, 201, JSON.stringify(uploaded.body));
+    assert.equal((await call(f.actor, path)).body.data.label, 'Order scan');
+    const downloaded = await fetch(base + path + '/file', { headers: { Authorization: `Bearer ${signToken(f.actor)}` } });
+    assert.equal(downloaded.status, 200); assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes);
+    assert.equal((await call(f.actor, path, 'DELETE')).status, 200);
+    assert.equal((await call(f.actor, path)).body.data, null);
+    assert.equal((await fetch(base + path)).status, 401);
+  }
+});
+test('org role router falls through to independently authorized settings, payroll settings and audit routes', async () => {
+  for (const [code, path] of [['settings.view', '/org/settings'], ['settings.view', '/org/profile'], ['compensation.view', '/org/settings/payroll'], ['audit.view', '/org/audit']]) {
+    const f = await fixture('PERMISSIONS', 'EMPLOYEE', 'ORGANISATION_ADMIN', [code]);
+    const result = await call(f.actor, path);
+    assert.equal(result.status, 200, `${code} ${path}: ${JSON.stringify(result.body)}`);
+    for (const denied of ['/org/roles', '/org/role-assignments', `/org/access-preview/${f.actor.id}`]) assert.equal((await call(f.actor, denied)).status, 403);
+  }
+});
+test('permission payroll requires an active own authoritative bank account even when legacy bank text is populated', async () => {
+  const f = await fixture('PERMISSIONS', 'EMPLOYEE', 'PAYROLL_OFFICER', ['payroll.prepare']);
+  for (const employee of f.people) {
+    await employee.update({ directPay: true, bankName: 'Legacy bank', bankAccountNumber: '123456789', bankIfsc: 'BANK0000001' });
+    await m.EmployeeCompensationAssignment.create({ organizationId: f.org.id, employeeId: employee.id, amount: 1000, previousAmount: 0, effectiveDate: '2026-11-01', reason: 'Approved pay', status: 'APPROVED', preparedBy: f.actor.id });
+  }
+  const path = `/organizations/${f.org.id}/payroll-runs`;
+  async function denied() {
+    const result = await call(f.actor, path, 'POST', { year: 2026, month: 11 });
+    assert.equal(result.status, 409, JSON.stringify(result.body));
+    assert.equal(await m.PayrollRun.count({ where: { organizationId: f.org.id } }), 0);
+    assert.equal(await m.PayrollRunLine.count({ where: { employeeId: f.people.map(employee => employee.id) } }), 0);
+  }
+  await denied();
+  const accounts = [];
+  for (const employee of f.people) {
+    const account = await m.EmployeeBankAccount.create({ employeeId: employee.id, accountType: 'SB', bankName: 'Bank', accountNumber: `${employee.id}123456789`, ifsc: 'BANK0000001' });
+    accounts.push(account); await employee.update({ salaryCreditAccountId: account.id });
+  }
+  await accounts[0].update({ status: 'INACTIVE' }); await denied();
+  await accounts[0].update({ status: 'ACTIVE' });
+  await f.people[0].update({ salaryCreditAccountId: accounts[1].id }); await denied();
+  await f.people[0].update({ salaryCreditAccountId: accounts[0].id });
+  assert.equal((await call(f.actor, path, 'POST', { year: 2026, month: 11 })).status, 201);
+});

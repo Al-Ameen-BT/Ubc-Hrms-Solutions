@@ -1,6 +1,8 @@
 'use strict';
 const { Op } = require('sequelize');
 const { effectiveAccess, can, resourceModel, scopedWhere, tenantWhere } = require('../services/accessControl');
+const permissionGuards = new WeakSet();
+const isPermissionMiddleware = handler => permissionGuards.has(handler);
 const sameId = (a, b) => a != null && b != null && String(a) === String(b);
 const resource = (resourceType, key = 'id', source = 'params') => req => ({ resourceType, id: req[source]?.[key] });
 
@@ -35,7 +37,8 @@ function permissionMiddleware(codes, resolveResource, legacyRoles) {
       next();
     } catch (error) { next(error); }
   };
-  middleware.authorization = Object.freeze({ kind: 'permission', codes: Object.freeze([...codes]), resource: resolveResource || 'TENANT' });
+  Object.defineProperty(middleware, 'authorization', { value: Object.freeze({ kind: 'permission', codes: Object.freeze([...codes]), resource: resolveResource || 'TENANT' }) });
+  permissionGuards.add(middleware);
   return middleware;
 }
 function requirePermission(code, resolveResource) { return permissionMiddleware([code], resolveResource); }
@@ -44,4 +47,4 @@ function requireAnyPermission(...codes) { return permissionMiddleware(codes); }
 function requireFeaturePermission(codes, legacyRoles, resolveResource) {
   return permissionMiddleware(Array.isArray(codes) ? codes : [codes], resolveResource, legacyRoles);
 }
-module.exports = { requirePermission, requireAnyPermission, requireFeaturePermission, resource };
+module.exports = { isPermissionMiddleware, requirePermission, requireAnyPermission, requireFeaturePermission, resource };
