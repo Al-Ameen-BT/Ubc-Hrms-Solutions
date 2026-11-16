@@ -173,24 +173,27 @@ async function assertEmployeeLink(organizationId, employeeId, exceptUserId, tran
   if (await User.findOne({ where, transaction })) throw new UserAdminError(409, 'This employee already has an active account.');
 }
 
+async function completeEmployeeLink(organization, userId, employeeId, transaction) {
+  const organizationId = organization.id;
+  if (organization.accessControlMode === 'LEGACY') await require('./accessBootstrap').bootstrapOrganizationAccess({ organizationId, transaction });
+  const inactiveUser = userId && employeeId && await User.findOne({ where: { id: userId, organizationId, employeeId, status: 'INACTIVE' }, transaction });
+  if (!inactiveUser) return;
+  // An inactive link must record the same permanent bootstrap exit as an active link.
+  const baseline = await OrganizationRole.findOne({ where: { organizationId, code: 'EMPLOYEE', templateCode: 'EMPLOYEE', isProtected: true }, transaction });
+  if (!baseline) throw new UserAdminError(400, 'Protected employee role is required');
+  await UserRoleAssignment.findOrCreate({
+    where: { organizationId, userId: inactiveUser.id, roleId: baseline.id, scopeType: 'OWN' },
+    defaults: { effectiveFrom: todayIST(), status: 'INACTIVE' },
+    transaction,
+  });
+}
+
 async function withEmployeeLink(organizationId, employeeId, exceptUserId, write) {
   return sequelize.transaction(async transaction => {
     const organization = await Organization.findByPk(organizationId, { transaction, lock: transaction.LOCK.UPDATE });
     await assertEmployeeLink(organizationId, employeeId, exceptUserId, transaction);
     const result = await write(transaction);
-    if (organization?.accessControlMode === 'LEGACY') {
-      await require('./accessBootstrap').bootstrapOrganizationAccess({ organizationId, transaction });
-      const inactiveUser = await User.findOne({ where: { id: exceptUserId, organizationId, employeeId, status: 'INACTIVE' }, transaction });
-      if (inactiveUser) {
-        // Linking ends bootstrap eligibility even while the account is inactive.
-        const baseline = await OrganizationRole.findOne({ where: { organizationId, code: 'EMPLOYEE', isProtected: true }, transaction });
-        await UserRoleAssignment.findOrCreate({
-          where: { organizationId, userId: inactiveUser.id, roleId: baseline.id, scopeType: 'OWN' },
-          defaults: { effectiveFrom: new Date().toISOString().slice(0, 10), status: 'INACTIVE' },
-          transaction,
-        });
-      }
-    }
+    await completeEmployeeLink(organization, exceptUserId, employeeId, transaction);
     return result;
   });
 }
@@ -478,7 +481,7 @@ async function changeRoleAssignment(options) {
   return accessTransaction(options, async o => {
     const existing = o.id ? await tenantResource(UserRoleAssignment, o.id, o.organizationId, o.transaction) : null;
     const data = inputShape(o.data, existing ? ['roleId', 'scopeType', 'branchIds', 'departmentIds', 'effectiveFrom', 'effectiveTo', 'status'] : ['userId', 'roleId', 'scopeType', 'branchIds', 'departmentIds', 'effectiveFrom', 'effectiveTo', 'status']);
-    const user = await tenantResource(User, existing ? existing.userId : data.userId, o.organizationId, o.transaction, true);
+    const user = await tenantResource(User, existing ? existing.userId : data.userId, o.organizationId, o.transaction, !existing || data.status !== 'INACTIVE');
     const before = existing?.toJSON() || null;
     let fields = { ...data }; delete fields.userId;
     if (existing) {
@@ -552,6 +555,11 @@ async function updateOrganizationUser(req, user, data) {
     const hadAdminAssignment = await UserRoleAssignment.count({ where: { organizationId: o.organizationId, userId: user.id, roleId: adminRoles.map(r => r.id), status: 'ACTIVE' }, transaction: o.transaction });
     const before = publicUser(user), employeeId = data.employeeId === undefined ? user.employeeId : data.employeeId === null || data.employeeId === '' ? null : validId(data.employeeId);
     if (employeeId && (data.status || user.status) === 'ACTIVE') await assertEmployeeLink(o.organizationId, employeeId, user.id, o.transaction);
+    if (!employeeId && data.employeeId !== undefined && o.organization.accessControlMode === 'PERMISSIONS') {
+      const ownRole = await OrganizationRole.findOne({ where: { organizationId: o.organizationId, code: 'EMPLOYEE', templateCode: 'EMPLOYEE', isProtected: true }, transaction: o.transaction });
+      const assignments = await UserRoleAssignment.findAll({ where: { organizationId: o.organizationId, userId: user.id, status: 'ACTIVE' }, transaction: o.transaction, lock: o.transaction.LOCK.UPDATE });
+      if (assignments.some(a => a.roleId !== ownRole?.id || a.scopeType !== 'OWN')) bad('End operational role assignments before clearing the employee link');
+    }
     if (!employeeId && o.organization.accessControlMode === 'PERMISSIONS' && (data.status || user.status) === 'ACTIVE') bad('An active employee link is required');
     if (data.status === 'ACTIVE' && user.status !== 'ACTIVE' && o.organization.maxUsers != null && await User.count({ where: { organizationId: o.organizationId, status: 'ACTIVE' }, transaction: o.transaction }) >= o.organization.maxUsers) throw new UserAdminError(403, 'User limit reached', 'LICENSE_USER_LIMIT');
     await user.update({ ...(data.name === undefined ? {} : { name: data.name.trim() }), ...(data.status ? { status: data.status } : {}), employeeId, ...(data.role === undefined ? {} : { role: data.role }) }, { transaction: o.transaction });
@@ -563,8 +571,8 @@ async function updateOrganizationUser(req, user, data) {
       await baseline(user, o); await synchronizeRole(user, o);
     } else if (o.organization.accessControlMode === 'LEGACY') {
       if (data.role !== undefined && data.role !== before.role) await endUserAssignments(user, o);
-      await require('./accessBootstrap').bootstrapOrganizationAccess({ organizationId: o.organizationId, transaction: o.transaction });
     } else if (data.role !== undefined && data.role !== before.role) bad('Change role assignments instead of the compatibility role');
+    await completeEmployeeLink(o.organization, user.id, employeeId, o.transaction);
     if (hadAdminAssignment || before.role === 'ORG_ADMIN' && (data.status !== undefined || data.role !== undefined || data.employeeId !== undefined || data.assignments !== undefined)) await protectAdministrators(o);
     if (changedAccess) await invalidateUserAccess([user.id], { transaction: o.transaction, actor: o.actor, reason: 'user.updated' });
     await accessAudit(o, 'user.update', 'user', user.id, { before, after: publicUser(user) });

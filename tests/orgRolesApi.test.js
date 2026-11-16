@@ -160,3 +160,49 @@ test('legacy employee creation without assignments creates only the protected OW
   assert.equal(await m.UserRoleBranch.count({ where: { userRoleAssignmentId: assignments[0].id } }), 0); assert.equal(await m.UserRoleDepartment.count({ where: { userRoleAssignmentId: assignments[0].id } }), 0);
   const access = await require('../src/services/accessControl').effectiveAccess(body.data.id); assert.equal(access.scopeSummary.organization, false); assert.deepEqual(access.scopeSummary.branchIds, []); assert.equal(access.permissionCodes.includes('people.view'), false);
 });
+
+async function updateAccount(f, user, data) {
+  const response = await fetch(`${base}/organizations/${f.org.id}/users/${user.id}`, { method: 'PUT', headers: { authorization: `Bearer ${signToken(await f.admin.reload())}`, 'content-type': 'application/json' }, body: JSON.stringify(data) });
+  return { status: response.status, body: await response.json() };
+}
+
+test('linking an inactive bootstrap through user updates permanently records bootstrap exit', async () => {
+  const f = await fixture(), target = await f.account('ORG_ADMIN', false);
+  await bootstrap.bootstrapOrganizationAccess({ organizationId: f.org.id });
+  assert.equal((await bootstrap.accessReadiness(f.org.id)).bootstrapUserId, target.id);
+  assert.equal((await updateAccount(f, target, { status: 'INACTIVE' })).status, 200);
+  const employee = await m.Employee.create({ organizationId: f.org.id, postCadreId: (await m.PostCadre.findOne({ where: { organizationId: f.org.id } })).id, empCode: 'INACTIVE_BOOTSTRAP', name: 'Former bootstrap', doj: '2020-01-01', branchId: f.branch.id });
+  const markerWhere = { organizationId: f.org.id, userId: target.id, roleId: f.role('EMPLOYEE').id, scopeType: 'OWN' };
+  const inactiveVersion = (await target.reload()).accessVersion;
+  m.AuditLog.addHook('beforeBulkCreate', 'inactiveLinkFailure', () => { throw new Error('inactive link invalidation failed'); });
+  try { await assert.rejects(users.updateOrganizationUser({ user: f.admin }, target, { employeeId: employee.id }), /inactive link invalidation failed/); } finally { m.AuditLog.removeHook('beforeBulkCreate', 'inactiveLinkFailure'); }
+  await target.reload(); assert.equal(target.employeeId, null); assert.equal(target.status, 'INACTIVE'); assert.equal(target.accessVersion, inactiveVersion); assert.equal(await m.UserRoleAssignment.count({ where: markerWhere }), 0);
+  await users.updateOrganizationUser({ user: f.admin }, target, { employeeId: employee.id });
+  assert.equal(await m.UserRoleAssignment.count({ where: markerWhere }), 1);
+  assert.equal((await m.UserRoleAssignment.findOne({ where: markerWhere })).status, 'INACTIVE');
+  await users.updateOrganizationUser({ user: f.admin }, target, { employeeId: employee.id });
+  assert.equal(await m.UserRoleAssignment.count({ where: markerWhere }), 1);
+  assert.equal((await updateAccount(f, target, { employeeId: null })).status, 200);
+  assert.equal((await updateAccount(f, target, { status: 'ACTIVE' })).status, 200);
+  const reloaded = await target.reload(); assert.equal(reloaded.employeeId, null); assert.equal(reloaded.status, 'ACTIVE');
+  const readiness = await bootstrap.accessReadiness(f.org.id);
+  assert.equal(readiness.bootstrapUserId, null); assert.ok(readiness.blockers.some(b => b.userId === target.id && b.reason === 'EMPLOYEE_LINK_REQUIRED'));
+  assert.deepEqual((await require('../src/services/accessControl').effectiveAccess(target.id)).permissionCodes, []);
+});
+
+test('permission mode rejects combined deactivation/unlink and inactive unlink until operational assignments end', async () => {
+  const f = await fixture(), target = await f.account();
+  const assigned = await f.request('/role-assignments', 'POST', { userId: target.id, roleId: f.role('HR_OFFICER').id, scopeType: 'SELECTED_BRANCHES', branchIds: [f.branch.id], effectiveFrom: todayIST() });
+  assert.equal(assigned.status, 201); await f.org.update({ accessControlMode: 'PERMISSIONS' });
+  const employeeId = (await target.reload()).employeeId;
+  for (const data of [{ status: 'INACTIVE', employeeId: null }, { employeeId: null }]) {
+    const before = await target.reload(), version = before.accessVersion, status = before.status, auditCount = await m.AuditLog.count();
+    const result = await updateAccount(f, target, data); assert.equal(result.status, 400);
+    await target.reload(); assert.equal(target.employeeId, employeeId); assert.equal(target.status, status); assert.equal(target.accessVersion, version); assert.equal(await m.AuditLog.count(), auditCount);
+    assert.equal((await m.UserRoleAssignment.findByPk(assigned.body.data.id)).status, 'ACTIVE');
+    if (target.status === 'ACTIVE') assert.equal((await updateAccount(f, target, { status: 'INACTIVE' })).status, 200);
+  }
+  const ended = await f.request(`/role-assignments/${assigned.body.data.id}`, 'DELETE'); assert.equal(ended.status, 200);
+  assert.equal((await updateAccount(f, target, { employeeId: null })).status, 200);
+  assert.equal((await target.reload()).employeeId, null); assert.equal((await m.UserRoleAssignment.findByPk(assigned.body.data.id)).status, 'INACTIVE');
+});
