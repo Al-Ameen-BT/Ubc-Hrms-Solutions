@@ -207,3 +207,17 @@ test('deactivating a selected branch invalidates only users whose effective acce
   await s.deactivateBranch({ ...f.args, id: empty.id });
   assert.equal((await user.reload()).accessVersion, 1);
 });
+
+test('ended occupancy peaks do not block later assignments after a capacity reduction', async () => {
+  const f = await fixture();
+  const a = await f.employee(), b = await f.employee(), current = await f.employee(), extra = await f.employee();
+  await s.updatePosition({ ...f.args, id: f.position.id, data: { capacity: 2 } });
+  const history = { effectiveFrom: '2020-01-01', effectiveTo: '2020-12-31' };
+  await assign(f, a.e.id, history);
+  await assign(f, b.e.id, history);
+  await s.updatePosition({ ...f.args, id: f.position.id, data: { capacity: 1 } });
+  await assign(f, current.e.id);
+  assert.equal((await current.e.reload()).positionId, f.position.id);
+  await assert.rejects(assign(f, extra.e.id), /capacity/i);
+  assert.equal(await EmployeeOrganizationAssignment.count({ where: { organizationId: f.org.id, positionId: f.position.id, status: 'ACTIVE' } }), 3);
+});

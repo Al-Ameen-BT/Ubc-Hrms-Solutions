@@ -227,7 +227,7 @@ async function assignEmployeeOrganization(options) {
     if (previous.some(a => overlaps(a, range))) fail('Employee primary assignment dates must not overlap');
     if (position) {
       const occupants = await Assignment.findAll({ where: { organizationId: o.organizationId, positionId: position.id, status: 'ACTIVE' }, transaction: o.transaction, lock: o.transaction.LOCK.UPDATE });
-      checkCapacity([...occupants, range], position.capacity);
+      checkCapacity([...occupants.filter(a => overlaps(a, range)), range], position.capacity);
     }
     const result = await Assignment.create({ organizationId: o.organizationId, employeeId: data.employeeId, branchId: branch.id, departmentId: department?.id || null, positionId: position?.id || null, ...range, assignedBy: o.actor.id }, { transaction: o.transaction });
     await audit(o, 'org.assignment.create', result); return result;
