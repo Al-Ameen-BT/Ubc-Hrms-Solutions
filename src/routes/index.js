@@ -28,6 +28,10 @@ router.use('/org/financial-changes', require('./orgFinancialChanges'));
 router.use('/org/holidays', require('./orgHolidays'));
 router.use('/org/time', require('./orgTime'));
 router.use('/org/expenses', require('./orgExpenses'));
+router.use('/org/structure', require('./orgStructure'));
+router.use('/org/transfers', require('./orgTransfers'));
+router.use('/org', require('./orgRoles'));
+router.use('/org', require('./orgStructure').legacy);
 router.use('/org', require('./orgSettings'));
 
 // Org user management (Org Admin for own org; Super Admin for any).

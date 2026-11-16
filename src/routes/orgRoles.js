@@ -1,0 +1,27 @@
+'use strict';
+const express = require('express');
+const { authenticate } = require('../middleware/auth');
+const users = require('../services/userAdmin');
+const router = express.Router();
+router.use(authenticate);
+const options = req => ({ organizationId: req.user.organizationId, actor: req.user, id: req.params.id, userId: req.params.userId, data: req.body || {} });
+const handle = (work, status = 200) => async (req, res) => { try { res.status(status).json({ data: await work(req) }); } catch (error) { users.sendError(res, error); } };
+router.get('/roles/readiness', handle(req => users.previewAccessReadiness(options(req))));
+router.post('/roles/activate', handle(req => {
+  const data = users.inputShape(req.body || {}, ['accessControlMode']);
+  if (data.accessControlMode !== undefined && data.accessControlMode !== 'PERMISSIONS') throw new users.UserAdminError(400, 'Permission mode activation is one-way');
+  return users.activatePermissionMode(options(req));
+}));
+router.get('/roles', handle(req => users.listRoles(options(req))));
+router.post('/roles', handle(req => users.writeRole(options(req)), 201));
+router.get('/roles/:id', handle(req => users.readRole(options(req))));
+router.get('/roles/:id/impact', handle(req => users.previewRoleImpact(options(req))));
+router.put('/roles/:id', handle(req => users.writeRole(options(req))));
+router.put('/roles/:id/permissions', handle(req => { users.inputShape(req.body || {}, ['permissionCodes']); return users.writeRole(options(req)); }));
+router.delete('/roles/:id', handle(req => users.writeRole({ ...options(req), data: { status: 'INACTIVE' } })));
+router.get('/role-assignments', handle(req => users.listRoleAssignments({ ...options(req), userId: req.query.userId })));
+router.post('/role-assignments', handle(req => users.changeRoleAssignment(options(req)), 201));
+router.put('/role-assignments/:id', handle(req => users.changeRoleAssignment(options(req))));
+router.delete('/role-assignments/:id', handle(req => users.changeRoleAssignment({ ...options(req), data: { status: 'INACTIVE' } })));
+router.get('/access-preview/:userId', handle(req => users.previewUserAccess(options(req))));
+module.exports = router;

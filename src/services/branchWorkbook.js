@@ -6,7 +6,7 @@ const Excel = require('exceljs');
 // Reuse the pinned ExcelJS dependency tree for XML parsing and ZIP checksums.
 const { SaxesParser } = require('saxes');
 const { unsigned: crc32 } = require('buffer-crc32');
-const { sequelize, Organization, OrganizationBranch: Branch } = require('../models');
+const { sequelize, Organization, OrganizationBranch: Branch, AuditLog } = require('../models');
 const { createBranch } = require('./organizationStructure');
 const { OrgFieldError } = require('./orgFields');
 
@@ -327,6 +327,7 @@ async function applyBranchWorkbook({ rows: supplied, previewSignature } = {}, ac
     if (conflicts.length) fail(`Workbook conflict at row ${conflicts[0].row}: ${conflicts[0].field} already exists`);
     const created = [];
     for (const data of rows) created.push(await createBranch({ organizationId: orgId, actor, data, transaction }));
+    await AuditLog.create({ organizationId: orgId, actorUserId: actor.id, action: 'org.branch.import.apply', targetType: 'organization', targetId: String(orgId), details: { rowCount: created.length } }, { transaction });
     return created;
   });
 }

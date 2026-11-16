@@ -13,8 +13,10 @@
  */
 
 const express = require('express');
-const { sequelize, User, Organization } = require('../models');
-const { authenticate, requireRole } = require('../middleware/auth');
+const models = require('../models');
+const { User, Organization } = models;
+const { authenticate } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 const users = require('../services/userAdmin');
 
 const router = express.Router({ mergeParams: true });
@@ -25,7 +27,7 @@ const MANAGEABLE_ROLES = [
   'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'EMPLOYEE',
 ];
 
-router.use(authenticate, requireRole('SUPER_ADMIN', 'ORG_ADMIN'));
+router.use(authenticate);
 
 router.use((req, res, next) => {
   if (req.user.role !== 'SUPER_ADMIN' && String(req.params.orgId) !== String(req.user.organizationId)) {
@@ -33,6 +35,22 @@ router.use((req, res, next) => {
   }
   next();
 });
+
+router.use('/:userId', async (req, res, next) => {
+  if (req.params.userId === 'smtp-status') return next();
+  try { req.targetUser = await users.tenantResource(User, req.params.userId, req.params.orgId); next(); } catch (error) { sendError(res, error); }
+});
+router.use(async (req, res, next) => {
+  try {
+    if (req.body?.employeeId != null && req.body.employeeId !== '') await users.tenantResource(models.Employee, req.body.employeeId, req.params.orgId);
+    if (Array.isArray(req.body?.assignments)) for (const assignment of req.body.assignments) {
+      if (assignment?.roleId != null) await users.tenantResource(models.OrganizationRole, assignment.roleId, req.params.orgId);
+      for (const [key, Model] of [['branchIds', models.OrganizationBranch], ['departmentIds', models.OrganizationDepartment]]) if (Array.isArray(assignment?.[key])) for (const id of assignment[key]) await users.tenantResource(Model, id, req.params.orgId);
+    }
+    next();
+  } catch (error) { sendError(res, error); }
+});
+router.use((req, res, next) => req.user.role === 'SUPER_ADMIN' ? next() : requirePermission('users.manage')(req, res, next));
 
 async function loadOrgOr404(req, res) {
   const org = await Organization.findByPk(req.params.orgId);
@@ -44,7 +62,7 @@ async function loadOrgOr404(req, res) {
 }
 
 async function loadUserInOrgOr404(req, res) {
-  const user = await User.findByPk(req.params.userId);
+  const user = req.targetUser || await User.findOne({ where: { id: req.params.userId, organizationId: req.params.orgId } });
   if (!user || String(user.organizationId) !== String(req.params.orgId)) {
     res.status(404).json({ status: 'error', message: 'User not found' });
     return null;
@@ -76,12 +94,12 @@ router.post('/', async (req, res) => {
   try {
     const org = await loadOrgOr404(req, res);
     if (!org) return;
-    const b = req.body || {};
-    if (!MANAGEABLE_ROLES.includes(b.role)) {
+    const b = users.inputShape(req.body || {}, ['email', 'name', 'role', 'employeeId', 'assignments', 'sendEmail']);
+    if (b.role !== undefined && !MANAGEABLE_ROLES.includes(b.role)) {
       return res.status(400).json({ status: 'error', message: `role must be one of: ${MANAGEABLE_ROLES.join(', ')}` });
     }
     const r = await users.createAccount(req, {
-      organizationId: org.id, email: b.email, name: b.name, role: b.role, employeeId: b.employeeId, sendEmail: b.sendEmail,
+      organizationId: org.id, email: b.email, name: b.name, role: b.role, employeeId: b.employeeId, assignments: b.assignments, sendEmail: b.sendEmail,
     });
     res.status(201).json({ data: publicUser(r.user), tempPassword: r.tempPassword, email: r.email, loginUrl: r.loginUrl });
   } catch (err) { sendError(res, err); }
@@ -92,66 +110,8 @@ router.put('/:userId', async (req, res) => {
   try {
     const user = await loadUserInOrgOr404(req, res);
     if (!user) return;
-    const { name, role, status, employeeId } = req.body || {};
-    const isSelf = user.id === req.user.id;
-    let nextEmployeeId = user.employeeId;
-    if (employeeId !== undefined) {
-      if (employeeId === null || employeeId === '') {
-        nextEmployeeId = null;
-      } else {
-        const parsed = Number(employeeId);
-        if (!Number.isInteger(parsed) || parsed <= 0) {
-          return res.status(400).json({ status: 'error', message: 'employeeId must be a valid employee id.' });
-        }
-        nextEmployeeId = parsed;
-      }
-    }
-    const accessChanged = (employeeId !== undefined && String(nextEmployeeId || '') !== String(user.employeeId || '')) || (role !== undefined && role !== user.role);
-    if (role !== undefined && role !== user.role) {
-      if (!MANAGEABLE_ROLES.includes(role)) {
-        return res.status(400).json({ status: 'error', message: `role must be one of: ${MANAGEABLE_ROLES.join(', ')}` });
-      }
-      if (isSelf) return res.status(400).json({ status: 'error', message: 'You cannot change your own role.' });
-    }
-    if (status === 'INACTIVE' && isSelf) {
-      return res.status(400).json({ status: 'error', message: 'You cannot deactivate your own account.' });
-    }
-    if (name !== undefined) {
-      const trimmedName = String(name).trim();
-      if (!trimmedName) return res.status(400).json({ status: 'error', message: 'Name is required.' });
-      if (trimmedName.length > 255) return res.status(400).json({ status: 'error', message: 'Name must be 255 characters or fewer.' });
-    }
-    if (status !== undefined) await users.setStatus(req, user, status);
-    let changed = false;
-    if (employeeId !== undefined && String(nextEmployeeId || '') !== String(user.employeeId || '')) {
-      if (nextEmployeeId) {
-        await users.withEmployeeLink(user.organizationId, nextEmployeeId, user.id, async transaction => {
-          user.employeeId = nextEmployeeId;
-          await user.save({ transaction });
-        });
-      } else {
-        user.employeeId = null;
-      }
-      changed = true;
-    }
-    if (name !== undefined) {
-      const trimmedName = String(name).trim();
-      if (trimmedName !== user.name) {
-        user.name = trimmedName;
-        changed = true;
-      }
-    }
-    if (role !== undefined && role !== user.role) { user.role = role; changed = true; }
-    if (changed) {
-      await sequelize.transaction(async transaction => {
-        await user.save({ transaction });
-        if (accessChanged) await users.revokeEmployeeDevices(user.id, transaction);
-      });
-      await require('../services/audit').audit(req, 'user.update', {
-        organizationId: user.organizationId, targetType: 'user', targetId: user.id, details: { name: user.name, role: user.role, employeeId: user.employeeId },
-      });
-    }
-    res.json({ data: publicUser(user) });
+    const updated = await users.updateOrganizationUser(req, user, req.body || {});
+    res.json({ data: publicUser(updated) });
   } catch (err) { sendError(res, err); }
 });
 
@@ -185,7 +145,7 @@ router.post('/:userId/reset-mfa', async (req, res) => {
 // on an already-INACTIVE account permanently removes it.
 router.delete('/:userId', async (req, res) => {
   try {
-    if (req.user.role !== 'ORG_ADMIN') {
+    if (req.user.role === 'SUPER_ADMIN') {
       return res.status(403).json({ status: 'error', message: 'Only an Organisation Admin can remove users from the organisation.' });
     }
     const user = await loadUserInOrgOr404(req, res);

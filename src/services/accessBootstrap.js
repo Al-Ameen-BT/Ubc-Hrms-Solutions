@@ -138,9 +138,9 @@ async function bootstrapOrganizationAccess({ organizationId, transaction }) {
   });
 }
 
-async function accessReadiness(organizationId) {
-  return sequelize.transaction(async transaction => {
-    const organization = await Organization.findByPk(organizationId, { transaction });
+async function accessReadiness(organizationId, { transaction, lock = false } = {}) {
+  const inspectReadiness = async transaction => {
+    const organization = await Organization.findByPk(organizationId, { transaction, ...(lock ? { lock: transaction.LOCK.UPDATE } : {}) });
     if (!organization) throw new Error('Organisation not found');
     const state = await inspect(organization.id, transaction);
     const blockers = [...state.unresolvedEmployees, ...state.unresolvedUsers];
@@ -148,6 +148,10 @@ async function accessReadiness(organizationId) {
     const protectedRoles = state.roles.filter(r => r.isProtected && r.status === 'ACTIVE' && template(r.code) && r.templateCode === r.code);
     if (protectedRoles.length !== ROLE_TEMPLATES.length) blockers.push({ reason: 'PROTECTED_ROLES_REQUIRED' });
     const permissions = await OrganizationRolePermission.findAll({ where: { organizationId: organization.id }, transaction });
+    for (const role of state.roles.filter(r => !r.isProtected)) {
+      const definition = template(role.templateCode);
+      if (!definition || permissions.some(p => p.roleId === role.id && !definition.permissionCodes.includes(p.permissionCode))) blockers.push({ roleId: role.id, reason: 'TEMPLATE_CEILING_EXCEEDED' });
+    }
     for (const role of protectedRoles) {
       const expected = template(role.templateCode).permissionCodes;
       const actual = permissions.filter(p => p.roleId === role.id).map(p => p.permissionCode);
@@ -174,7 +178,8 @@ async function accessReadiness(organizationId) {
       }
     }
     return { ready: blockers.length === 0, accessControlMode: organization.accessControlMode, blockers, bootstrapUserId: state.bootstrapUserId, warnings: state.bootstrapUserId ? [{ userId: state.bootstrapUserId, reason: 'BOOTSTRAP_ADMIN_UNLINKED' }] : [] };
-  });
+  };
+  return transaction ? inspectReadiness(transaction) : sequelize.transaction(inspectReadiness);
 }
 
 module.exports = { bootstrapOrganizationAccess, resolveLegacyAssignments, accessReadiness };

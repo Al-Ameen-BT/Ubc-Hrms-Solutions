@@ -7,7 +7,7 @@ process.env.JWT_SECRET = 'no-smtp-bypass-test-secret';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { sequelize, Organization, PostCadre, Employee, User, SmtpConfig } = require('../src/models');
+const { sequelize, Organization, PostCadre, Employee, User, SmtpConfig, OrganizationBranch, OrganizationRole } = require('../src/models');
 const { hashPassword, signToken } = require('../src/services/authService');
 const orgUsersRoutes = require('../src/routes/orgUsers');
 const authRoutes = require('../src/routes/auth');
@@ -151,6 +151,10 @@ test('configured SMTP can still be manually bypassed via sendEmail=false', async
   assert.equal(statusBody.data.smtpConfigured, true);
   assert.equal(statusBody.data.via, 'ORGANISATION');
 
+  const branch = await OrganizationBranch.create({ organizationId: org.id, code: 'MANUAL', number: '001', name: 'Manual Branch', unitType: 'BRANCH' });
+  const officer = await Employee.create({ organizationId: org.id, empCode: 'OFFICER', name: 'Manual Officer', doj: '2022-01-01', postCadreId: employee.postCadreId, branchId: branch.id });
+  await require('../src/services/accessBootstrap').bootstrapOrganizationAccess({ organizationId: org.id });
+  const role = await OrganizationRole.findOne({ where: { organizationId: org.id, code: 'HR_OFFICER', isProtected: true } });
   const createRes = await fetch(`${base}/api/v1/organizations/${org.id}/users`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${orgAdminToken}`, 'Content-Type': 'application/json' },
@@ -158,6 +162,8 @@ test('configured SMTP can still be manually bypassed via sendEmail=false', async
       name: 'Manual Officer',
       email: 'officer@nosmtp.invalid',
       role: 'HR_OFFICER',
+      employeeId: officer.id,
+      assignments: [{ roleId: role.id, scopeType: 'SELECTED_BRANCHES', branchIds: [branch.id], effectiveFrom: require('../src/services/orgAccess').todayIST() }],
       sendEmail: false,
     }),
   });
