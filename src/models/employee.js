@@ -5,6 +5,9 @@ const sequelize = require('../config/sequelize');
 const Employee = sequelize.define('Employee', {
   id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
   organizationId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'organization_id' },
+  branchId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'branch_id' },
+  departmentId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'department_id' },
+  positionId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'position_id' },
   empCode: { type: DataTypes.STRING(32), allowNull: false, field: 'emp_code' },
   name: { type: DataTypes.STRING(255), allowNull: false },
   dob: { type: DataTypes.DATEONLY },

@@ -23,6 +23,7 @@ const Organization = sequelize.define('Organization', {
     allowNull: true,
     field: 'bank_class',
   },
+  accessControlMode: { type: DataTypes.ENUM('LEGACY', 'PERMISSIONS'), allowNull: false, defaultValue: 'LEGACY', field: 'access_control_mode' },
   requiresCatalogueAdoption: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'requires_catalogue_adoption' },
   // Optional "license" expiry — like status, but time-boxed instead of a
   // manual flip. NULL means no expiry (perpetual). Enforced in

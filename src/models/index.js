@@ -36,6 +36,15 @@ const ServiceHistoryDocument = require('./serviceHistoryDocument');
 const EmployeeAttendance = require('./employeeAttendance');
 const PayrollRun = require('./payrollRun');
 const OrganizationBranch = require('./organizationBranch');
+const OrganizationDepartment = require('./organizationDepartment');
+const OrganizationPosition = require('./organizationPosition');
+const EmployeeOrganizationAssignment = require('./employeeOrganizationAssignment');
+const OrganizationResponsibilityAssignment = require('./organizationResponsibilityAssignment');
+const OrganizationRole = require('./organizationRole');
+const OrganizationRolePermission = require('./organizationRolePermission');
+const UserRoleAssignment = require('./userRoleAssignment');
+const UserRoleBranch = require('./userRoleBranch');
+const UserRoleDepartment = require('./userRoleDepartment');
 const OrganizationBoardMember = require('./organizationBoardMember');
 const PayrollRunLine = require('./payrollRunLine');
 const OrganizationDocument = require('./organizationDocument');
@@ -226,6 +235,49 @@ Organization.hasMany(OrganizationBranch, { foreignKey: 'organizationId' });
 OrganizationBranch.belongsTo(Organization, { foreignKey: 'organizationId' });
 Organization.hasMany(OrganizationBoardMember, { foreignKey: 'organizationId' });
 OrganizationBoardMember.belongsTo(Organization, { foreignKey: 'organizationId' });
+// Organisation structure and access records retain history when a referenced row is removed.
+for (const model of [
+  OrganizationDepartment, OrganizationPosition, EmployeeOrganizationAssignment,
+  OrganizationResponsibilityAssignment, OrganizationRole, OrganizationRolePermission,
+  UserRoleAssignment, UserRoleBranch, UserRoleDepartment,
+]) {
+  Organization.hasMany(model, { foreignKey: 'organizationId', onDelete: 'RESTRICT' });
+  model.belongsTo(Organization, { foreignKey: 'organizationId', onDelete: 'RESTRICT' });
+}
+
+OrganizationDepartment.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+OrganizationPosition.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+OrganizationPosition.belongsTo(OrganizationDepartment, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
+OrganizationPosition.belongsTo(PostCadre, { foreignKey: 'postCadreId', onDelete: 'RESTRICT' });
+OrganizationPosition.belongsTo(OrganizationPosition, { as: 'ReportsToPosition', foreignKey: 'reportsToPositionId', onDelete: 'RESTRICT' });
+Employee.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+Employee.belongsTo(OrganizationDepartment, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
+Employee.belongsTo(OrganizationPosition, { foreignKey: 'positionId', onDelete: 'RESTRICT' });
+EmployeeOrganizationAssignment.belongsTo(Employee, { foreignKey: 'employeeId', onDelete: 'RESTRICT' });
+EmployeeOrganizationAssignment.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+EmployeeOrganizationAssignment.belongsTo(OrganizationDepartment, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
+EmployeeOrganizationAssignment.belongsTo(OrganizationPosition, { foreignKey: 'positionId', onDelete: 'RESTRICT' });
+OrganizationResponsibilityAssignment.belongsTo(Employee, { foreignKey: 'employeeId', onDelete: 'RESTRICT' });
+OrganizationResponsibilityAssignment.belongsTo(User, { foreignKey: 'userId', onDelete: 'RESTRICT' });
+OrganizationResponsibilityAssignment.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+OrganizationRolePermission.belongsTo(OrganizationRole, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+UserRoleAssignment.belongsTo(User, { foreignKey: 'userId', onDelete: 'RESTRICT' });
+UserRoleAssignment.belongsTo(OrganizationRole, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+UserRoleBranch.belongsTo(UserRoleAssignment, { foreignKey: 'userRoleAssignmentId', onDelete: 'RESTRICT' });
+UserRoleBranch.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+UserRoleDepartment.belongsTo(UserRoleAssignment, { foreignKey: 'userRoleAssignmentId', onDelete: 'RESTRICT' });
+UserRoleDepartment.belongsTo(OrganizationDepartment, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
+
+for (const model of [EmployeeOrganizationAssignment, OrganizationResponsibilityAssignment, UserRoleAssignment]) {
+  model.belongsTo(User, { as: 'AssignedByUser', foreignKey: 'assignedBy', onDelete: 'RESTRICT' });
+}
+Employee.hasMany(EmployeeOrganizationAssignment, { foreignKey: 'employeeId', onDelete: 'RESTRICT' });
+OrganizationRole.hasMany(OrganizationRolePermission, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+OrganizationRole.hasMany(UserRoleAssignment, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+User.hasMany(UserRoleAssignment, { foreignKey: 'userId', onDelete: 'RESTRICT' });
+UserRoleAssignment.hasMany(UserRoleBranch, { foreignKey: 'userRoleAssignmentId', onDelete: 'RESTRICT' });
+UserRoleAssignment.hasMany(UserRoleDepartment, { foreignKey: 'userRoleAssignmentId', onDelete: 'RESTRICT' });
+
 // Statutory document uploads (RBI licence, incorporation certificate, PAN,
 // GSTN, TAN, other) — task 79.
 Organization.hasMany(OrganizationDocument, { foreignKey: 'organizationId' });
@@ -312,6 +364,15 @@ EmployeeCompensationAssignment.belongsTo(Employee, { foreignKey: 'employeeId' })
 EmployeeCompensationAssignment.belongsTo(BankRuleCatalogue, { foreignKey: 'catalogueId' });
 
 module.exports = {
+  OrganizationDepartment,
+  OrganizationPosition,
+  EmployeeOrganizationAssignment,
+  OrganizationResponsibilityAssignment,
+  OrganizationRole,
+  OrganizationRolePermission,
+  UserRoleAssignment,
+  UserRoleBranch,
+  UserRoleDepartment,
   EmployeeMobileDevice,
   EmployeeDeviceLink,
   FinancialChangeProposal,

@@ -20,3 +20,22 @@ test('model index names fit the MySQL identifier limit', () => {
   }
   assert.deepEqual(tooLong, []);
 });
+
+test('organisation access indexes have explicit short unique names', () => {
+  const names = new Set();
+  for (const modelName of [
+    'OrganizationBranch', 'OrganizationDepartment', 'OrganizationPosition',
+    'EmployeeOrganizationAssignment', 'OrganizationResponsibilityAssignment', 'OrganizationRole',
+    'OrganizationRolePermission', 'UserRoleAssignment', 'UserRoleBranch', 'UserRoleDepartment',
+  ]) {
+    const model = sequelize.models[modelName];
+    assert.ok(model, `${modelName} exists`);
+    assert.ok(model.options.indexes.length, `${modelName} has indexes`);
+    for (const index of model.options.indexes) {
+      assert.ok(index.name, `${modelName} index has an explicit name`);
+      assert.ok(index.name.length < 64, index.name);
+      assert.ok(!names.has(index.name), `${index.name} is unique`);
+      names.add(index.name);
+    }
+  }
+});

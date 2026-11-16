@@ -18,6 +18,7 @@ const User = sequelize.define('User', {
   employeeId: { type: DataTypes.INTEGER.UNSIGNED, field: 'employee_id' },
   mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true, field: 'must_change_password' },
   status: { type: DataTypes.ENUM('ACTIVE', 'INACTIVE'), allowNull: false, defaultValue: 'ACTIVE' },
+  accessVersion: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0, field: 'access_version' },
   lastLoginAt: { type: DataTypes.DATE, field: 'last_login_at' },
   // MFA (TOTP) — optional, off by default, the account holder turns it on
   // for themselves from My account. mfaSecret is AES-256-GCM encrypted at

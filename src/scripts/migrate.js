@@ -16,7 +16,7 @@
  */
 
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../models');
+const { sequelize, Organization, OrganizationBranch, Employee, User } = require('../models');
 
 async function addColumnIfMissing(queryInterface, table, column, spec) {
   const desc = await queryInterface.describeTable(table);
@@ -31,6 +31,16 @@ async function addColumnIfMissing(queryInterface, table, column, spec) {
  * outright on SQLite.
  */
 const COLUMN_STEPS = [
+  // Organisation access is opt-in; identifiers remain unmapped until explicitly resolved.
+  ['organization', 'access_control_mode', Organization.rawAttributes.accessControlMode],
+  ['users', 'access_version', User.rawAttributes.accessVersion],
+  ['employee', 'branch_id', Employee.rawAttributes.branchId],
+  ['employee', 'department_id', Employee.rawAttributes.departmentId],
+  ['employee', 'position_id', Employee.rawAttributes.positionId],
+  ['organization_branch', 'number', OrganizationBranch.rawAttributes.number],
+  ['organization_branch', 'unit_type', OrganizationBranch.rawAttributes.unitType],
+  ['organization_branch', 'status', OrganizationBranch.rawAttributes.status],
+  ['organization_branch', 'display_order', OrganizationBranch.rawAttributes.displayOrder],
   // Slice: MFA
   ['users', 'mfa_enabled', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
   ['users', 'mfa_secret', { type: DataTypes.STRING(255), allowNull: true }],
@@ -237,6 +247,13 @@ async function migrate() {
   for (const [table, column, spec] of COLUMN_STEPS) {
     // eslint-disable-next-line no-await-in-loop
     if (await addColumnIfMissing(qi, table, column, spec)) added.push(`${table}.${column}`);
+  }
+  const indexes = await qi.showIndex('organization_branch');
+  for (const index of OrganizationBranch.options.indexes) {
+    if (!indexes.some(existing => existing.name === index.name)) {
+      await qi.addIndex('organization_branch', index.fields, index);
+      added.push(`organization_branch.${index.name}`);
+    }
   }
   if (sequelize.getDialect() !== 'sqlite') {
     for (const [table, column, spec] of ENUM_WIDEN_STEPS) {
