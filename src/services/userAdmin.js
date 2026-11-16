@@ -7,7 +7,7 @@
  * email and audit entry are identical no matter which screen it came from.
  */
 
-const { sequelize, User, Organization, Employee, EmployeeMobileDevice, EmployeeDeviceLink, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = require('../models');
+const { sequelize, User, Organization, Employee, EmployeeMobileDevice, EmployeeDeviceLink, OrganizationRole, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = require('../models');
 const { Op } = require('sequelize');
 const { hashPassword, generateTempPassword } = require('./authService');
 const { assertCanAddUser } = require('./license');
@@ -163,6 +163,16 @@ async function withEmployeeLink(organizationId, employeeId, exceptUserId, write)
     const result = await write(transaction);
     if (organization?.accessControlMode === 'LEGACY') {
       await require('./accessBootstrap').bootstrapOrganizationAccess({ organizationId, transaction });
+      const inactiveUser = await User.findOne({ where: { id: exceptUserId, organizationId, employeeId, status: 'INACTIVE' }, transaction });
+      if (inactiveUser) {
+        // Linking ends bootstrap eligibility even while the account is inactive.
+        const baseline = await OrganizationRole.findOne({ where: { organizationId, code: 'EMPLOYEE', isProtected: true }, transaction });
+        await UserRoleAssignment.findOrCreate({
+          where: { organizationId, userId: inactiveUser.id, roleId: baseline.id, scopeType: 'OWN' },
+          defaults: { effectiveFrom: new Date().toISOString().slice(0, 10), status: 'INACTIVE' },
+          transaction,
+        });
+      }
     }
     return result;
   });

@@ -239,3 +239,25 @@ test('LEGACY hard-delete cleans only user access rows and preserves employee and
   assert.ok(await models.AuditLog.findOne({ where: { action: 'user.delete', targetId: String(officer.id) } }));
   assert.equal(await OrganizationRole.count({ where: { organizationId: b.org.id } }), 9);
 });
+
+test('an inactive bootstrap admin permanently exits bootstrap when linked before unlinking and reactivation', async () => {
+  const b = await bank();
+  const e = await employee(b);
+  const admin = await user(b, 'ORG_ADMIN');
+  await bootstrapOrganizationAccess({ organizationId: b.org.id });
+  await userAdmin.setStatus({}, admin, 'INACTIVE');
+  const link = () => userAdmin.withEmployeeLink(b.org.id, e.id, admin.id, transaction => admin.update({ employeeId: e.id }, { transaction }));
+  await link();
+  await link();
+  const baselineRole = await OrganizationRole.findOne({ where: { organizationId: b.org.id, code: 'EMPLOYEE' } });
+  const baseline = await UserRoleAssignment.findAll({ where: { organizationId: b.org.id, userId: admin.id, roleId: baselineRole.id } });
+  assert.equal(baseline.length, 1, 'inactive linking must persist one idempotent bootstrap-exit marker');
+  assert.equal(baseline[0].status, 'INACTIVE', 'the marker must not grant access to an inactive account');
+  await admin.update({ employeeId: null });
+  await userAdmin.setStatus({}, admin, 'ACTIVE');
+  const readiness = await accessReadiness(b.org.id);
+  assert.equal(readiness.bootstrapUserId, null);
+  assert.equal(readiness.ready, false);
+  assert.ok(readiness.blockers.some(b => b.userId === admin.id && b.reason === 'EMPLOYEE_LINK_REQUIRED'));
+  assert.equal((await b.org.reload()).accessControlMode, 'LEGACY');
+});
