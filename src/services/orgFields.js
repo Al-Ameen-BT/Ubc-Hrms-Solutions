@@ -295,7 +295,13 @@ function branchFields(body) {
     out.name = n.slice(0, 255);
   }
   const set = (k, v) => { if (v !== undefined) out[k] = v; };
-  set('code', textOrNull(b.branchCode, 32));
+  if (b.code !== undefined && b.branchCode !== undefined && String(b.code).trim().toUpperCase() !== String(b.branchCode).trim().toUpperCase()) throw new OrgFieldError('Conflicting branch codes');
+  const code = textOrNull(b.code !== undefined ? b.code : b.branchCode, 32);
+  set('code', code == null ? code : code.toUpperCase());
+  if (b.number !== undefined) {
+    if (typeof b.number !== 'string' || !b.number.trim() || b.number.trim().length > 32) throw new OrgFieldError('Branch number must contain 1–32 characters');
+    out.number = b.number.trim();
+  }
   set('address', textOrNull(b.address, 2000));
   set('phone', textOrNull(b.phone, 64));
   return out;

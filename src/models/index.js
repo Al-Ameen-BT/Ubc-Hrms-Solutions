@@ -250,6 +250,10 @@ OrganizationPosition.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onD
 OrganizationPosition.belongsTo(OrganizationDepartment, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
 OrganizationPosition.belongsTo(PostCadre, { foreignKey: 'postCadreId', onDelete: 'RESTRICT' });
 OrganizationPosition.belongsTo(OrganizationPosition, { as: 'ReportsToPosition', foreignKey: 'reportsToPositionId', onDelete: 'RESTRICT' });
+OrganizationBranch.hasMany(OrganizationDepartment, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+OrganizationDepartment.hasMany(OrganizationPosition, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
+OrganizationPosition.hasMany(EmployeeOrganizationAssignment, { foreignKey: 'positionId', onDelete: 'RESTRICT' });
+OrganizationPosition.hasMany(OrganizationPosition, { as: 'ReportingPositions', foreignKey: 'reportsToPositionId', onDelete: 'RESTRICT' });
 Employee.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
 Employee.belongsTo(OrganizationDepartment, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
 Employee.belongsTo(OrganizationPosition, { foreignKey: 'positionId', onDelete: 'RESTRICT' });
