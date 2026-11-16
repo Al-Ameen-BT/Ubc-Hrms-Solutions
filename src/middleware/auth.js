@@ -35,14 +35,16 @@ async function authenticate(req, res, next) {
         await User.count({ where: { employeeId: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' } }) === 1;
       if (!device || !linked) return res.status(401).json({ status: 'error', code: 'DEVICE_REVOKED', message: 'This device is no longer linked. Scan a new QR code from your portal.' });
     }
+    let accessControlMode = null;
     if (user.organizationId) {
       const org = await Organization.findByPk(user.organizationId);
       const access = checkOrgAccess(org);
+      accessControlMode = org?.accessControlMode || null;
       if (!access.ok) {
         return res.status(403).json({ status: 'error', code: access.code, message: access.message });
       }
     }
-    req.user = { id: user.id, role: user.role, organizationId: user.organizationId, employeeId: user.employeeId, email: user.email, name: user.name, deviceId: payload.deviceId || null };
+    req.user = { id: user.id, role: user.role, organizationId: user.organizationId, employeeId: user.employeeId, email: user.email, name: user.name, deviceId: payload.deviceId || null, accessControlMode };
     next();
   } catch (err) {
     return res.status(401).json({ status: 'error', message: 'Invalid or expired token' });

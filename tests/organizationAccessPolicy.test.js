@@ -27,3 +27,11 @@ test('branch manager routing uses responsibility, not salary grade', () => {
   assert.equal(selectLeaveApprover(request, rule, [...assignments, { ...assignments[0], userId: 3 }]), null);
   assert.equal(selectLeaveApprover(request, { ...rule, organizationId: 11 }, assignments), null);
 });
+
+test('department and selected branch scopes share the canonical scope names', () => {
+  const actor = { id: 1, organizationId: 10, employeeId: 20 };
+  const employee = { id: 21, organizationId: 10, branchId: 3, departmentId: 7 };
+  assert.equal(canAccessEmployee(actor, employee, 'people.view', [{ action: 'people.view', scope: 'SELECTED_BRANCHES', branchIds: [3] }]), true);
+  assert.equal(canAccessEmployee(actor, employee, 'people.view', [{ action: 'people.view', scope: 'DEPARTMENT', departmentIds: [7] }]), true);
+  assert.equal(canAccessEmployee(actor, employee, 'people.view', [{ action: 'people.view', scope: 'DEPARTMENT', departmentIds: [8] }]), false);
+});

@@ -2,16 +2,18 @@
 
 const sameId = (a, b) => a != null && b != null && String(a) === String(b);
 
+function matchesScope(actor, employee, grant) {
+  if (grant.scope === 'ORGANISATION') return true;
+  if (grant.scope === 'OWN') return sameId(actor.employeeId, employee.id);
+  if (['BRANCH', 'SELECTED_BRANCHES'].includes(grant.scope)) return Array.isArray(grant.branchIds) && grant.branchIds.some(id => sameId(id, employee.branchId));
+  if (grant.scope === 'DEPARTMENT') return Array.isArray(grant.departmentIds) && grant.departmentIds.some(id => sameId(id, employee.departmentId));
+  return false;
+}
+
 // Grants and responsibility assignments must come from server-owned records.
 function canAccessEmployee(actor, employee, action, grants = []) {
   if (!actor || !employee || !sameId(actor.organizationId, employee.organizationId)) return false;
-  return grants.some(grant => {
-    if (grant.action !== action) return false;
-    if (grant.scope === 'ORGANISATION') return true;
-    if (grant.scope === 'OWN') return sameId(actor.employeeId, employee.id);
-    if (grant.scope === 'BRANCH') return Array.isArray(grant.branchIds) && grant.branchIds.some(id => sameId(id, employee.branchId));
-    return false;
-  });
+  return grants.some(grant => grant.action === action && matchesScope(actor, employee, grant));
 }
 
 function selectLeaveApprover(request, rule, assignments = []) {
@@ -28,4 +30,4 @@ function selectLeaveApprover(request, rule, assignments = []) {
   return users.length === 1 ? eligible[0].userId : null;
 }
 
-module.exports = { canAccessEmployee, selectLeaveApprover };
+module.exports = { sameId, matchesScope, canAccessEmployee, selectLeaveApprover };
