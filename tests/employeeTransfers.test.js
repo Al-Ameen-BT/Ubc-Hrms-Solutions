@@ -257,3 +257,25 @@ test('an empty custom admin copy cannot replace the last protected Organisation 
   await assert.rejects(s.proposeTransfer({ ...w.input, roleChanges: { closeAssignmentIds: [last.id] } }, f.admin), /last Organisation Admin/i);
   await unchanged(f, w);
 });
+
+test('automatic scoped-role closures require roles.manage before creating a transfer or salary proposal', async () => {
+  const f = await fixture(), w = await f.worker(), manager = await f.worker();
+  await f.org.update({ accessControlMode: 'PERMISSIONS' });
+  const limited = await Role.create({ organizationId: f.org.id, code: 'LIMITED', name: 'Transfers only', templateCode: 'ORGANISATION_ADMIN' });
+  await m.OrganizationRolePermission.create({ organizationId: f.org.id, roleId: limited.id, permissionCode: 'transfers.manage' });
+  await RoleAssignment.create({ organizationId: f.org.id, userId: manager.user.id, roleId: limited.id, scopeType: 'ORGANISATION', effectiveFrom: '2020-01-01' });
+  let salaryWrites = 0;
+  Compensation.addHook('beforeCreate', 'track-transfer-salary', () => { salaryWrites++; });
+  try { await assert.rejects(s.proposeTransfer({ ...w.input, roleChanges: {} }, manager.user), /roles.manage|permission/i); }
+  finally { Compensation.removeHook('beforeCreate', 'track-transfer-salary'); }
+  assert.equal(salaryWrites, 0);
+  assert.equal(await Transfer.count({ where: { employeeId: w.employee.id } }), 0);
+  assert.equal(await Compensation.count({ where: { employeeId: w.employee.id } }), 0);
+  await unchanged(f, w);
+  await w.oldRole.update({ status: 'INACTIVE' });
+  const proposal = await s.proposeTransfer({ ...w.input, roleChanges: {} }, manager.user);
+  assert.equal(proposal.status, 'PENDING');
+  assert.equal(await Transfer.count({ where: { employeeId: w.employee.id } }), 1);
+  assert.equal(await Compensation.count({ where: { employeeId: w.employee.id } }), 1);
+  await unchanged(f, w);
+});

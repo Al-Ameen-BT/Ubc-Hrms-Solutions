@@ -154,14 +154,14 @@ async function proposeTransfer(input, actor) {
     await organizationLock(input.organizationId, transaction);
     const preparer = await authorize(actor, input.organizationId, 'transfers.manage', transaction);
     const data = { ...input, employeeId: id(input.employeeId), roleChanges: rolePlan(input.roleChanges), preparedBy: preparer.id };
-    if (data.roleChanges.start.length || data.roleChanges.closeAssignmentIds.length || data.roleChanges.retainAssignmentIds.length) await authorize(preparer, data.organizationId, 'roles.manage', transaction);
     const state = await lockedState(data, transaction);
+    const roles = await roleState(data, preparer, transaction);
+    if (roles.closing.length || data.roleChanges.start.length || data.roleChanges.closeAssignmentIds.length || data.roleChanges.retainAssignmentIds.length) await authorize(preparer, data.organizationId, 'roles.manage', transaction);
     if (data.compensation) {
       if (state.employee.directPay) fail('Select an approved direct-pay arrangement or an existing financial proposal');
       const proposal = await salary.proposeAssignment({ ...data.compensation, organizationId: data.organizationId, employeeId: data.employeeId, effectiveDate: data.effectiveDate, reason: data.reason, actorId: preparer.id }, transaction);
       data.compensationProposalId = proposal.id;
     }
-    await roleState(data, preparer, transaction);
     const pay = data.compensationProposalId && await Compensation.findByPk(data.compensationProposalId, { transaction });
     if (pay?.status === 'PENDING' && await Transfer.count({ where: { compensationProposalId: data.compensationProposalId }, transaction })) fail('Compensation proposal already belongs to a transfer', 409);
     const transfer = await Transfer.create({ organizationId: data.organizationId, employeeId: data.employeeId, branchId: state.branch.id, departmentId: state.department?.id || null, positionId: state.position?.id || null, compensationProposalId: data.compensationProposalId || null, roleChanges: data.roleChanges, effectiveDate: data.effectiveDate, reason: data.reason.trim(), preparedBy: preparer.id }, { transaction });
