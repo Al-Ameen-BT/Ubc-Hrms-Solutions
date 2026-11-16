@@ -40,14 +40,14 @@ function monthKey(year, month) { return `${year}-${String(month).padStart(2, '0'
 
 const LOCKED_STATUSES = ['APPROVED', 'PAID'];
 
-async function payrollInputFingerprint(organizationId, year, month) {
+async function payrollInputFingerprint(organizationId, year, month, transaction) {
   const models = require('../models');
-  const employees = await models.Employee.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true });
+  const employees = await models.Employee.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true, transaction });
   const employeeIds = employees.map(row => row.id);
-  const allowanceTypes = await models.AllowanceType.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true });
-  const scales = await models.PayScale.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true });
-  const rows = [await models.Organization.findByPk(organizationId, { raw: true }), employees, allowanceTypes, scales];
-  const collect = async (Model, where) => rows.push(await Model.findAll({ where, order: [['id', 'ASC']], raw: true }));
+  const allowanceTypes = await models.AllowanceType.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true, transaction });
+  const scales = await models.PayScale.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true, transaction });
+  const rows = [await models.Organization.findByPk(organizationId, { raw: true, transaction }), employees, allowanceTypes, scales];
+  const collect = async (Model, where) => rows.push(await Model.findAll({ where, order: [['id', 'ASC']], raw: true, transaction }));
   await collect(models.OrgPayrollSetting, { organizationId });
   await collect(models.PostCadre, { organizationId });
   await collect(models.PayStage, { payScaleId: { [Op.in]: scales.map(row => row.id) } });
@@ -225,7 +225,7 @@ async function approveRun(run, userId) {
     if (run.status !== 'PROCESSED') throw new PayrollEngineError(`Only a processed run can be approved (this one is ${run.status}).`, 409);
     const monthEnd = new Date(Date.UTC(run.year, run.month, 0)).toISOString().slice(0, 10);
     if (hasProtectedConflict('payroll.approve', run, userId)) throw new PayrollEngineError('A different approving authority must approve this payroll run.', 403);
-    if (run.inputFingerprint && run.inputFingerprint !== await payrollInputFingerprint(run.organizationId, run.year, run.month)) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
+    if (run.inputFingerprint && run.inputFingerprint !== await payrollInputFingerprint(run.organizationId, run.year, run.month, transaction)) throw new PayrollEngineError('Salary inputs changed after processing. Reprocess this payroll before approval.', 409);
     const changedSinceProcessing = { status: 'APPROVED', decidedAt: { [Op.gt]: run.processedAt }, effectiveDate: { [Op.lte]: monthEnd } };
     const [salaryChanges, adoptions, financialChanges] = await Promise.all([
       EmployeeCompensationAssignment.count({ where: { ...changedSinceProcessing, organizationId: run.organizationId }, transaction }),

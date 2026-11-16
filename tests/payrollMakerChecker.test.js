@@ -115,3 +115,24 @@ test('reprocessing cannot overwrite approval committed after the initial run loo
     assert.equal(initial.processedByUserId, maker.id);
   } finally { Employee.removeHook('afterFind', 'approveDuringProcessing'); }
 });
+
+test('approval fingerprint reads use the transaction holding the payroll run lock', async () => {
+  const models = require('../src/models');
+  const fingerprintModels = ['Employee', 'AllowanceType', 'PayScale', 'Organization', 'OrgPayrollSetting', 'PostCadre', 'PayStage', 'AllowanceTypePost', 'EmployeeAttendance', 'EmployeeBankAccount', 'EmployeeFestivalAdvance', 'EmployeeOverdraft', 'EmployeeRecurringDeposit', 'EmployeeLic', 'EmployeeHousingLoan', 'EmployeeVehicleLoan', 'EmployeeCompensationAssignment', 'OrganizationCatalogueAdoption', 'FinancialChangeProposal'];
+  const row = await run('PROCESSED', { inputFingerprint: 'force-fingerprint-validation' });
+  let heldTransaction;
+  const reads = [];
+  PayrollRun.addHook('beforeFind', 'observeApprovalLock', options => {
+    if (options.lock) heldTransaction = options.transaction;
+  });
+  for (const name of fingerprintModels) models[name].addHook('beforeFind', 'observeFingerprintTransaction', options => reads.push({ name, transaction: options.transaction }));
+  try {
+    await assert.rejects(engine.approveRun(row, approver.id), err => err.status === 409 && /inputs changed/.test(err.message));
+    assert.ok(heldTransaction);
+    assert.deepEqual(reads.map(read => read.name).sort(), [...fingerprintModels].sort());
+    for (const read of reads) assert.ok(read.transaction === heldTransaction, `${read.name} fingerprint read escaped the approval transaction`);
+  } finally {
+    PayrollRun.removeHook('beforeFind', 'observeApprovalLock');
+    for (const name of fingerprintModels) models[name].removeHook('beforeFind', 'observeFingerprintTransaction');
+  }
+});
