@@ -1,8 +1,9 @@
 'use strict';
-const { Op } = require('sequelize');
-const { sequelize, Employee, PostCadre, BankRuleCatalogue, EmployeeCompensationAssignment, EmployeeServiceHistory } = require('../models');
+const { Op, Transaction } = require('sequelize');
+const { sequelize, Organization, EmployeeTransfer, Employee, PostCadre, BankRuleCatalogue, EmployeeCompensationAssignment, EmployeeServiceHistory } = require('../models');
 const { adoptionForDate } = require('./catalogueAdoption');
 const { isDateOnly } = require('./dateUtils');
+const { todayIST } = require('./orgAccess');
 
 class AssignmentError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 async function assignmentForDate(employeeId, date, transaction) {
@@ -24,48 +25,58 @@ async function validateAssignment(input, transaction) {
   }
   if (Number(adopted.catalogueId) !== Number(catalogueId)) throw new AssignmentError('Choose the bank-adopted catalogue revision for this date.', 409);
   const catalogue = await BankRuleCatalogue.findByPk(catalogueId, { transaction });
+  const organization = await Organization.findByPk(organizationId, { transaction });
+  if (!catalogue || catalogue.status !== 'PUBLISHED' || catalogue.effectiveDate > effectiveDate) throw new AssignmentError('A published catalogue revision effective on this date is required.', 409);
+  if (catalogue.bankClass !== organization.bankClass) throw new AssignmentError('Catalogue bank class does not match this organisation.', 409);
   const post = catalogue?.posts?.find(row => row.code === postCode);
   if (!post) throw new AssignmentError('Post is absent from the adopted catalogue.');
   if (!Number.isInteger(stageNo) || stageNo < 1 || stageNo > post.stages.length) throw new AssignmentError('Stage is absent from this post.');
   return { employee, catalogueId: catalogue.id, postCode, stageNo, amount: post.stages[stageNo - 1] };
 }
-async function proposeAssignment(input) {
-  const clean = await validateAssignment(input);
-  if (await EmployeeCompensationAssignment.count({ where: { employeeId: clean.employee.id, effectiveDate: input.effectiveDate, status: 'APPROVED' } })) throw new AssignmentError('An approved salary assignment already exists for this date.', 409);
-  const prior = await assignmentForDate(clean.employee.id, input.effectiveDate);
-  const next = prior ? null : await EmployeeCompensationAssignment.findOne({ where: { employeeId: clean.employee.id, status: 'APPROVED', effectiveDate: { [Op.gt]: input.effectiveDate } }, order: [['effectiveDate', 'ASC']] });
+async function proposeAssignment(input, transaction) {
+  if (!transaction) return sequelize.transaction({ type: Transaction.TYPES.IMMEDIATE }, transaction => proposeAssignment(input, transaction));
+  await Organization.findByPk(input.organizationId, { transaction, lock: transaction.LOCK.UPDATE });
+  await Employee.findOne({ where: { id: input.employeeId, organizationId: input.organizationId }, transaction, lock: transaction.LOCK.UPDATE });
+  const clean = await validateAssignment(input, transaction);
+  if (await EmployeeCompensationAssignment.count({ where: { employeeId: clean.employee.id, effectiveDate: input.effectiveDate, status: 'APPROVED' }, transaction })) throw new AssignmentError('An approved salary assignment already exists for this date.', 409);
+  const prior = await assignmentForDate(clean.employee.id, input.effectiveDate, transaction);
+  const next = prior ? null : await EmployeeCompensationAssignment.findOne({ where: { employeeId: clean.employee.id, status: 'APPROVED', effectiveDate: { [Op.gt]: input.effectiveDate } }, order: [['effectiveDate', 'ASC']], transaction });
   const previousAmount = prior ? Number(prior.amount) : next ? Number(next.previousAmount) : Number(clean.employee.currentBasicPay) || 0;
-  return EmployeeCompensationAssignment.create({ organizationId: input.organizationId, employeeId: clean.employee.id, catalogueId: clean.catalogueId, postCode: clean.postCode, stageNo: clean.stageNo, amount: clean.amount, previousAmount, effectiveDate: input.effectiveDate, reason: String(input.reason).trim(), preparedBy: input.actorId });
+  return EmployeeCompensationAssignment.create({ organizationId: input.organizationId, employeeId: clean.employee.id, catalogueId: clean.catalogueId, postCode: clean.postCode, stageNo: clean.stageNo, amount: clean.amount, previousAmount, effectiveDate: input.effectiveDate, reason: String(input.reason).trim(), preparedBy: input.actorId }, { transaction });
 }
-async function decideAssignment({ organizationId, proposalId, decision, actorId, reason }) {
+async function decideAssignment({ organizationId, proposalId, decision, actorId, reason }, options = {}) {
   if (!['APPROVED', 'REJECTED'].includes(decision)) throw new AssignmentError('Decision must be APPROVED or REJECTED.');
-  return sequelize.transaction(async transaction => {
-    const row = await EmployeeCompensationAssignment.findOne({ where: { id: proposalId, organizationId }, transaction });
-    if (!row) throw new AssignmentError('Salary proposal not found.', 404);
-    const employee = await Employee.findByPk(row.employeeId, { transaction, lock: transaction.LOCK.UPDATE });
-    if (row.status !== 'PENDING') throw new AssignmentError('This salary proposal has already changed.', 409);
-    if (Number(row.preparedBy) === Number(actorId)) throw new AssignmentError('A different approving authority must decide this proposal.', 403);
-    if (decision === 'APPROVED') {
-      const clean = await validateAssignment({ ...row.toJSON(), reason: row.reason }, transaction);
-      if (clean.amount !== Number(row.amount)) throw new AssignmentError('The government stage changed after proposal; create a new proposal.', 409);
-      if (await EmployeeCompensationAssignment.count({ where: { employeeId: row.employeeId, effectiveDate: row.effectiveDate, status: 'APPROVED' }, transaction })) throw new AssignmentError('An approved salary assignment already exists for this date.', 409);
+  if (!options.transaction) return sequelize.transaction({ type: Transaction.TYPES.IMMEDIATE }, transaction => decideAssignment({ organizationId, proposalId, decision, actorId, reason }, { transaction }));
+  const transaction = options.transaction;
+  await Organization.findByPk(organizationId, { transaction, lock: transaction.LOCK.UPDATE });
+  const at = options.at || todayIST();
+  const row = await EmployeeCompensationAssignment.findOne({ where: { id: proposalId, organizationId }, transaction });
+  if (!row) throw new AssignmentError('Salary proposal not found.', 404);
+  const employee = await Employee.findByPk(row.employeeId, { transaction, lock: transaction.LOCK.UPDATE });
+  await row.reload({ transaction, lock: transaction.LOCK.UPDATE });
+  const transfer = await EmployeeTransfer.findOne({ where: { organizationId, compensationProposalId: row.id }, transaction });
+  if (transfer && (Number(options.transferId) !== Number(transfer.id) || !['APPROVED', 'REJECTED'].includes(transfer.status))) throw new AssignmentError('Decide this salary proposal through its transfer bundle.', 409);
+  if (row.status !== 'PENDING') throw new AssignmentError('This salary proposal has already changed.', 409);
+  if (Number(row.preparedBy) === Number(actorId)) throw new AssignmentError('A different approving authority must decide this proposal.', 403);
+  if (decision === 'APPROVED') {
+    const clean = await validateAssignment({ ...row.toJSON(), reason: row.reason }, transaction);
+    if (clean.amount !== Number(row.amount)) throw new AssignmentError('The government stage changed after proposal; create a new proposal.', 409);
+    if (await EmployeeCompensationAssignment.count({ where: { employeeId: row.employeeId, effectiveDate: row.effectiveDate, status: 'APPROVED' }, transaction })) throw new AssignmentError('An approved salary assignment already exists for this date.', 409);
+  }
+  const [changed] = await EmployeeCompensationAssignment.update({ status: decision, decidedBy: actorId, decidedAt: new Date(), decisionReason: reason ? String(reason).slice(0, 500) : null }, { where: { id: row.id, organizationId, status: 'PENDING' }, transaction });
+  if (!changed) throw new AssignmentError('This salary proposal has already changed.', 409);
+  if (decision === 'APPROVED') {
+    if (row.catalogueId) {
+      const catalogue = await BankRuleCatalogue.findByPk(row.catalogueId, { transaction });
+      const post = catalogue.posts.find(item => item.code === row.postCode);
+      const [cadre] = await PostCadre.findOrCreate({ where: { organizationId, code: row.postCode }, defaults: { organizationId, code: row.postCode, name: post.name }, transaction });
+      if (row.effectiveDate <= at) await employee.update({ postCadreId: cadre.id }, { transaction });
     }
-    const [changed] = await EmployeeCompensationAssignment.update({ status: decision, decidedBy: actorId, decidedAt: new Date(), decisionReason: reason ? String(reason).slice(0, 500) : null }, { where: { id: row.id, organizationId, status: 'PENDING' }, transaction });
-    if (!changed) throw new AssignmentError('This salary proposal has already changed.', 409);
-    if (decision === 'APPROVED') {
-      if (row.catalogueId) {
-        const catalogue = await BankRuleCatalogue.findByPk(row.catalogueId, { transaction });
-        const post = catalogue.posts.find(item => item.code === row.postCode);
-        const [cadre] = await PostCadre.findOrCreate({ where: { organizationId, code: row.postCode }, defaults: { organizationId, code: row.postCode, name: post.name }, transaction });
-        if (row.effectiveDate <= new Date().toISOString().slice(0, 10)) await employee.update({ postCadreId: cadre.id }, { transaction });
-      }
-      await EmployeeServiceHistory.create({ employeeId: employee.id, eventType: employee.directPay ? 'OTHER' : 'PAY_REVISION', eventDate: row.effectiveDate,
-        remarks: `${row.reason} Approved salary: ₹${row.amount}${row.catalogueId ? `; catalogue #${row.catalogueId}, ${row.postCode}, stage ${row.stageNo}` : ' (direct-pay)'}.` }, { transaction });
-      const today = new Date().toISOString().slice(0, 10);
-      const current = await assignmentForDate(employee.id, today, transaction);
-      if (current) await employee.update({ currentBasicPay: current.amount }, { transaction });
-    }
-    return EmployeeCompensationAssignment.findByPk(row.id, { transaction });
-  });
+    await EmployeeServiceHistory.create({ employeeId: employee.id, eventType: employee.directPay ? 'OTHER' : 'PAY_REVISION', eventDate: row.effectiveDate,
+      remarks: `${row.reason} Approved salary: ₹${row.amount}${row.catalogueId ? `; catalogue #${row.catalogueId}, ${row.postCode}, stage ${row.stageNo}` : ' (direct-pay)'}.` }, { transaction });
+    const current = await assignmentForDate(employee.id, at, transaction);
+    if (current) await employee.update({ currentBasicPay: current.amount }, { transaction });
+  }
+  return EmployeeCompensationAssignment.findByPk(row.id, { transaction });
 }
-module.exports = { AssignmentError, proposeAssignment, decideAssignment, assignmentForDate };
+module.exports = { AssignmentError, proposeAssignment, decideAssignment, assignmentForDate, validateAssignment };

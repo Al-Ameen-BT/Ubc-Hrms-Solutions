@@ -63,6 +63,7 @@ const EmployeeBankAccount = require('./employeeBankAccount');
 const BankRuleCatalogue = require('./bankRuleCatalogue');
 const OrganizationCatalogueAdoption = require('./organizationCatalogueAdoption');
 const EmployeeCompensationAssignment = require('./employeeCompensationAssignment');
+const EmployeeTransfer = require('./employeeTransfer');
 const EmployeePolicy = require('./employeePolicy');
 const EmployeePolicyAcknowledgement = require('./employeePolicyAcknowledgement');
 const OrganizationHoliday = require('./organizationHoliday');
@@ -237,7 +238,7 @@ Organization.hasMany(OrganizationBoardMember, { foreignKey: 'organizationId' });
 OrganizationBoardMember.belongsTo(Organization, { foreignKey: 'organizationId' });
 // Organisation structure and access records retain history when a referenced row is removed.
 for (const model of [
-  OrganizationDepartment, OrganizationPosition, EmployeeOrganizationAssignment,
+  OrganizationDepartment, OrganizationPosition, EmployeeOrganizationAssignment, EmployeeTransfer,
   OrganizationResponsibilityAssignment, OrganizationRole, OrganizationRolePermission,
   UserRoleAssignment, UserRoleBranch, UserRoleDepartment,
 ]) {
@@ -366,8 +367,19 @@ FinancialChangeProposal.belongsTo(Organization, { foreignKey: 'organizationId' }
 Employee.hasMany(EmployeeCompensationAssignment, { foreignKey: 'employeeId' });
 EmployeeCompensationAssignment.belongsTo(Employee, { foreignKey: 'employeeId' });
 EmployeeCompensationAssignment.belongsTo(BankRuleCatalogue, { foreignKey: 'catalogueId' });
+Employee.hasMany(EmployeeTransfer, { foreignKey: 'employeeId', onDelete: 'RESTRICT' });
+EmployeeTransfer.belongsTo(Employee, { foreignKey: 'employeeId', onDelete: 'RESTRICT' });
+EmployeeTransfer.belongsTo(OrganizationBranch, { foreignKey: 'branchId', onDelete: 'RESTRICT' });
+EmployeeTransfer.belongsTo(OrganizationDepartment, { foreignKey: 'departmentId', onDelete: 'RESTRICT' });
+EmployeeTransfer.belongsTo(OrganizationPosition, { foreignKey: 'positionId', onDelete: 'RESTRICT' });
+EmployeeTransfer.belongsTo(EmployeeCompensationAssignment, { foreignKey: 'compensationProposalId', onDelete: 'RESTRICT' });
+EmployeeOrganizationAssignment.belongsTo(EmployeeTransfer, { foreignKey: 'transferId', onDelete: 'RESTRICT' });
+for (const [as, foreignKey] of [['Preparer', 'preparedBy'], ['Approver', 'decidedBy']]) {
+  EmployeeTransfer.belongsTo(User, { as, foreignKey, onDelete: 'RESTRICT' });
+}
 
 module.exports = {
+  EmployeeTransfer,
   OrganizationDepartment,
   OrganizationPosition,
   EmployeeOrganizationAssignment,

@@ -16,7 +16,7 @@
  */
 
 const { DataTypes } = require('sequelize');
-const { sequelize, Organization, OrganizationBranch, Employee, User } = require('../models');
+const { sequelize, Organization, OrganizationBranch, Employee, User, EmployeeTransfer } = require('../models');
 
 async function addColumnIfMissing(queryInterface, table, column, spec) {
   const desc = await queryInterface.describeTable(table);
@@ -244,6 +244,8 @@ const ENUM_WIDEN_STEPS = [
 async function migrate() {
   const qi = sequelize.getQueryInterface();
   const added = [];
+  // New transfer storage only; existing assignment and payroll history is untouched.
+  await EmployeeTransfer.sync();
   for (const [table, column, spec] of COLUMN_STEPS) {
     // eslint-disable-next-line no-await-in-loop
     if (await addColumnIfMissing(qi, table, column, spec)) added.push(`${table}.${column}`);
