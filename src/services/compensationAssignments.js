@@ -18,7 +18,7 @@ async function validateAssignment(input, transaction) {
   const adopted = await adoptionForDate(organizationId, effectiveDate, transaction);
   if (!adopted) throw new AssignmentError('Bank must approve a catalogue adoption before salary assignment.', 409);
   if (employee.directPay) {
-    if (catalogueId || postCode || stageNo) throw new AssignmentError('Direct-pay staff cannot have a government post or stage.');
+    if (catalogueId != null || postCode != null || stageNo != null) throw new AssignmentError('Direct-pay staff cannot have a government post or stage.');
     const salary = Number(amount);
     if (!Number.isSafeInteger(salary) || salary <= 0 || salary > 9999999999) throw new AssignmentError('Direct-pay salary must be a positive whole-rupee amount.');
     return { employee, catalogueId: null, postCode: null, stageNo: null, amount: salary };
@@ -30,8 +30,8 @@ async function validateAssignment(input, transaction) {
   if (catalogue.bankClass !== organization.bankClass) throw new AssignmentError('Catalogue bank class does not match this organisation.', 409);
   const post = catalogue?.posts?.find(row => row.code === postCode);
   if (!post) throw new AssignmentError('Post is absent from the adopted catalogue.');
-  if (!Number.isInteger(stageNo) || stageNo < 1 || stageNo > post.stages.length) throw new AssignmentError('Stage is absent from this post.');
-  return { employee, catalogueId: catalogue.id, postCode, stageNo, amount: post.stages[stageNo - 1] };
+  if (!Number.isInteger(stageNo) || stageNo < 0 || stageNo >= post.stages.length) throw new AssignmentError('Stage is absent from this post.');
+  return { employee, catalogueId: catalogue.id, postCode, stageNo, amount: post.stages[stageNo] };
 }
 async function proposeAssignment(input, transaction) {
   if (!transaction) return sequelize.transaction({ type: Transaction.TYPES.IMMEDIATE }, transaction => proposeAssignment(input, transaction));

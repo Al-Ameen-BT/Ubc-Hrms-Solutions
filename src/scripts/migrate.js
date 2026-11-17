@@ -15,8 +15,40 @@
  * /admin/setup/init-db endpoint for deployments with no shell access.
  */
 
-const { DataTypes } = require('sequelize');
-const { sequelize, DaRevision, ArrearsCase, LeaveApplication, Organization, OrganizationBranch, Employee, User, EmployeeTransfer } = require('../models');
+const { DataTypes, Op } = require('sequelize');
+const { sequelize, DaRevision, ArrearsCase, LeaveApplication, Organization, OrganizationBranch, Employee, User, EmployeeTransfer, PayStage, EmployeeCompensationAssignment } = require('../models');
+
+const StageNumberMigration = sequelize.define('StageNumberMigration', {
+  key: { type: DataTypes.STRING(64), primaryKey: true },
+  appliedAt: { type: DataTypes.DATE, allowNull: false, field: 'applied_at' },
+}, { tableName: 'stage_number_migration', timestamps: false });
+const ZERO_BASED_STAGE_MIGRATION = 'pay-stages-zero-based-v1';
+
+async function migrateStageNumbers() {
+  await StageNumberMigration.sync();
+  return sequelize.transaction(async transaction => {
+    const applied = await StageNumberMigration.findByPk(ZERO_BASED_STAGE_MIGRATION, { transaction, lock: transaction.LOCK.UPDATE });
+    if (applied) return false;
+
+    const [lowestStage, lowestAssignment] = await Promise.all([
+      PayStage.min('stageNo', { transaction }),
+      EmployeeCompensationAssignment.min('stageNo', { where: { stageNo: { [Op.ne]: null } }, transaction }),
+    ]);
+    if (lowestStage != null && Number(lowestStage) < 1 || lowestAssignment != null && Number(lowestAssignment) < 1) {
+      throw new Error('Stage-number migration marker is missing but zero-based stage data already exists; refusing to renumber mixed data.');
+    }
+
+    // Move through a disjoint range so each scale's unique stage numbers never collide.
+    await PayStage.update({ stageNo: sequelize.literal('stage_no + 1000000') }, { where: {}, transaction });
+    await PayStage.update({ stageNo: sequelize.literal('stage_no - 1000001') }, { where: {}, transaction });
+    await EmployeeCompensationAssignment.update(
+      { stageNo: sequelize.literal('stage_no - 1') },
+      { where: { stageNo: { [Op.ne]: null } }, transaction },
+    );
+    await StageNumberMigration.create({ key: ZERO_BASED_STAGE_MIGRATION, appliedAt: new Date() }, { transaction });
+    return true;
+  });
+}
 
 async function addColumnIfMissing(queryInterface, table, column, spec) {
   const desc = await queryInterface.describeTable(table);
@@ -269,6 +301,7 @@ async function migrate() {
       await qi.changeColumn(table, column, spec).catch(() => {});
     }
   }
+  if (await migrateStageNumbers()) added.push('data.pay_stages_zero_based');
   return added;
 }
 
@@ -287,4 +320,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { migrate };
+module.exports = { migrate, migrateStageNumbers };

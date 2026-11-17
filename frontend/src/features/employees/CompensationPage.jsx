@@ -25,7 +25,7 @@ export function CompensationPage() {
   const adopted = adoption?.history?.find(row => row.status === 'APPROVED' && (!form.effectiveDate || row.effectiveDate <= form.effectiveDate));
   const catalogue = adopted?.BankRuleCatalogue;
   const post = catalogue?.posts?.find(row => row.code === form.postCode);
-  const stageAmount = post?.stages?.[Number(form.stageNo) - 1];
+  const stageAmount = post?.stages?.[Number(form.stageNo)];
   const currentPay = book?.effectiveCompensation?.basicPay ?? Number(employee?.currentBasicPay || 0);
   const refresh = () => { queryClient.invalidateQueries({ queryKey: ['compensation', id] }); queryClient.invalidateQueries({ queryKey: ['service-book', id] }); };
   const proposal = useMutation({ mutationFn: compensationApi.proposeAssignment, onSuccess: () => { refresh(); setError(''); toast.add('Salary change sent for approval.', 'success'); }, onError: e => setError(e.message) });
@@ -42,7 +42,7 @@ export function CompensationPage() {
         <Input id="salary-date" label="Effective date" type="date" value={form.effectiveDate} onChange={e => setForm({ ...form, effectiveDate: e.target.value })} />
         {employee.directPay ? <Input id="salary-amount" label="Monthly gross salary (₹)" type="number" step="1" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /> : <>
           <div className="field"><label className="field-label" htmlFor="salary-post">Government post</label><select id="salary-post" className="input" value={form.postCode} onChange={e => setForm({ ...form, postCode: e.target.value, stageNo: '' })}><option value="">Choose post</option>{catalogue?.posts?.map(row => <option key={row.code} value={row.code}>{row.name}</option>)}</select></div>
-          <div className="field"><label className="field-label" htmlFor="salary-stage">Stage</label><select id="salary-stage" className="input" value={form.stageNo} onChange={e => setForm({ ...form, stageNo: e.target.value })}><option value="">Choose stage</option>{post?.stages?.map((amount, index) => <option key={index} value={index + 1}>Stage {index + 1} · {fmt.money(amount)}</option>)}</select></div>
+          <div className="field"><label className="field-label" htmlFor="salary-stage">Stage</label><select id="salary-stage" className="input" value={form.stageNo} onChange={e => setForm({ ...form, stageNo: e.target.value })}><option value="">Choose stage</option>{post?.stages?.map((amount, index) => <option key={index} value={index}>Stage {index} · {fmt.money(amount)}</option>)}</select></div>
         </>}
         <Input id="salary-reason" label="Reason" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} />
       </div>

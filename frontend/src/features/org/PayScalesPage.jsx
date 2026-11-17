@@ -319,7 +319,7 @@ function StageLadderModal({ scale, onClose }) {
           variant="secondary"
           onClick={() => {
             if (!newAmount) return;
-            const nextNo = (list[list.length - 1]?.stageNo || list.length) + 1;
+            const nextNo = list.length ? list[list.length - 1].stageNo + 1 : 0;
             setStages([...list, { stageNo: nextNo, amount: Number(newAmount) }]);
             setNewAmount('');
           }}

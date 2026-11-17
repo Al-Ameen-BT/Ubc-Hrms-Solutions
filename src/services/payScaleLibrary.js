@@ -74,7 +74,7 @@ async function createRevisionScaleStages({ organizationId, revisionName, effecti
       status: status === 'ACTIVE' ? 'ACTIVE' : 'SUPERSEDED',
     }, { transaction });
     await PayStage.bulkCreate(
-      amounts.map((amount, idx) => ({ payScaleId: scale.id, stageNo: idx + 1, amount })),
+      amounts.map((amount, idx) => ({ payScaleId: scale.id, stageNo: idx, amount })),
       { transaction }
     );
     scaleByPostCode[post.code] = scale;

@@ -29,7 +29,7 @@ test('fractional attendance remains supported; historical money is not rewritten
   assert.equal(Number((await employee.reload()).currentBasicPay), 123.45);
 });
 test('bulk-created stages use whole rupees', async () => {
-  const stages = await PayStage.bulkCreate([{ payScaleId: scale.id, stageNo: 1, amount: 200.6 }], { validate: false });
+  const stages = await PayStage.bulkCreate([{ payScaleId: scale.id, stageNo: 0, amount: 200.6 }], { validate: false });
   assert.equal(Number(stages[0].amount), 201);
 });
 test('catalogue monetary settings and scales require integers; decimal percentages stay valid', () => {

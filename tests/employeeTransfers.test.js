@@ -36,7 +36,7 @@ async function fixture() {
     await UserRoleBranch.create({ organizationId: org.id, userRoleAssignmentId: oldRole.id, branchId: oldBranch.id });
     const device = await m.EmployeeMobileDevice.create({ organizationId: org.id, userId: user.id, name: 'Phone', platform: 'android', refreshHash: 'unused', lastUsedAt: new Date() });
     const link = await m.EmployeeDeviceLink.create({ organizationId: org.id, userId: user.id, challengeHash: `link-${i}`, expiresAt: new Date(Date.now() + 60000) });
-    const input = { organizationId: org.id, employeeId: employee.id, branchId: branch.id, departmentId: department.id, positionId: position.id, effectiveDate: todayIST(), reason: 'Transfer', compensation: { catalogueId: catalogue.id, postCode: 'CLERK', stageNo: 2 }, roleChanges: { start: [{ roleId: role.id, scopeType: 'SELECTED_BRANCHES', branchIds: [branch.id] }] } };
+    const input = { organizationId: org.id, employeeId: employee.id, branchId: branch.id, departmentId: department.id, positionId: position.id, effectiveDate: todayIST(), reason: 'Transfer', compensation: { catalogueId: catalogue.id, postCode: 'CLERK', stageNo: 1 }, roleChanges: { start: [{ roleId: role.id, scopeType: 'SELECTED_BRANCHES', branchIds: [branch.id] }] } };
     return { employee, user, old, oldRole, device, link, input };
   }
   return { org, admin, approver, post, oldBranch, branch, department, position, catalogue, role, worker };
@@ -78,7 +78,7 @@ test('late approval atomically closes history, starts roles and catalogue pay, s
   assert.equal(current.effectiveFrom, '2026-04-16'); assert.equal(current.assignedBy, f.admin.id);
   const newRole = await RoleAssignment.findOne({ where: { userId: w.user.id, effectiveFrom: '2026-04-16' } });
   assert.ok(newRole); assert.equal((await UserRoleBranch.findOne({ where: { userRoleAssignmentId: newRole.id } })).branchId, f.branch.id);
-  assert.equal((await salary.assignmentForDate(w.employee.id, '2026-04-16')).stageNo, 2);
+  assert.equal((await salary.assignmentForDate(w.employee.id, '2026-04-16')).stageNo, 1);
   assert.equal(await AuditLog.count({ where: { targetId: String(w.user.id), action: 'user.access.invalidate' } }), 1);
   await s.activateApprovedTransfers(todayIST()); assert.equal((await w.user.reload()).accessVersion, 1);
   await assert.rejects(result.update({ preparedBy: f.approver.id }), /immutable/i);

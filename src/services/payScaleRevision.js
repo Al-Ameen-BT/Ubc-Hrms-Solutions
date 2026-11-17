@@ -123,7 +123,7 @@ async function applyRevision({ organizationId, revisionName, effectiveDate, desc
         status: 'ACTIVE',
       }, { transaction: t });
       // eslint-disable-next-line no-await-in-loop
-      await PayStage.bulkCreate(item.amounts.map((amount, idx) => ({ payScaleId: newScale.id, stageNo: idx + 1, amount })), { transaction: t });
+      await PayStage.bulkCreate(item.amounts.map((amount, idx) => ({ payScaleId: newScale.id, stageNo: idx, amount })), { transaction: t });
 
       const oldScale = currentScaleByPostId[post.id];
       if (oldScale && oldScale.status === 'ACTIVE') {

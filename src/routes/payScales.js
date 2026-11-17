@@ -90,13 +90,16 @@ stagesRouter.put('/', requireFeaturePermission('compensation.prepare', ['SUPER_A
     for (const s of input) {
       const stageNo = Number(s.stageNo);
       const amount = Number(s.amount);
-      if (!Number.isInteger(stageNo) || stageNo < 1) return res.status(400).json({ status: 'error', message: `Invalid stage number: ${s.stageNo}` });
+      if (!Number.isInteger(stageNo) || stageNo < 0) return res.status(400).json({ status: 'error', message: `Invalid stage number: ${s.stageNo}` });
       if (!(amount > 0)) return res.status(400).json({ status: 'error', message: `Stage ${stageNo}: amount must be greater than zero` });
       if (seen.has(stageNo)) return res.status(400).json({ status: 'error', message: `Stage ${stageNo} appears twice` });
       seen.add(stageNo);
       clean.push({ stageNo, amount: Math.round(amount * 100) / 100 });
     }
     clean.sort((a, b) => a.stageNo - b.stageNo);
+    if (clean.some((stage, index) => stage.stageNo !== index)) {
+      return res.status(400).json({ status: 'error', message: 'Stages must be consecutive and start at stage 0.' });
+    }
     for (let i = 1; i < clean.length; i++) {
       if (clean[i].amount <= clean[i - 1].amount) {
         return res.status(400).json({ status: 'error', message: `Stage ${clean[i].stageNo} (₹${clean[i].amount}) must be higher than stage ${clean[i - 1].stageNo} (₹${clean[i - 1].amount}).` });

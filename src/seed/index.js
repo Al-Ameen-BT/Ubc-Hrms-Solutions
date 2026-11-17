@@ -108,13 +108,13 @@ async function seedDemoData() {
 
   const clerkStageAmounts = [20200, 21000, 21800, 22600, 23400, 24200, 25000, 25900, 26800];
   const clerkStages = await PayStage.bulkCreate(
-    clerkStageAmounts.map((amount, i) => ({ payScaleId: clerkScale.id, stageNo: i + 1, amount })),
+    clerkStageAmounts.map((amount, i) => ({ payScaleId: clerkScale.id, stageNo: i, amount })),
     { returning: true }
   );
 
   const seniorStageAmounts = [24400, 25300, 26200, 27100, 28000, 28900, 29800, 30800, 31800];
   const seniorStages = await PayStage.bulkCreate(
-    seniorStageAmounts.map((amount, i) => ({ payScaleId: seniorClerkScale.id, stageNo: i + 1, amount })),
+    seniorStageAmounts.map((amount, i) => ({ payScaleId: seniorClerkScale.id, stageNo: i, amount })),
     { returning: true }
   );
 

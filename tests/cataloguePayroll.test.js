@@ -19,8 +19,8 @@ before(async () => {
   await OrganizationCatalogueAdoption.create({ organizationId: org.id, catalogueId: revision.id, effectiveDate: '2026-04-01', status: 'APPROVED', preparedBy: 1, decidedBy: 2 });
   await OrgPayrollSetting.create({ organizationId: org.id, daPercent: 1.2 });
   await EmployeeCompensationAssignment.bulkCreate([
-    { organizationId: org.id, employeeId: employee.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 1, amount: 10000, effectiveDate: '2026-04-01', reason: 'Initial', status: 'APPROVED', preparedBy: 1, decidedBy: 2 },
-    { organizationId: org.id, employeeId: employee.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 2, amount: 10500, effectiveDate: '2026-04-16', reason: 'Increment', status: 'APPROVED', preparedBy: 1, decidedBy: 2 },
+    { organizationId: org.id, employeeId: employee.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 0, amount: 10000, effectiveDate: '2026-04-01', reason: 'Initial', status: 'APPROVED', preparedBy: 1, decidedBy: 2 },
+    { organizationId: org.id, employeeId: employee.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 1, amount: 10500, effectiveDate: '2026-04-16', reason: 'Increment', status: 'APPROVED', preparedBy: 1, decidedBy: 2 },
   ]);
   const hr = await User.create({ organizationId: org.id, name: 'HR', email: 'hr@segment.invalid', role: 'HR_ADMIN', passwordHash: 'unused' });
   hrToken = require('../src/services/authService').signToken(hr);
@@ -36,7 +36,7 @@ test('payroll run uses adopted catalogue stage and defaults, then freezes proven
   assert.equal(slip.earnings.basic, 10250);
   assert.equal(slip.earnings.da, 1230);
   assert.equal(slip.compensationSegments[0].orderNumber, 'GO/1');
-  assert.equal(slip.compensationSegments[1].stageNo, 2);
+  assert.equal(slip.compensationSegments[1].stageNo, 1);
 });
 
 
@@ -206,7 +206,7 @@ test('mid-month stage change splits basic and percentage earnings once', async (
 test('first mid-month mapping preserves the employee prior salary for earlier days', async () => {
   const post = await PostCadre.findOne({ where: { organizationId: employee.organizationId } });
   const worker = await Employee.create({ organizationId: employee.organizationId, empCode: 'S3', name: 'New Mapping', doj: '2020-01-01', postCadreId: post.id, currentBasicPay: 9000 });
-  const proposal = await require('../src/services/compensationAssignments').proposeAssignment({ organizationId: employee.organizationId, employeeId: worker.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 1, effectiveDate: '2026-04-16', actorId: 1, reason: 'First mapping' });
+  const proposal = await require('../src/services/compensationAssignments').proposeAssignment({ organizationId: employee.organizationId, employeeId: worker.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 0, effectiveDate: '2026-04-16', actorId: 1, reason: 'First mapping' });
   await require('../src/services/compensationAssignments').decideAssignment({ organizationId: employee.organizationId, proposalId: proposal.id, decision: 'APPROVED', actorId: 2 });
   await worker.reload();
   const segments = await segmentsForMonth(worker, 2026, 4);
@@ -226,7 +226,7 @@ test('a mid-month adopted rate revision splits DA without paying monthly items t
     { organizationId: org.id, catalogueId: old.id, effectiveDate: '2026-04-01', status: 'APPROVED', preparedBy: 1, decidedBy: 2 },
     { organizationId: org.id, catalogueId: next.id, effectiveDate: '2026-04-16', status: 'APPROVED', preparedBy: 1, decidedBy: 2 },
   ]);
-  await EmployeeCompensationAssignment.create({ organizationId: org.id, employeeId: worker.id, catalogueId: old.id, postCode: 'CLERK', stageNo: 1, amount: 10000, effectiveDate: '2026-04-01', reason: 'Initial', status: 'APPROVED', preparedBy: 1, decidedBy: 2 });
+  await EmployeeCompensationAssignment.create({ organizationId: org.id, employeeId: worker.id, catalogueId: old.id, postCode: 'CLERK', stageNo: 0, amount: 10000, effectiveDate: '2026-04-01', reason: 'Initial', status: 'APPROVED', preparedBy: 1, decidedBy: 2 });
   const run = await require('../src/services/payrollEngine').processRun({ organizationId: org.id, year: 2026, month: 4 });
   const line = await PayrollRunLine.findOne({ where: { payrollRunId: run.id, employeeId: worker.id } });
   const slip = JSON.parse(line.payslipJson);
@@ -286,7 +286,7 @@ test('a processed payroll run cannot be approved after a relevant salary approva
   const run = await engine.findCurrentRun(employee.organizationId, 2026, 4);
   run.processedAt = new Date('2026-05-01T00:00:00Z');
   await run.save();
-  const proposal = await EmployeeCompensationAssignment.create({ organizationId: employee.organizationId, employeeId: employee.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 1, amount: 10000, effectiveDate: '2026-04-20', reason: 'Correction', preparedBy: 1 });
+  const proposal = await EmployeeCompensationAssignment.create({ organizationId: employee.organizationId, employeeId: employee.id, catalogueId: revision.id, postCode: 'CLERK', stageNo: 0, amount: 10000, effectiveDate: '2026-04-20', reason: 'Correction', preparedBy: 1 });
   await require('../src/services/compensationAssignments').decideAssignment({ organizationId: employee.organizationId, proposalId: proposal.id, decision: 'APPROVED', actorId: 2 });
   await assert.rejects(engine.approveRun(run, 3), /reprocess|changed|stale/i);
 });

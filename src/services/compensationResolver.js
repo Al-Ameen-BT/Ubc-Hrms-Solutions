@@ -14,7 +14,7 @@ async function resolveCompensation(employee, date, { transaction } = {}) {
   if (employee.directPay) return { source: 'DIRECT_PAY', basicPay: Number(assignment.amount), postCode: null, stageNo: null, catalogueId: null, orderNumber: null, payableDays: 30, monthDays: null };
   const catalogue = await BankRuleCatalogue.findByPk(assignment.catalogueId, { transaction });
   const post = catalogue?.posts?.find(row => row.code === assignment.postCode);
-  const amount = post?.stages?.[assignment.stageNo - 1];
+  const amount = post?.stages?.[assignment.stageNo];
   if (!catalogue || !post || amount !== Number(assignment.amount)) throw new CompensationError('Approved government salary assignment no longer resolves to its published stage.');
   return { source: 'CATALOGUE', basicPay: amount, postCode: post.code, postName: post.name, stageNo: assignment.stageNo, catalogueId: catalogue.id, bankClass: catalogue.bankClass, orderNumber: catalogue.orderNumber, scaleExpression: post.scaleExpression || null, payableDays: post.payableDays, monthDays: post.monthDays };
 }

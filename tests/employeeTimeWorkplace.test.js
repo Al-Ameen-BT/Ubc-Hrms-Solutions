@@ -50,7 +50,7 @@ test('workplace directory exposes only same-bank work identity', async () => {
 test('workplace role comes from the organisation position even when catalogue compensation differs', async () => {
   const employee = await Employee.findByPk(employeeId);
   const catalogue = await BankRuleCatalogue.create({ name: 'Roles', bankClass: 'CLASS_I', status: 'PUBLISHED', effectiveDate: '2026-01-01', posts: [{ code: 'MANAGER', name: 'Manager', stages: [20000], payableDays: 30 }], rules: [], payrollDefaults: {}, createdByUserId: 1 });
-  await EmployeeCompensationAssignment.create({ organizationId: employee.organizationId, employeeId, catalogueId: catalogue.id, postCode: 'MANAGER', stageNo: 1, amount: 20000, previousAmount: 10000, effectiveDate: '2026-01-01', reason: 'Role assignment', status: 'APPROVED', preparedBy: 1, decidedBy: 2 });
+  await EmployeeCompensationAssignment.create({ organizationId: employee.organizationId, employeeId, catalogueId: catalogue.id, postCode: 'MANAGER', stageNo: 0, amount: 20000, previousAmount: 10000, effectiveDate: '2026-01-01', reason: 'Role assignment', status: 'APPROVED', preparedBy: 1, decidedBy: 2 });
   const result = await call('/me/workplace', employeeToken);
   assert.equal(result.body.data[0].postName, 'Authoritative Officer');
 });
