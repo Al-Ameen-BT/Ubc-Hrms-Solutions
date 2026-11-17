@@ -120,7 +120,7 @@ test('every linked operational role can QR-link and keeps protected own access; 
     assert.equal((await request('/api/v1/mobile/session/refresh', 'POST', { refreshToken: issued.refreshToken })).status, 200);
   }
   const bootstrap = await User.create({ organizationId: org.id, email: 'bootstrap@versions.invalid', name: 'Admin', role: 'ORG_ADMIN', passwordHash: 'unused', mustChangePassword: false });
-  assert.equal((await request('/api/v1/me/devices/link', 'POST', { currentPassword: 'current-secret' }, auth.signToken(bootstrap))).status, 403);
+  assert.equal((await request('/api/v1/me/devices/link', 'POST', { currentPassword: 'current-secret' }, auth.signToken(bootstrap))).status, 409);
 });
 
 test('invalidation forces browser login and QR-only mobile relink, including pending link cancellation', async () => {

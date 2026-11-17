@@ -142,7 +142,7 @@ test('password reset revokes mobile devices', async () => {
 test('unlinked employee and admin cannot start a mobile link', async () => {
   assert.equal((await request('/me/devices/link', 'POST', { currentPassword: 'current-secret' }, signToken(unlinked))).status, 409);
   const admin = await User.create({ organizationId: owner.organizationId, email: 'device-admin@self.invalid', name: 'Admin', role: 'ORG_ADMIN', passwordHash: await hashPassword('current-secret') });
-  assert.equal((await request('/me/devices/link', 'POST', { currentPassword: 'current-secret' }, signToken(admin))).status, 403);
+  assert.equal((await request('/me/devices/link', 'POST', { currentPassword: 'current-secret' }, signToken(admin))).status, 409);
 });
 
 test('admin password reset and deactivation permanently revoke linked phones', async () => {

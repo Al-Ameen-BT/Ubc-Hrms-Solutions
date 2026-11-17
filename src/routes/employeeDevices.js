@@ -31,7 +31,7 @@ const idOf = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ?
 
 async function eligibleUser(id) {
   const user = await User.findByPk(id, { include: [{ model: Organization }] });
-  if (!user?.Organization || !checkOrgAccess(user.Organization).ok || !await hasActiveEmployeeLink(user)) return null;
+  if (!user?.Organization || !User.EMPLOYEE_SELF_SERVICE_ROLES.includes(user.role) || !checkOrgAccess(user.Organization).ok || !await hasActiveEmployeeLink(user)) return null;
   return user;
 }
 
@@ -45,14 +45,13 @@ employee.use(authenticate);
 employee.use(async (req, res, next) => {
   try {
     if (req.user.deviceId) return error(res, 403, 'PORTAL_REQUIRED', 'Manage linked devices from your web portal.');
-    if (!req.user.employeeId && req.user.role !== 'EMPLOYEE') return error(res, 403, 'EMPLOYEE_NOT_LINKED', 'An active employee account is required.');
     req.deviceUser = await eligibleUser(req.user.id);
     if (!req.deviceUser) return error(res, 409, 'EMPLOYEE_NOT_LINKED', 'An active, unique employee account is required.');
     next();
   } catch (err) { fail(res, err); }
 });
 
-employee.use(requireFeaturePermission('self.devices', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'BRANCH_MANAGER', 'EMPLOYEE']));
+employee.use(requireFeaturePermission('self.devices', User.EMPLOYEE_SELF_SERVICE_ROLES));
 
 employee.get('/', async (req, res) => {
   try {

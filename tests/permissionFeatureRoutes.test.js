@@ -61,6 +61,23 @@ test('operational users retain own self-service baseline and cannot read colleag
   assert.equal((await call(f.actor, `/employees/${f.people[0].id}/service-book`)).status, 200);
   assert.equal((await call(f.actor, `/employees/${f.people[1].id}/service-book`)).status, 403);
 });
+test('legacy linked operational roles retain employee-scoped self service while unlinked and platform users fail closed', async () => {
+  assert.deepEqual(m.User.EMPLOYEE_SELF_SERVICE_ROLES, m.User.ROLES.filter(value => value !== 'SUPER_ADMIN'));
+  for (const role of m.User.ROLES.filter(value => value !== 'SUPER_ADMIN')) {
+    const f = await fixture('LEGACY', role, 'EMPLOYEE', []);
+    const context = await call(f.actor, `/me/context?employeeId=${f.people[1].id}`);
+    assert.equal(context.status, 200, `${role}: ${JSON.stringify(context.body)}`);
+    assert.equal(context.body.data.employee.id, f.people[0].id, role);
+    assert.equal((await call(f.actor, '/me/payslips')).status, 200, role);
+    assert.equal((await call(f.actor, '/me/chart')).status, 200, role);
+  }
+  const f = await fixture('LEGACY', 'EMPLOYEE', 'EMPLOYEE', []);
+  const unlinked = await m.User.create({ organizationId: f.org.id, name: 'Unlinked operator', email: `unlinked${++n}@routes.invalid`, role: 'HR_OFFICER', passwordHash: 'unused' });
+  assert.equal((await call(unlinked, '/me/payslips')).status, 409);
+  assert.equal((await call(unlinked, '/me/chart')).status, 409);
+  const platform = await m.User.create({ name: 'Platform', email: `platform${++n}@routes.invalid`, role: 'SUPER_ADMIN', passwordHash: 'unused' });
+  assert.equal((await call(platform, '/me/context')).status, 403);
+});
 test('auth me exposes only effective permission codes and safe scope summary', async () => {
   const f = await fixture();
   const result = await call(f.actor, '/auth/me');
@@ -165,7 +182,7 @@ test('legacy read parity remains exact across every existing staff role before a
     ['/org/financial-changes', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']],
     ['/allowance-types', viewers], ['/leave-types', viewers],
     [`/organizations/${f.org.id}/payroll-runs`, viewers],
-    ['/org/settings', ['ORG_ADMIN']], ['/me/context', ['EMPLOYEE']],
+    ['/org/settings', ['ORG_ADMIN']], ['/me/context', staff],
   ];
   for (const role of staff) {
     await f.actor.update({ role });
@@ -202,7 +219,9 @@ test('Accounts reimbursement view exposes approved payment amounts and excludes 
 });
 test('HR can onboard direct-pay staff using personal mandatory fields; payroll rejects unapproved compensation without persisting zero-pay lines', async () => {
   const f = await fixture('PERMISSIONS', 'EMPLOYEE', 'HR_OFFICER', ['people.create']);
-  const created = await call(f.actor, '/employees', 'POST', { empCode: 'DirectNew', name: 'New direct-pay staff', doj: '2026-11-16', dob: '1990-01-01', postCadreId: f.post.id, directPay: true, panNumber: 'AAAAA1234A', aadhaarNumber: '123412341234', personalEmail: 'new@staff.invalid', designation: 'Clerk', gender: 'FEMALE', organizationAssignment: { branchId: f.a.id, effectiveFrom: '2026-11-16' } });
+  const department = await m.OrganizationDepartment.create({ organizationId: f.org.id, branchId: f.a.id, code: 'OPS', name: 'Operations' });
+  const position = await m.OrganizationPosition.create({ organizationId: f.org.id, branchId: f.a.id, departmentId: department.id, code: 'CLERK', name: 'Clerk', postCadreId: f.post.id });
+  const created = await call(f.actor, '/employees', 'POST', { empCode: 'DirectNew', name: 'New direct-pay staff', doj: '2026-11-16', dob: '1990-01-01', directPay: true, panNumber: 'AAAAA1234A', aadhaarNumber: '123412341234', personalEmail: 'new@staff.invalid', gender: 'FEMALE', organizationAssignment: { branchId: f.a.id, departmentId: department.id, positionId: position.id, effectiveFrom: '2026-11-16' } });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.data.currentBasicPay, null);
   const role = await m.OrganizationRole.create({ organizationId: f.org.id, code: 'PAY', name: 'Payroll preparer', templateCode: 'PAYROLL_OFFICER' });

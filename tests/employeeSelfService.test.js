@@ -46,7 +46,7 @@ test('unlinked and cross-tenant links cannot expose employee data', async () => 
   assert.equal((await request('/me/context', unlinkedToken)).status, 200);
   assert.equal((await request('/me/leave/balances', unlinkedToken)).status, 409);
   assert.equal((await request('/me/payslips', foreignToken)).status, 409);
-  assert.equal((await request('/me/payslips', adminToken)).status, 403);
+  assert.equal((await request('/me/payslips', adminToken)).status, 409);
 });
 
 test('employee gets only finalized own payslips and an authenticated frozen PDF', async () => {

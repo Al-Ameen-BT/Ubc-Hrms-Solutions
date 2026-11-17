@@ -42,6 +42,7 @@ const User = sequelize.define('User', {
 });
 
 User.ROLES = ROLES;
+User.EMPLOYEE_SELF_SERVICE_ROLES = Object.freeze(ROLES.filter(role => role !== 'SUPER_ADMIN'));
 // Compatibility role names stay unchanged while tenant assignments are prepared.
 User.LEGACY_ROLE_TEMPLATES = Object.freeze(Object.fromEntries(ROLES.filter(role => role !== 'SUPER_ADMIN').map(role => [role, role === 'ORG_ADMIN' ? 'ORGANISATION_ADMIN' : role])));
 
