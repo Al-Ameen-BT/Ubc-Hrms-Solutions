@@ -53,3 +53,14 @@ Deployment scripts, unrelated specs/plans, and unrelated UI edits remain unstage
 Completed the Task 11 permission-gate tail in `EmployeeAttendanceTab.jsx`, `EmployeeBankAccountsTab.jsx`, `EmployeeDocumentsTab.jsx`, `EmployeeLoansTab.jsx`, `EmployeesPage.jsx`, `ResourceSection.jsx`, `ArrearsCasePage.jsx`, `DaRevisionPage.jsx`, and `PayrollPage.jsx`. These actions use `canPermission(code, legacyRoles)` with existing legacy role allowlists, preserve own-document access through `self.documents`, and retain the existing arrears preparer/approver separation.
 
 Validation: `node --test frontend/tests/*.test.mjs` passed (2 passed, 0 failed); `npm run build` passed; `npm run version:check` passed (version 0.2.2 consistent); and `git diff --check` passed. Vite reported the existing 672.86 kB JavaScript chunk (180.71 kB gzip), above its 500 kB advisory threshold.
+
+## Fix Round 1
+
+- Added focused UI contract tests for payment-only reimbursement projection and optional role-assignment query failures.
+- RED: `node frontend/tests/organizationAccessUi.test.mjs` failed the two new tests against the prior implementation (11 passed, 2 failed).
+- GREEN: `node --test frontend/tests/*.test.mjs` passed (2 files, 2 passed, 0 failed; the organization access file contains 13 passing checks).
+- Reimbursement receipts now require `expenses.view` with the backend's existing legacy role allowlist. Payment-only rows show restricted text for omitted fields; API permissions are unchanged.
+- Readiness, role, and catalogue errors remain in the core page error state. User, assignment, branch, and department query errors stay inside User assignments; only dependent assignment controls are disabled. Effective-access preview loads only after a user record is available.
+- `npm run build` passed. Vite reports a 674.70 kB JavaScript chunk (181.07 kB gzip), above the 500 kB advisory threshold. Build output also printed three `Failed to create stream fd: Operation not permitted` messages before completing successfully.
+- `npm run version:check` passed (0.2.2 consistent); `git diff --check` passed.
+- No browser flow was run. The Impeccable detector was not manually rerun.

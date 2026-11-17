@@ -138,3 +138,27 @@ test('loan creation preserves the narrower legacy HR recorder boundary', () => {
     }
   }
 });
+
+test('payments-only reimbursement rows hide receipts and mark omitted details restricted', () => {
+  const page = source('features/org/EmployeeServicesAdminPage.jsx');
+  const receiptCell = page.match(/<td>([\s\S]*?)<\/td>\s*\{row\.status === 'SUBMITTED'/)?.[1] || page;
+  assert.match(receiptCell, /canPermission\('expenses\.view', \['ORG_ADMIN', 'HR_ADMIN', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'\]\)/);
+  assert.match(page, /row\.expenseDate \? fmt\.date\(row\.expenseDate\) : 'Restricted'/);
+  assert.match(page, /row\.category \|\| 'Restricted'/);
+  assert.match(page, /row\.purpose \|\| 'Restricted'/);
+  assert.match(source('api/organizationAccess.js'), /expenses: \[\['expenses\.view', 'payments\.view'\], \['ORG_ADMIN', 'HR_ADMIN', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'\]\]/);
+});
+
+test('optional role assignment support failures stay local to assignment operations', () => {
+  const page = source('features/org/RolesPermissionsPage.jsx');
+  assert.match(page, /const coreQueries = \[readinessQuery, rolesQuery, catalogueQuery\]/);
+  assert.match(page, /const coreLoadError = coreQueries\.find\(query => query\.error\)\?\.error/);
+  assert.match(page, /enabled=\{customEnabled && !coreLoadError\}/);
+  assert.match(page, /disabled=\{!readiness\.ready \|\| busy \|\| !!readinessQuery\.error\}/);
+  assert.match(page, /User assignments[\s\S]*?usersQuery\.error/);
+  assert.match(page, /assignmentsQuery\.error/);
+  assert.match(page, /branchesQuery\.error/);
+  assert.match(page, /departmentsQuery\.error/);
+  assert.match(page, /enabled: allowed && !!selectedUser/);
+  assert.doesNotMatch(page, /const queries = \[readinessQuery, rolesQuery, catalogueQuery, usersQuery, assignmentsQuery, branchesQuery, departmentsQuery\]/);
+});

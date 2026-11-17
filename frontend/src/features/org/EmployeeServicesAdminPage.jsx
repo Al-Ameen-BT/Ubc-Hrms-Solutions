@@ -102,10 +102,10 @@ function ExpenseReview() {
       <p>Prepared claims need separate approval. Record payment only after the bank transfer has been made.</p>
       <div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Expense</th><th>Purpose</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
         {rows.map(row => <tr key={row.id}>
-          <td>{row.Employee?.name}</td><td>{fmt.date(row.expenseDate)} · {row.category}</td><td>{row.purpose}</td><td>{fmt.money(row.amount)}</td>
+          <td>{row.Employee?.name || '—'}</td><td>{row.expenseDate ? fmt.date(row.expenseDate) : 'Restricted'} · {row.category || 'Restricted'}</td><td>{row.purpose || 'Restricted'}</td><td>{fmt.money(row.amount)}</td>
           <td><Badge variant={['APPROVED', 'PAID'].includes(row.status) ? 'success' : ['REJECTED', 'WITHDRAWN'].includes(row.status) ? 'danger' : 'warning'}>{row.status}</Badge></td>
           <td><div className="row-actions">
-            <Button size="sm" variant="secondary" onClick={() => employeeAdminApi.openExpenseReceipt(row.id).catch(e => setError(e.message))}>Receipt</Button>
+            {canPermission('expenses.view', ['ORG_ADMIN', 'HR_ADMIN', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) ? <Button size="sm" variant="secondary" onClick={() => employeeAdminApi.openExpenseReceipt(row.id).catch(e => setError(e.message))}>Receipt</Button> : <span>Restricted</span>}
             {row.status === 'SUBMITTED' && canPermission('financialChanges.prepare', ['ACCOUNTS_OFFICER', 'PAYROLL_OFFICER']) && canDecide(user, row, ['submittedBy']) && <Button size="sm" onClick={() => action.mutate({ id: row.id, kind: 'prepare' })}>Prepare</Button>}
             {row.status === 'PREPARED' && canPermission('expenses.approve', ['ORG_ADMIN', 'APPROVING_AUTHORITY']) && canDecide(user, row, ['submittedBy', 'preparedBy']) && <><Button size="sm" onClick={() => action.mutate({ id: row.id, kind: 'APPROVED' })}>Approve independently</Button><Button size="sm" variant="secondary" onClick={() => { setRejection(row); setReason(''); }}>Reject</Button></>}
             {row.status === 'APPROVED' && canPermission('payments.pay', ['ACCOUNTS_OFFICER']) && canDecide(user, row, ['submittedBy', 'preparedBy', 'decidedBy']) && <Button size="sm" onClick={() => setPayment(row)}>Record payment</Button>}
