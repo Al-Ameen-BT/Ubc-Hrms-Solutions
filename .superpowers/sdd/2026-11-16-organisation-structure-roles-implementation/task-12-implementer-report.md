@@ -61,3 +61,24 @@ Applied the four Task 12 review findings:
 - `npm run build` in `frontend/`: passed. Vite reported the large-chunk advisory (748.77 kB); the environment printed three `Failed to create stream fd: Operation not permitted` messages before the successful build.
 - `npm run version:check`: passed at 0.2.2. `git diff --check`: passed.
 - Impeccable detector was not rerun, as directed; it had already run once for Task 12. Browser/CUA verification remains unavailable.
+
+## Position-derived onboarding follow-up
+
+Inspection confirmed `Employee.postCadreId` is non-null and `designation` is mandatory by default. The existing reconciliation path already maps `Position.name` to employee designation. Permission-mode onboarding now requires an active position matching the selected branch and department, verifies its post/cadre belongs to the same organisation, derives both fields from that position, and runs permission-mode mandatory-field validation inside the transaction before `Employee.create`. Client attempts to supply either field are rejected. The legacy creation path is unchanged.
+
+HR Admin and HR Officer templates have `people.create` without `positions.view`, so the required selector could not use the existing positions endpoint. Added `GET /org/structure/position-options` under `people.create`; it returns only active, post-backed positions in the caller's effective scope with safe option fields. The frontend now uses that reader, requires a selected post-backed position, and clears it when branch or department changes. This does not grant `positions.view` or `positions.manage`.
+
+RED/GREEN evidence:
+
+- `permissionOnboardingPosition.test.js` first failed on the exact frontend helper payload with `Employee.postCadreId cannot be null`. It now passes 6 database-backed cases: derived fields and assignment, missing/mismatched position, branch-scope denial, inactive/no-post position, client overrides, and scoped option listing for HR Officer versus HR Admin.
+- The new position-readiness case in `employeeOnboardingPayload.test.mjs` first failed because the readiness policy was absent. It now confirms an active post-backed position in the selected unit and effective date are required. Frontend wiring checks cover the required selector and branch/department dependent resets.
+- `permissionFeatureRoutes.test.js` was updated to exercise derived fields and the read endpoint over HTTP, but its pre-existing local listener cannot start in this sandbox (`listen EPERM` on `127.0.0.1`). The service-level database tests run without a socket.
+
+### Follow-up verification
+
+- `node --test frontend/tests/*.mjs`: 6 files passed, 0 failed.
+- `node tests/permissionOnboardingPosition.test.js`: 6 passed; `node tests/organizationStructure.test.js`: 17 passed; `node tests/organizationStructureModels.test.js`: 6 passed.
+- `node tests/orgBranchOptions.test.js` and `node tests/orgTransferSafeResponse.test.js`: passed.
+- `npm run build` in `frontend/`: passed. Vite reported a 749.71 kB chunk advisory; three stream-FD permission messages appeared before the successful build.
+- `npm run version:check`: passed at 0.2.2. `git diff --check`: passed.
+- Impeccable detector was not rerun, as directed.

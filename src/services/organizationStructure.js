@@ -5,7 +5,7 @@ const {
   OrganizationPosition: Position, Employee, EmployeeOrganizationAssignment: Assignment,
   OrganizationResponsibilityAssignment: Responsibility, User, PostCadre, AuditLog,
 } = require('../models');
-const { branchFields, OrgFieldError } = require('./orgFields');
+const { branchFields, OrgFieldError, validateEmployeeMandatoryFields } = require('./orgFields');
 const { todayIST } = require('./orgAccess');
 const { sameId } = require('./organizationAccessPolicy');
 const { effectiveAccess, can, scopedWhere } = require('./accessControl');
@@ -240,12 +240,30 @@ async function onboardEmployee(options) {
     const destination = o.organizationAssignment;
     if (!destination || typeof destination !== 'object' || Array.isArray(destination) || Object.keys(destination).some(key => !['branchId', 'departmentId', 'positionId', 'effectiveFrom', 'effectiveTo'].includes(key))) fail('An organizationAssignment with branchId and effectiveFrom is required');
     dates(destination);
-    const { branch, department } = await validateOwnership(destination, o);
+    const { branch, department, position } = await validateOwnership(destination, o);
     const access = await effectiveAccess(o.actor.id, todayIST(), o.transaction);
     if (!can(access, 'people.create', { resourceType: 'Employee', organizationId: o.organizationId, branchId: branch.id, departmentId: department?.id || null })) throw Object.assign(new OrgFieldError('Employee destination is outside your creation scope'), { status: 403 });
     if (o.data.id != null || o.data.status === 'INACTIVE') fail('Initial onboarding requires a new active employee');
     if (o.organization.maxEmployees != null && await Employee.count({ where: { organizationId: o.organizationId, status: 'ACTIVE' }, transaction: o.transaction }) >= o.organization.maxEmployees) throw Object.assign(new OrgFieldError('Employee licence limit reached'), { status: 409 });
-    const employee = await Employee.create({ ...o.data, organizationId: o.organizationId }, { transaction: o.transaction });
+    let employeeFields = o.data || {};
+    if (access.accessControlMode === 'PERMISSIONS') {
+      if (Object.hasOwn(employeeFields, 'postCadreId') || Object.hasOwn(employeeFields, 'designation')) fail('Post and designation are derived from the selected position and cannot be provided during onboarding');
+      if (!position) fail('Select an active position for this employee');
+      if (position.postCadreId == null) fail('The selected position must have a post and cadre');
+      const post = await row(PostCadre, position.postCadreId, o.organizationId, o.transaction);
+      employeeFields = { ...employeeFields, postCadreId: post.id, designation: position.name };
+      const mandatoryPolicy = {
+        ...o.organization.toJSON(),
+        mandatoryEmployeeFields: {
+          ...o.organization.mandatoryEmployeeFields,
+          currentPayScaleId: false,
+          currentStageId: false,
+          bankDetails: false,
+        },
+      };
+      validateEmployeeMandatoryFields(mandatoryPolicy, employeeFields);
+    }
+    const employee = await Employee.create({ ...employeeFields, organizationId: o.organizationId }, { transaction: o.transaction });
     await createOrganizationAssignment({ ...o, data: { ...destination, employeeId: employee.id } });
     await audit(o, 'employee.onboard', employee);
     return employee;
@@ -260,6 +278,26 @@ async function branchOptions(access) {
     order: [['name', 'ASC'], ['id', 'ASC']],
   });
   return branches.map(branch => ({ id: branch.id, name: branch.name, status: branch.status }));
+}
+
+async function onboardingPositionOptions(access, filters = {}) {
+  if (!can(access, 'people.create')) return [];
+  const where = [scopedWhere(access, 'people.create', 'OrganizationPosition'), { status: 'ACTIVE' }, { postCadreId: { [Op.not]: null } }];
+  if (filters.branchId != null && filters.branchId !== '') where.push({ branchId: id(filters.branchId, 'Branch') });
+  if (filters.departmentId != null && filters.departmentId !== '') where.push({ departmentId: id(filters.departmentId, 'Department') });
+  const positions = await Position.findAll({
+    where: { [Op.and]: where },
+    attributes: ['id', 'branchId', 'departmentId', 'postCadreId', 'name', 'status'],
+    order: [['branchId', 'ASC'], ['departmentId', 'ASC'], ['name', 'ASC'], ['id', 'ASC']],
+  });
+  return positions.map(position => ({
+    id: position.id,
+    branchId: position.branchId,
+    departmentId: position.departmentId,
+    postCadreId: position.postCadreId,
+    name: position.name,
+    status: position.status,
+  }));
 }
 
 async function assignResponsibility(options) {
@@ -352,5 +390,5 @@ async function reconcileEffectiveAssignments(options) {
 module.exports = {
   configureHeadOffice, createBranch, updateBranch, deactivateBranch,
   createDepartment, updateDepartment, deactivateDepartment, createPosition, updatePosition, deactivatePosition,
-  onboardEmployee, branchOptions, assignEmployeeOrganization, assignResponsibility, currentResponsibility, reconcileEffectiveAssignments,
+  onboardEmployee, branchOptions, onboardingPositionOptions, assignEmployeeOrganization, assignResponsibility, currentResponsibility, reconcileEffectiveAssignments,
 };

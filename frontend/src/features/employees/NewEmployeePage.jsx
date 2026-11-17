@@ -10,7 +10,7 @@ import { Card } from '../../components/ui/Card';
 import { Stepper } from '../../components/ui/Stepper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-import { buildEmployeeCreatePayload, employeeOnboardingSteps } from './employeeOnboarding.js';
+import { buildEmployeeCreatePayload, employeeOnboardingSteps, isPermissionAssignmentReady } from './employeeOnboarding.js';
 
 const EMPTY = {
   empCode: '', name: '', dob: '', gender: 'MALE', category: 'GENERAL',
@@ -43,10 +43,14 @@ export function NewEmployeePage() {
   const catalogueBank = !!adoption?.requiresCatalogueAdoption;
   const branchesQuery = useQuery({ queryKey: ['new-employee-branches'], queryFn: organizationAccessApi.onboardingBranches, enabled: permissionMode && canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) });
   const departmentsQuery = useQuery({ queryKey: ['new-employee-departments'], queryFn: organizationAccessApi.departments, enabled: permissionMode && !!organizationAssignment.branchId && canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN']) });
-  const positionsQuery = useQuery({ queryKey: ['new-employee-positions'], queryFn: organizationAccessApi.positions, enabled: permissionMode && !!organizationAssignment.branchId && canPermission('positions.view', ['ORG_ADMIN']) });
+  const positionsQuery = useQuery({
+    queryKey: ['new-employee-position-options', organizationAssignment.branchId, organizationAssignment.departmentId],
+    queryFn: () => organizationAccessApi.onboardingPositions(organizationAssignment.branchId, organizationAssignment.departmentId),
+    enabled: permissionMode && !!organizationAssignment.branchId && canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']),
+  });
   const activeBranches = (branchesQuery.data?.rows || []).filter(row => row.status === 'ACTIVE');
   const activeDepartments = (departmentsQuery.data?.rows || []).filter(row => row.status === 'ACTIVE' && String(row.branchId) === String(organizationAssignment.branchId));
-  const activePositions = (positionsQuery.data?.rows || []).filter(row => row.status === 'ACTIVE' && String(row.branchId) === String(organizationAssignment.branchId) && (!organizationAssignment.departmentId || String(row.departmentId) === String(organizationAssignment.departmentId)));
+  const activePositions = (positionsQuery.data?.rows || []).filter(row => row.status === 'ACTIVE' && row.postCadreId != null && String(row.branchId) === String(organizationAssignment.branchId) && (!organizationAssignment.departmentId || String(row.departmentId) === String(organizationAssignment.departmentId)));
 
   const { data: stages } = useQuery({
     queryKey: ['pay-stages', form.currentPayScaleId],
@@ -65,7 +69,7 @@ export function NewEmployeePage() {
 
   const canAdvance = () => {
     if (currentStep === 'identity') return form.name && form.empCode && form.dob && form.gender;
-    if (currentStep === 'service') return form.doj && (permissionMode || form.postCadreId) && (!permissionMode || organizationAssignment.branchId && organizationAssignment.effectiveFrom && activeBranches.some(row => String(row.id) === String(organizationAssignment.branchId)));
+    if (currentStep === 'service') return form.doj && (permissionMode || form.postCadreId) && (!permissionMode || isPermissionAssignmentReady(organizationAssignment, activeBranches, activePositions));
     if (currentStep === 'pay') return permissionMode || catalogueBank || (form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay);
     if (currentStep === 'bank') return form.bankName && form.bankAccountNumber && form.bankIfsc;
     return true;
@@ -144,16 +148,16 @@ export function NewEmployeePage() {
           </div>
           {permissionMode && <section className="new-employee-structure" aria-labelledby="new-employee-structure-title">
             <h3 id="new-employee-structure-title">Organisation assignment</h3>
-            <p className="form-note">Select the real branch and effective date for this employee. Department and position are optional.</p>
+            <p className="form-note">Select the real branch, effective date, and active position. Department fills from the selected position when available.</p>
             {!canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <div className="auth-notice" role="status">Branch selection requires people.create access. Ask an organisation administrator to include that permission before creating this employee.</div>}
             {branchesQuery.error && <div className="auth-error" role="alert">{branchesQuery.error.message || 'Branches could not be loaded.'} Retry after checking your branch access.</div>}
             {departmentsQuery.error && <div className="auth-error" role="alert">{departmentsQuery.error.message || 'Departments could not be loaded.'} You can continue without a department.</div>}
-            {positionsQuery.error && <div className="auth-error" role="alert">{positionsQuery.error.message || 'Positions could not be loaded.'} You can continue without a position.</div>}
+            {positionsQuery.error && <div className="auth-error" role="alert">{positionsQuery.error.message || 'Positions could not be loaded.'} An active position with a post and cadre is required for onboarding. <Button size="sm" variant="secondary" onClick={() => positionsQuery.refetch()}>Retry positions</Button></div>}
             <div className="form-grid">
               <div className="field"><label className="field-label" htmlFor="new-employee-branch">Branch</label><select id="new-employee-branch" className="input" required value={organizationAssignment.branchId} disabled={branchesQuery.isLoading || !canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'])} onChange={event => setOrganizationAssignment(value => ({ ...value, branchId: event.target.value, departmentId: '', positionId: '' }))}><option value="">Select branch</option>{activeBranches.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
               <Input id="new-employee-structure-date" label="Assignment effective date" type="date" required value={organizationAssignment.effectiveFrom} onChange={event => setOrganizationAssignment(value => ({ ...value, effectiveFrom: event.target.value }))} />
-              <div className="field"><label className="field-label" htmlFor="new-employee-department">Department (optional)</label><select id="new-employee-department" className="input" value={organizationAssignment.departmentId} disabled={!organizationAssignment.branchId || !canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN'])} onChange={event => setOrganizationAssignment(value => ({ ...value, departmentId: event.target.value, positionId: '' }))}><option value="">No department</option>{activeDepartments.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
-              <div className="field"><label className="field-label" htmlFor="new-employee-position">Position (optional)</label><select id="new-employee-position" className="input" value={organizationAssignment.positionId} disabled={!organizationAssignment.branchId || !canPermission('positions.view', ['ORG_ADMIN'])} onChange={event => { const position = activePositions.find(row => String(row.id) === event.target.value); setOrganizationAssignment(value => ({ ...value, positionId: event.target.value, ...(value.departmentId || !position?.departmentId ? {} : { departmentId: String(position.departmentId) }) })); }}><option value="">No position</option>{activePositions.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+              <div className="field"><label className="field-label" htmlFor="new-employee-department">Department (optional)</label><select id="new-employee-department" className="input" value={organizationAssignment.departmentId} disabled={!organizationAssignment.branchId || !canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN'])} onChange={event => setOrganizationAssignment(value => ({ ...value, departmentId: event.target.value, positionId: '' }))}><option value="">No department selected</option>{activeDepartments.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+              <div className="field"><label className="field-label" htmlFor="new-employee-position">Position</label><select id="new-employee-position" className="input" required value={organizationAssignment.positionId} disabled={!organizationAssignment.branchId || positionsQuery.isLoading || !canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'])} onChange={event => { const position = activePositions.find(row => String(row.id) === event.target.value); setOrganizationAssignment(value => ({ ...value, positionId: event.target.value, ...(value.departmentId || !position?.departmentId ? {} : { departmentId: String(position.departmentId) }) })); }}><option value="">Select a position</option>{activePositions.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>{!positionsQuery.isLoading && !positionsQuery.error && organizationAssignment.branchId && !activePositions.length && <p className="field-hint">No active positions with a post and cadre are available for this branch and department.</p>}</div>
             </div>
           </section>}
           </>

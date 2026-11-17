@@ -30,3 +30,20 @@ test('permission-mode onboarding omits the bank step while legacy onboarding kee
   assert.match(page, /const steps = employeeOnboardingSteps\(permissionMode\)/);
   assert.match(page, /\{currentStep === 'bank' &&/);
 });
+
+test('permission-mode onboarding requires an active branch, effective date, and post-backed position in that unit', () => {
+  assert.equal(typeof employeeOnboarding.isPermissionAssignmentReady, 'function', 'assignment readiness policy is available');
+  const branches = [{ id: 12, status: 'ACTIVE' }];
+  const positions = [{ id: 34, branchId: 12, departmentId: 56, postCadreId: 78, status: 'ACTIVE' }];
+  assert.equal(employeeOnboarding.isPermissionAssignmentReady({ branchId: '12', departmentId: '56', positionId: '34', effectiveFrom: '2026-11-17' }, branches, positions), true);
+  assert.equal(employeeOnboarding.isPermissionAssignmentReady({ branchId: '12', departmentId: '', positionId: '', effectiveFrom: '2026-11-17' }, branches, positions), false);
+  assert.equal(employeeOnboarding.isPermissionAssignmentReady({ branchId: '22', departmentId: '', positionId: '34', effectiveFrom: '2026-11-17' }, branches, positions), false);
+  assert.equal(employeeOnboarding.isPermissionAssignmentReady({ branchId: '12', departmentId: '99', positionId: '34', effectiveFrom: '2026-11-17' }, branches, positions), false);
+  assert.equal(employeeOnboarding.isPermissionAssignmentReady({ branchId: '12', departmentId: '56', positionId: '34', effectiveFrom: '' }, branches, positions), false);
+  const page = readFileSync(new URL('../src/features/employees/NewEmployeePage.jsx', import.meta.url), 'utf8');
+  assert.match(page, /isPermissionAssignmentReady\(organizationAssignment, activeBranches, activePositions\)/);
+  assert.match(page, /organizationAccessApi\.onboardingPositions/);
+  assert.match(page, /id="new-employee-position" className="input" required/);
+  assert.match(page, /branchId: event\.target\.value, departmentId: '', positionId: ''/);
+  assert.match(page, /departmentId: event\.target\.value, positionId: ''/);
+});

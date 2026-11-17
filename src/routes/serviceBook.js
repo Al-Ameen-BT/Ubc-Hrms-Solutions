@@ -291,7 +291,9 @@ const employeeCrud = crudRouter(Employee, {
         if (req.access?.accessControlMode !== 'PERMISSIONS' && !org?.requiresCatalogueAdoption && !(Number(payload.currentBasicPay) > 0)) throw Object.assign(new Error('A positive bank-set monthly gross salary is required.'), { status: 400 });
       }
       if (payload.status !== 'INACTIVE') await assertCanAddEmployee(payload.organizationId);
-      validatePeopleFields(req, org, payload);
+      // Permission-mode onboarding derives designation and post/cadre from its
+      // selected authoritative position inside organizationStructure's transaction.
+      if (req.access?.accessControlMode !== 'PERMISSIONS') validatePeopleFields(req, org, payload);
     },
     beforeUpdate: async (req, row, payload) => {
       requireFinancialFields(req, payload, row);

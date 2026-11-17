@@ -73,13 +73,19 @@ test('auth me exposes only effective permission codes and safe scope summary', a
 test('permission-mode onboarding atomically creates the scoped authoritative assignment and rolls back invalid destinations', async () => {
   const f = await fixture('PERMISSIONS', 'EMPLOYEE', 'HR_OFFICER', ['people.create', 'people.view', 'people.edit']);
   await f.org.update({ mandatoryEmployeeFields: Object.fromEntries(require('../src/services/orgFields').MANDATORY_FIELD_DEFS.map(field => [field.key, false])) });
-  const payload = { empCode: 'New', name: 'New employee', doj: '2026-11-16', postCadreId: f.post.id, organizationAssignment: { branchId: f.a.id, effectiveFrom: '2026-11-16' } };
+  const deptA = await m.OrganizationDepartment.create({ organizationId: f.org.id, branchId: f.a.id, code: 'OPS', name: 'Operations A' });
+  const deptB = await m.OrganizationDepartment.create({ organizationId: f.org.id, branchId: f.b.id, code: 'OPS', name: 'Operations B' });
+  const positionA = await m.OrganizationPosition.create({ organizationId: f.org.id, branchId: f.a.id, departmentId: deptA.id, code: 'CLERK', name: 'Clerk A', postCadreId: f.post.id });
+  const positionB = await m.OrganizationPosition.create({ organizationId: f.org.id, branchId: f.b.id, departmentId: deptB.id, code: 'CLERK', name: 'Clerk B', postCadreId: f.post.id });
+  const payload = { empCode: 'New', name: 'New employee', doj: '2026-11-16', organizationAssignment: { branchId: f.a.id, departmentId: deptA.id, positionId: positionA.id, effectiveFrom: '2026-11-16' } };
   const created = await call(f.actor, '/employees', 'POST', payload);
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const employee = await m.Employee.findByPk(created.body.data.id);
   assert.equal(employee.branchId, f.a.id);
+  assert.equal(employee.postCadreId, f.post.id);
+  assert.equal(employee.designation, positionA.name);
   assert.equal(await m.EmployeeOrganizationAssignment.count({ where: { employeeId: employee.id, branchId: f.a.id } }), 1);
-  const denied = await call(f.actor, '/employees', 'POST', { ...payload, empCode: 'Forbidden', organizationAssignment: { branchId: f.b.id, effectiveFrom: '2026-11-16' } });
+  const denied = await call(f.actor, '/employees', 'POST', { ...payload, empCode: 'Forbidden', organizationAssignment: { branchId: f.b.id, departmentId: deptB.id, positionId: positionB.id, effectiveFrom: '2026-11-16' } });
   assert.equal(denied.status, 403);
   assert.equal(await m.Employee.count({ where: { organizationId: f.org.id, empCode: 'Forbidden' } }), 0);
   assert.equal((await call(f.actor, '/employees', 'POST', { ...payload, empCode: 'NoBranch', organizationAssignment: undefined })).status, 400);
@@ -93,6 +99,16 @@ test('people.create can read only safe branch options within its effective scope
   assert.deepEqual(scoped.body.data, [{ id: officer.a.id, name: 'A', status: 'ACTIVE' }]);
   assert.equal((await call(officer.actor, '/org/structure/branches')).status, 403);
   assert.equal((await call(officer.actor, '/org/structure/branches', 'POST', { code: 'NEW', name: 'New branch' })).status, 403);
+  const officerDeptA = await m.OrganizationDepartment.create({ organizationId: officer.org.id, branchId: officer.a.id, code: 'OPS', name: 'Operations A' });
+  const officerDeptB = await m.OrganizationDepartment.create({ organizationId: officer.org.id, branchId: officer.b.id, code: 'OPS', name: 'Operations B' });
+  const officerPositionA = await m.OrganizationPosition.create({ organizationId: officer.org.id, branchId: officer.a.id, departmentId: officerDeptA.id, code: 'CLERK', name: 'Clerk A', postCadreId: officer.post.id });
+  await m.OrganizationPosition.create({ organizationId: officer.org.id, branchId: officer.a.id, departmentId: officerDeptA.id, code: 'NOPOST', name: 'No post', postCadreId: null });
+  await m.OrganizationPosition.create({ organizationId: officer.org.id, branchId: officer.a.id, departmentId: officerDeptA.id, code: 'INACTIVE', name: 'Inactive', postCadreId: officer.post.id, status: 'INACTIVE' });
+  await m.OrganizationPosition.create({ organizationId: officer.org.id, branchId: officer.b.id, departmentId: officerDeptB.id, code: 'CLERK', name: 'Clerk B', postCadreId: officer.post.id });
+  const officerPositions = await call(officer.actor, `/org/structure/position-options?branchId=${officer.a.id}`);
+  assert.equal(officerPositions.status, 200, JSON.stringify(officerPositions.body));
+  assert.deepEqual(officerPositions.body.data, [{ id: officerPositionA.id, branchId: officer.a.id, departmentId: officerDeptA.id, postCadreId: officer.post.id, name: 'Clerk A', status: 'ACTIVE' }]);
+  assert.deepEqual((await call(officer.actor, `/org/structure/position-options?branchId=${officer.b.id}`)).body.data, []);
 
   const hrAdmin = await fixture('PERMISSIONS', 'EMPLOYEE', 'HR_ADMIN', ['people.create']);
   const organisationWide = await call(hrAdmin.actor, '/org/structure/branch-options');
@@ -101,6 +117,13 @@ test('people.create can read only safe branch options within its effective scope
     { id: hrAdmin.a.id, name: 'A', status: 'ACTIVE' },
     { id: hrAdmin.b.id, name: 'B', status: 'ACTIVE' },
   ]);
+  const adminDeptA = await m.OrganizationDepartment.create({ organizationId: hrAdmin.org.id, branchId: hrAdmin.a.id, code: 'OPS', name: 'Operations A' });
+  const adminDeptB = await m.OrganizationDepartment.create({ organizationId: hrAdmin.org.id, branchId: hrAdmin.b.id, code: 'OPS', name: 'Operations B' });
+  const adminPositionA = await m.OrganizationPosition.create({ organizationId: hrAdmin.org.id, branchId: hrAdmin.a.id, departmentId: adminDeptA.id, code: 'CLERK', name: 'Clerk A', postCadreId: hrAdmin.post.id });
+  const adminPositionB = await m.OrganizationPosition.create({ organizationId: hrAdmin.org.id, branchId: hrAdmin.b.id, departmentId: adminDeptB.id, code: 'CLERK', name: 'Clerk B', postCadreId: hrAdmin.post.id });
+  const adminPositions = await call(hrAdmin.actor, '/org/structure/position-options');
+  assert.equal(adminPositions.status, 200, JSON.stringify(adminPositions.body));
+  assert.deepEqual(adminPositions.body.data.map(row => row.id), [adminPositionA.id, adminPositionB.id]);
 });
 test('ambiguous current employee placements fail closed and attendance lists exclude other branches at query time', async () => {
   const f = await fixture();

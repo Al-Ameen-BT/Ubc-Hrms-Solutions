@@ -57,6 +57,13 @@ export const organizationAccessApi = {
   preview: userId => api.get(`/org/access-preview/${userId}`),
   branches: () => api.get(`${structurePath}/branches`),
   onboardingBranches: () => api.get(`${structurePath}/branch-options`),
+  onboardingPositions: (branchId, departmentId) => {
+    const query = new URLSearchParams();
+    if (branchId) query.set('branchId', branchId);
+    if (departmentId) query.set('departmentId', departmentId);
+    const search = query.toString();
+    return api.get(`${structurePath}/position-options${search ? `?${search}` : ''}`);
+  },
   configureHeadOffice: body => api.post(`${structurePath}/head-office`, body),
   createBranch: body => api.post(`${structurePath}/branches`, body),
   updateBranch: (id, body) => api.put(`${structurePath}/branches/${id}`, body),

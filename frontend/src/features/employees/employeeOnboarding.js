@@ -15,6 +15,14 @@ export function employeeOnboardingSteps(permissionMode) {
   return permissionMode ? STEPS.filter(step => step.key !== 'bank') : STEPS;
 }
 
+export function isPermissionAssignmentReady(assignment, branches, positions) {
+  const branch = branches.find(row => String(row.id) === String(assignment.branchId) && row.status === 'ACTIVE');
+  const position = positions.find(row => String(row.id) === String(assignment.positionId) && row.status === 'ACTIVE' && row.postCadreId != null);
+  return !!assignment.effectiveFrom && !!branch && !!position
+    && String(position.branchId) === String(branch.id)
+    && (!assignment.departmentId || String(position.departmentId) === String(assignment.departmentId));
+}
+
 export function buildPermissionEmployeePayload(form, assignment) {
   const employee = Object.fromEntries(PERMISSION_EMPLOYEE_FIELDS
     .filter(key => Object.hasOwn(form, key))
