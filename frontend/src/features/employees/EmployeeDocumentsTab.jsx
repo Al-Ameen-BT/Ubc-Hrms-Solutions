@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { documentApi } from '../../api/extended';
 import { openFile } from '../../api/client';
 import { readFileAsDataUrl, assertUploadable, humanSize, ACCEPTED_UPLOAD_TYPES } from '../../lib/files';
+import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
@@ -20,6 +21,10 @@ const DOC_TYPES = [
 ];
 
 export function EmployeeDocumentsTab({ employeeId }) {
+  const { user, canPermission } = useAuth();
+  const canRead = canPermission('documents.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) || String(user?.employeeId) === String(employeeId) && canPermission('self.documents', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']);
+  const canUpload = canPermission('documents.manage', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'ACCOUNTS_OFFICER']);
+  const canRemove = canPermission('documents.manage', ['ORG_ADMIN', 'HR_ADMIN']);
   const queryClient = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -33,6 +38,7 @@ export function EmployeeDocumentsTab({ employeeId }) {
   const { data, isLoading } = useQuery({
     queryKey: ['emp-documents', employeeId],
     queryFn: () => documentApi.list(employeeId),
+    enabled: canRead,
   });
   const rows = data?.rows || [];
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['emp-documents', employeeId] });
@@ -70,7 +76,7 @@ export function EmployeeDocumentsTab({ employeeId }) {
       render: (r) => (
         <div className="row-actions">
           <Button variant="secondary" size="sm" onClick={() => openFile(documentApi.fileUrl(employeeId, r.id)).catch((e) => toast.add(e.message, 'error'))}>View</Button>
-          <Button
+          {canRemove && <Button
             variant="secondary"
             size="sm"
             onClick={() => {
@@ -79,17 +85,19 @@ export function EmployeeDocumentsTab({ employeeId }) {
             }}
           >
             Remove
-          </Button>
+          </Button>}
         </div>
       ),
     },
   ];
 
+  if (!canRead) return <p>Document access is not granted by your current assignments.</p>;
+
   return (
     <Card title="Documents" noPadding>
       <div className="table-toolbar">
         <span className="form-note">PAN, Aadhaar, certificates and photograph — stored securely against the employee record.</span>
-        <Button onClick={() => { setError(''); setOpen(true); }}>Upload Document</Button>
+        {canUpload && <Button onClick={() => { setError(''); setOpen(true); }}>Upload Document</Button>}
       </div>
       <Table columns={columns} data={rows} keyField="id" loading={isLoading} emptyMessage="No documents on file." />
 

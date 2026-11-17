@@ -20,7 +20,7 @@ function statusVariant(status) {
 
 export function PayrollPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, canPermission } = useAuth();
   const orgId = user?.organizationId;
 
   const { data, isLoading } = useQuery({
@@ -57,7 +57,7 @@ export function PayrollPage() {
       <Card noPadding>
         <div className="table-toolbar">
           <div />
-          <Button onClick={() => navigate('/payroll/new')}>New Payroll Run</Button>
+          {canPermission('payroll.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']) && <Button onClick={() => navigate('/payroll/new')}>New Payroll Run</Button>}
         </div>
         <Table
           columns={columns}

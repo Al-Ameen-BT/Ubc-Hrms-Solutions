@@ -47,3 +47,9 @@
 - `tests/organizationAccessUiMetadata.test.js`
 
 Deployment scripts, unrelated specs/plans, and unrelated UI edits remain unstaged.
+
+## Addendum: remaining permission-aware UI actions
+
+Completed the Task 11 permission-gate tail in `EmployeeAttendanceTab.jsx`, `EmployeeBankAccountsTab.jsx`, `EmployeeDocumentsTab.jsx`, `EmployeeLoansTab.jsx`, `EmployeesPage.jsx`, `ResourceSection.jsx`, `ArrearsCasePage.jsx`, `DaRevisionPage.jsx`, and `PayrollPage.jsx`. These actions use `canPermission(code, legacyRoles)` with existing legacy role allowlists, preserve own-document access through `self.documents`, and retain the existing arrears preparer/approver separation.
+
+Validation: `node --test frontend/tests/*.test.mjs` passed (2 passed, 0 failed); `npm run build` passed; `npm run version:check` passed (version 0.2.2 consistent); and `git diff --check` passed. Vite reported the existing 672.86 kB JavaScript chunk (180.71 kB gzip), above its 500 kB advisory threshold.

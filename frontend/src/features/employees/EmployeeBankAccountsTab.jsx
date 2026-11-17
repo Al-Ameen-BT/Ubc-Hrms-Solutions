@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { serviceBookApi } from '../../api/extended';
+import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
@@ -20,6 +21,10 @@ const ACCOUNT_TYPES = [
 const BLANK = { accountType: 'SB', accountNumber: '', bankName: '', ifsc: '', branchName: '', remarks: '', status: 'ACTIVE' };
 
 export function EmployeeBankAccountsTab({ employeeId }) {
+  const { canPermission } = useAuth();
+  const canRead = canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']);
+  const canCreate = canPermission('compensation.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'ACCOUNTS_OFFICER']);
+  const canEdit = canPermission('compensation.prepare', ['ORG_ADMIN', 'HR_ADMIN']);
   const queryClient = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -32,6 +37,7 @@ export function EmployeeBankAccountsTab({ employeeId }) {
   const { data, isLoading } = useQuery({
     queryKey: ['emp-bank-accounts', employeeId],
     queryFn: () => serviceBookApi.bankAccounts(employeeId),
+    enabled: canRead,
   });
   const rows = data?.data || [];
   const salaryCreditAccountId = data?.salaryCreditAccountId;
@@ -85,11 +91,11 @@ export function EmployeeBankAccountsTab({ employeeId }) {
       field: 'credit', label: 'Salary Credit',
       render: (r) => (salaryCreditAccountId === r.id
         ? <Badge variant="success">Net pay</Badge>
-        : <Button variant="secondary" size="sm" onClick={() => setCredit.mutate(r.id)}>Use for net pay</Button>),
+        : canEdit ? <Button variant="secondary" size="sm" onClick={() => setCredit.mutate(r.id)}>Use for net pay</Button> : 'Not selected'),
     },
     {
       field: '__actions', label: '', sortable: false,
-      render: (r) => (
+      render: (r) => canEdit && (
         <div className="row-actions">
           <Button variant="secondary" size="sm" onClick={() => {
             setEditing(r);
@@ -113,13 +119,15 @@ export function EmployeeBankAccountsTab({ employeeId }) {
 
   const f = (k) => (e) => setForm((s) => ({ ...s, [k]: e.target.value }));
 
+  if (!canRead) return <p>Bank-account access is not granted by your current assignments.</p>;
+
   return (
     <Card title="Bank Accounts" noPadding>
       <div className="table-toolbar">
         <span className="form-note">
           Net pay is credited to the account marked “Net pay”, or to the account number on the employee master if none is chosen.
         </span>
-        <Button onClick={() => { setEditing(null); setForm(BLANK); setError(''); setOpen(true); }}>Add Account</Button>
+        {canCreate && <Button onClick={() => { setEditing(null); setForm(BLANK); setError(''); setOpen(true); }}>Add Account</Button>}
       </div>
       <Table columns={columns} data={rows} keyField="id" loading={isLoading} emptyMessage="No bank accounts on record." />
 

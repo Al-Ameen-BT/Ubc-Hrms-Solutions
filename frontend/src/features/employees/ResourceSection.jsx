@@ -125,7 +125,7 @@ export function ResourceSection({
     <Card title={title} noPadding>
       <div className="table-toolbar">
         <span className="form-note">{description}</span>
-        <Button onClick={() => { setEditing(null); setForm(initial || blank(fields)); setError(''); setOpen(true); }}>{addLabel}</Button>
+        {createFn && <Button onClick={() => { setEditing(null); setForm(initial || blank(fields)); setError(''); setOpen(true); }}>{addLabel}</Button>}
       </div>
       {meta && meta(data)}
       <Table columns={cols} data={rows} keyField="id" loading={isLoading} emptyMessage={emptyMessage} />

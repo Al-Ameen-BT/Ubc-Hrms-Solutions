@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { arrearsApi } from '../../api/extended';
 import { openFile, fmt } from '../../api/client';
 import { readFileAsDataUrl, assertUploadable, humanSize } from '../../lib/files';
+import { useAuth } from '../../auth/AuthContext';
+import { canDecide } from '../../api/organizationAccess';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
@@ -18,6 +20,8 @@ const NEXT_STATUS = { DRAFT: 'APPROVED', APPROVED: 'ACTIVE', ACTIVE: 'CLOSED' };
 export function DaRevisionPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, canPermission } = useAuth();
+  const canPrepare = canPermission('arrears.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']);
   const queryClient = useQueryClient();
   const toast = useToast();
   const [docFile, setDocFile] = useState(null);
@@ -133,6 +137,7 @@ export function DaRevisionPage() {
                 <Button
                   variant="secondary"
                   size="sm"
+                  disabled={!canPrepare}
                   loading={removeDoc.isPending}
                   onClick={() => {
                     setActionError('');
@@ -148,10 +153,10 @@ export function DaRevisionPage() {
               <p className="form-note">Attach the scanned Government Order so the revision can be verified against it.</p>
               <div className="field">
                 <label className="field-label" htmlFor="doc-file">File</label>
-                <input id="doc-file" className="input" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
+                <input id="doc-file" className="input" type="file" disabled={!canPrepare} accept=".png,.jpg,.jpeg,.webp,.pdf" onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
               </div>
               <div className="card-actions">
-                <Button loading={uploadDoc.isPending} disabled={!docFile} onClick={() => uploadDoc.mutate()}>Upload Scan</Button>
+                <Button loading={uploadDoc.isPending} disabled={!docFile || !canPrepare} onClick={() => uploadDoc.mutate()}>Upload Scan</Button>
               </div>
             </div>
           )}
@@ -166,12 +171,12 @@ export function DaRevisionPage() {
                 : 'Closed.'}
             </span>
             <div className="row-actions">
-              {NEXT_STATUS[r.status] && (
+              {NEXT_STATUS[r.status] && (r.status === 'DRAFT' ? canPermission('arrears.approve', ['ORG_ADMIN', 'APPROVING_AUTHORITY']) && canDecide(user, r, ['preparedBy']) : canPrepare) && (
                 <Button size="sm" loading={advance.isPending} onClick={() => advance.mutate(NEXT_STATUS[r.status])}>
                   {NEXT_STATUS[r.status] === 'APPROVED' ? 'Approve' : NEXT_STATUS[r.status] === 'ACTIVE' ? 'Activate' : 'Close'}
                 </Button>
               )}
-              {r.status === 'ACTIVE' && (
+              {r.status === 'ACTIVE' && canPrepare && (
                 <Button size="sm" variant="secondary" loading={calculate.isPending} onClick={() => calculate.mutate()}>Calculate Arrears</Button>
               )}
             </div>

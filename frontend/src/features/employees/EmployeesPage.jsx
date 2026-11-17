@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { masterDataApi, fmt } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
@@ -9,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 
 export function EmployeesPage({ embedded = false }) {
   const navigate = useNavigate();
+  const { canPermission } = useAuth();
   const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({
@@ -19,6 +21,7 @@ export function EmployeesPage({ embedded = false }) {
   const { data: posts } = useQuery({
     queryKey: ['post-cadres-lite'],
     queryFn: () => masterDataApi.postCadres(),
+    enabled: canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD']),
   });
 
   const postName = (id) => (posts?.rows || []).find((p) => String(p.id) === String(id))?.name || '—';
@@ -58,8 +61,8 @@ export function EmployeesPage({ embedded = false }) {
             onChange={(e) => setSearch(e.target.value)}
             className="input table-search"
           />
-          <Button variant="secondary" onClick={() => navigate('/employees/import')}>Bulk Import</Button>
-          <Button onClick={() => navigate('/employees/new')}>Add Employee</Button>
+          {canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button variant="secondary" onClick={() => navigate('/employees/import')}>Bulk Import</Button>}
+          {canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button onClick={() => navigate('/employees/new')}>Add Employee</Button>}
         </div>
         <Table
           columns={columns}

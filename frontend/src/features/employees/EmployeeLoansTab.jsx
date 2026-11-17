@@ -2,6 +2,7 @@ import React from 'react';
 import { serviceBookApi } from '../../api/extended';
 import { fmt } from '../../api/client';
 import { Badge } from '../../components/ui/Badge';
+import { useAuth } from '../../auth/AuthContext';
 import { ResourceSection } from './ResourceSection';
 
 /* Festival Advance, Overdraft, Recurring Deposit, LIC, Housing Loan and
@@ -13,6 +14,12 @@ const money = (v) => (v == null ? '—' : fmt.money(v));
 const activeBadge = (active) => <Badge variant={active ? 'success' : 'default'}>{active ? 'Active' : 'Closed'}</Badge>;
 
 export function EmployeeLoansTab({ employeeId }) {
+  const { canPermission } = useAuth();
+  const canRead = canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']);
+  const canCreate = canPermission('compensation.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'ACCOUNTS_OFFICER']);
+  const canRecord = canPermission('compensation.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']);
+  const canEdit = canPermission('compensation.prepare', ['ORG_ADMIN', 'HR_ADMIN']);
+  if (!canRead) return <p>Loan access is not granted by your current assignments.</p>;
   return (
     <div className="stack">
       <ResourceSection
@@ -20,9 +27,9 @@ export function EmployeeLoansTab({ employeeId }) {
         description="At most one unrepaid advance at a time; amount is capped at one month's Basic + DA."
         queryKey={['emp-fa', employeeId]}
         listFn={() => serviceBookApi.festivalAdvances(employeeId)}
-        createFn={(data) => serviceBookApi.addFestivalAdvance(employeeId, data)}
-        updateFn={(id, data) => serviceBookApi.updateFestivalAdvance(employeeId, id, data)}
-        deleteFn={(id) => serviceBookApi.deleteFestivalAdvance(employeeId, id)}
+        createFn={canCreate ? (data) => serviceBookApi.addFestivalAdvance(employeeId, data) : undefined}
+        updateFn={canEdit ? (id, data) => serviceBookApi.updateFestivalAdvance(employeeId, id, data) : undefined}
+        deleteFn={canEdit ? (id) => serviceBookApi.deleteFestivalAdvance(employeeId, id) : undefined}
         emptyMessage="No Festival Advance on record."
         addLabel="Record Advance"
         initial={{ amount: '', availedDate: '', repayMonths: '', remarks: '' }}
@@ -50,8 +57,8 @@ export function EmployeeLoansTab({ employeeId }) {
         description="One unrepaid overdraft at a time. HR records the total repayment and monthly payment."
         queryKey={['emp-od', employeeId]}
         listFn={() => serviceBookApi.overdrafts(employeeId)}
-        createFn={(data) => serviceBookApi.addOverdraft(employeeId, data)}
-        deleteFn={(id) => serviceBookApi.deleteOverdraft(employeeId, id)}
+        createFn={canRecord ? (data) => serviceBookApi.addOverdraft(employeeId, data) : undefined}
+        deleteFn={canEdit ? (id) => serviceBookApi.deleteOverdraft(employeeId, id) : undefined}
         emptyMessage="No Overdraft on record."
         addLabel="Record Overdraft"
         initial={{ amount: '', availedDate: '', repayMonths: '', totalRepaymentAmount: '', monthlyPayment: '', remarks: '' }}
@@ -84,9 +91,9 @@ export function EmployeeLoansTab({ employeeId }) {
         description="Linked to an Overdraft. Its monthly amount follows the overdraft repayment schedule and is deducted once."
         queryKey={['emp-rd', employeeId]}
         listFn={() => serviceBookApi.recurringDeposits(employeeId)}
-        createFn={(data) => serviceBookApi.addRecurringDeposit(employeeId, data)}
-        updateFn={(id, data) => serviceBookApi.updateRecurringDeposit(employeeId, id, data)}
-        deleteFn={(id) => serviceBookApi.deleteRecurringDeposit(employeeId, id)}
+        createFn={canRecord ? (data) => serviceBookApi.addRecurringDeposit(employeeId, data) : undefined}
+        updateFn={canEdit ? (id, data) => serviceBookApi.updateRecurringDeposit(employeeId, id, data) : undefined}
+        deleteFn={canEdit ? (id) => serviceBookApi.deleteRecurringDeposit(employeeId, id) : undefined}
         emptyMessage="No Recurring Deposit on record."
         addLabel="Open Deposit"
         initial={{ startDate: '', overdraftId: '', remarks: '' }}
@@ -110,9 +117,9 @@ export function EmployeeLoansTab({ employeeId }) {
         description="An employee may hold several LIC policies at once."
         queryKey={['emp-lic', employeeId]}
         listFn={() => serviceBookApi.licPolicies(employeeId)}
-        createFn={(data) => serviceBookApi.addLicPolicy(employeeId, data)}
-        updateFn={(id, data) => serviceBookApi.updateLicPolicy(employeeId, id, data)}
-        deleteFn={(id) => serviceBookApi.deleteLicPolicy(employeeId, id)}
+        createFn={canCreate ? (data) => serviceBookApi.addLicPolicy(employeeId, data) : undefined}
+        updateFn={canEdit ? (id, data) => serviceBookApi.updateLicPolicy(employeeId, id, data) : undefined}
+        deleteFn={canEdit ? (id) => serviceBookApi.deleteLicPolicy(employeeId, id) : undefined}
         emptyMessage="No LIC policy on record."
         addLabel="Add Policy"
         initial={{ policyNumber: '', openingDate: '', startedDate: '', deductionAmount: '', sumAssuredAmount: '', maturityDate: '', closureDate: '', remarks: '' }}
@@ -147,9 +154,9 @@ export function EmployeeLoansTab({ employeeId }) {
         description="HR records the loan amount, total amount to repay, and monthly payment."
         queryKey={['emp-housing', employeeId]}
         listFn={() => serviceBookApi.housingLoans(employeeId)}
-        createFn={(data) => serviceBookApi.addHousingLoan(employeeId, data)}
-        updateFn={(id, data) => serviceBookApi.updateHousingLoan(employeeId, id, data)}
-        deleteFn={(id) => serviceBookApi.deleteHousingLoan(employeeId, id)}
+        createFn={canRecord ? (data) => serviceBookApi.addHousingLoan(employeeId, data) : undefined}
+        updateFn={canEdit ? (id, data) => serviceBookApi.updateHousingLoan(employeeId, id, data) : undefined}
+        deleteFn={canEdit ? (id) => serviceBookApi.deleteHousingLoan(employeeId, id) : undefined}
         emptyMessage="No Housing Loan on record."
         addLabel="Add Loan"
         initial={{ totalLoanAmount: '', totalRepaymentAmount: '', monthlyPayment: '', emiStartDate: '', emiEndDate: '', remarks: '' }}
@@ -180,9 +187,9 @@ export function EmployeeLoansTab({ employeeId }) {
         description="Multiple loans only if the organisation has enabled it (Payroll Settings)."
         queryKey={['emp-vehicle', employeeId]}
         listFn={() => serviceBookApi.vehicleLoans(employeeId)}
-        createFn={(data) => serviceBookApi.addVehicleLoan(employeeId, data)}
-        updateFn={(id, data) => serviceBookApi.updateVehicleLoan(employeeId, id, data)}
-        deleteFn={(id) => serviceBookApi.deleteVehicleLoan(employeeId, id)}
+        createFn={canRecord ? (data) => serviceBookApi.addVehicleLoan(employeeId, data) : undefined}
+        updateFn={canEdit ? (id, data) => serviceBookApi.updateVehicleLoan(employeeId, id, data) : undefined}
+        deleteFn={canEdit ? (id) => serviceBookApi.deleteVehicleLoan(employeeId, id) : undefined}
         emptyMessage="No Vehicle Loan on record."
         addLabel="Add Loan"
         initial={{ vehicleType: '', totalAmount: '', totalRepaymentAmount: '', monthlyPayment: '', startDate: '', endDate: '', remarks: '' }}

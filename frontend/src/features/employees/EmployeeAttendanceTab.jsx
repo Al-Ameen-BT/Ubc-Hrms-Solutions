@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { serviceBookApi } from '../../api/extended';
+import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -12,6 +13,9 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
    by models/employeeAttendance.js). LOP days pro-rate Basic, DA and the
    allowances on the payslip. */
 export function EmployeeAttendanceTab({ employeeId }) {
+  const { canPermission } = useAuth();
+  const canRead = canPermission('attendance.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']);
+  const canWrite = canPermission('attendance.manage', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'ACCOUNTS_OFFICER']);
   const queryClient = useQueryClient();
   const toast = useToast();
   const thisYear = new Date().getFullYear();
@@ -21,6 +25,7 @@ export function EmployeeAttendanceTab({ employeeId }) {
   const { data, isLoading } = useQuery({
     queryKey: ['emp-attendance', employeeId, year],
     queryFn: () => serviceBookApi.attendance(employeeId, year),
+    enabled: canRead,
   });
 
   const months = data?.months || [];
@@ -40,6 +45,8 @@ export function EmployeeAttendanceTab({ employeeId }) {
   const edit = (month, patch) => setDraft((d) => ({ ...d, [month]: { ...(d[month] || valueFor(months.find((m) => m.month === month))), ...patch } }));
 
   const totalLop = months.reduce((s, m) => s + Number((draft[m.month]?.lopDays ?? m.lopDays) || 0), 0);
+
+  if (!canRead) return <p>Attendance access is not granted by your current assignments.</p>;
 
   return (
     <Card title={`Attendance / Loss of Pay — ${year}`} noPadding>
@@ -73,6 +80,7 @@ export function EmployeeAttendanceTab({ employeeId }) {
                   <td className="table-td table-td-right">
                     <input
                       className="input mono"
+                      readOnly={!canWrite}
                       type="number" min="0" max="31" step="0.5"
                       style={{ width: '6rem' }}
                       value={v.lopDays}
@@ -83,18 +91,19 @@ export function EmployeeAttendanceTab({ employeeId }) {
                   <td className="table-td">
                     <input
                       className="input"
+                      readOnly={!canWrite}
                       value={v.remarks}
                       onChange={(e) => edit(row.month, { remarks: e.target.value })}
                       aria-label={`${MONTHS[row.month - 1]} remarks`}
                     />
                   </td>
                   <td className="table-td">
-                    <Button
+                    {canWrite && <Button
                       size="sm"
                       variant={dirty ? 'primary' : 'secondary'}
                       loading={save.isPending && save.variables?.month === row.month}
                       onClick={() => save.mutate({ month: row.month, lopDays: v.lopDays, remarks: v.remarks })}
-                    >Save</Button>
+                    >Save</Button>}
                   </td>
                 </tr>
               );

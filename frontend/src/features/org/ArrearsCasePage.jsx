@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { arrearsApi } from '../../api/extended';
 import { fmt, downloadFile } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
+import { canDecide } from '../../api/organizationAccess';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
@@ -20,6 +22,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function ArrearsCasePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, canPermission } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -83,6 +86,8 @@ export function ArrearsCasePage() {
   const balance = Math.max(0, Number(c.effectiveTotalAmount) - paid);
   const fullyPaid = c.status === 'FULLY_PAID' || balance <= 0;
 
+  const canApprove = canPermission('arrears.approve', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']) && canDecide(user, c, ['calculatedBy']);
+  const canPay = canPermission('payments.pay', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']) && !!c.planApprovedBy && canDecide(user, c, ['calculatedBy', 'planApprovedBy', ...(c.adjustedBy ? ['adjustedBy'] : [])]);
   const statusVariant = c.status === 'FULLY_PAID' ? 'success' : c.status === 'CALCULATED' ? 'warning' : 'info';
   const paymentMode = c.paymentMode !== 'NONE' ? <Badge variant="info">{c.paymentMode.replace(/_/g, ' ')}</Badge> : '—';
 
@@ -105,8 +110,8 @@ export function ArrearsCasePage() {
       field: 'actions', label: '', sortable: false,
       render: (r) => (
         <div className="row-actions">
-          {r.status !== 'PAID' && (
-            <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Mark this installment as paid? This posts a Service Book entry.')) payInstallment.mutate(r.id); }}>Pay</Button>
+          {r.status !== 'PAID' && canPay && (
+            <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Mark this installment as paid? This posts a Service Book entry.')) payInstallment.mutate(r.id); }}>Record payment</Button>
           )}
           {r.status === 'PAID' && (
             <Button variant="secondary" size="sm" onClick={() => getReceipt(r.id)}>Receipt</Button>
@@ -145,7 +150,7 @@ export function ArrearsCasePage() {
         </div>
       )}
 
-      {!fullyPaid && (
+      {!fullyPaid && canApprove && (
         <Card title="Manual Adjustment">
           <p className="form-note">
             Override the calculated amount after management approval. A reason is mandatory and is recorded on the audit log.
@@ -161,12 +166,12 @@ export function ArrearsCasePage() {
       <Card title={installments.length ? `Payment Plan (${installments.filter((i) => i.status === 'PAID').length}/${installments.length} paid)` : 'Payment Plan'} noPadding>
         <div className="table-toolbar">
           <span className="form-note">Arrears are paid separately from salary. Set a plan, then mark each month paid.</span>
-          {!installments.length && (
+          {!installments.length && canApprove && (
             <Button onClick={() => { setPlanForm({ numberOfInstallments: '6', startYear: String(new Date().getFullYear()), startMonth: String(new Date().getMonth() + 1) }); setPlanOpen(true); }}>
               Set Plan
             </Button>
           )}
-          {installments.length > 0 && (
+          {installments.length > 0 && canApprove && (
             <Button
               variant="secondary"
               onClick={() => {
