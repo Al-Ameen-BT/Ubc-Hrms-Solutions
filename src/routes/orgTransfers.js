@@ -7,8 +7,21 @@ const transfers = require('../services/employeeTransfers');
 const { scopedWhere, can } = require('../services/accessControl');
 const { inputShape, tenantResource, sendError, UserAdminError } = require('../services/userAdmin');
 const router = express.Router(); router.use(authenticate);
-const attributes = ['id', 'employeeId', 'branchId', 'departmentId', 'positionId', 'compensationProposalId', 'effectiveDate', 'reason', 'status', 'preparedBy', 'decidedBy', 'decidedAt', 'decisionReason', 'activatedAt'];
-const safe = row => Object.fromEntries(attributes.map(key => [key, row[key]]));
+const attributes = ['id', 'employeeId', 'branchId', 'departmentId', 'positionId', 'compensationProposalId', 'effectiveDate', 'reason', 'status', 'preparedBy', 'decidedBy', 'decidedAt', 'decisionReason', 'activatedAt', 'roleChanges'];
+const safeIds = values => Array.isArray(values) ? values.filter(value => /^[1-9]\d*$/.test(String(value)) && Number.isSafeInteger(Number(value))).map(Number) : [];
+function safeRoleChanges(value) {
+  const changes = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const scopes = ['OWN', 'DEPARTMENT', 'SELECTED_BRANCHES', 'ORGANISATION'];
+  return {
+    closeAssignmentIds: safeIds(changes.closeAssignmentIds),
+    retainAssignmentIds: safeIds(changes.retainAssignmentIds),
+    start: Array.isArray(changes.start) ? changes.start.filter(row => row && scopes.includes(row.scopeType) && /^[1-9]\d*$/.test(String(row.roleId)) && Number.isSafeInteger(Number(row.roleId))).map(row => ({
+      roleId: Number(row.roleId), scopeType: row.scopeType,
+      branchIds: safeIds(row.branchIds), departmentIds: safeIds(row.departmentIds),
+    })) : [],
+  };
+}
+const safe = row => Object.fromEntries(attributes.map(key => [key, key === 'roleChanges' ? safeRoleChanges(row[key]) : row[key]]));
 const handle = (work, status = 200) => async (req, res) => { try { res.status(status).json({ data: await work(req) }); } catch (error) { sendError(res, error); } };
 async function load(req, res, next) { try { req.transfer = await tenantResource(models.EmployeeTransfer, req.params.id, req.user.organizationId); next(); } catch (error) { sendError(res, error); } }
 router.get('/', requirePermission('transfers.view'), handle(async req => (await models.EmployeeTransfer.findAll({ where: scopedWhere(req.access, 'transfers.view', 'EmployeeTransfer'), attributes, order: [['id', 'DESC']] })).map(safe)));
@@ -34,3 +47,4 @@ for (const decision of ['approve', 'reject']) router.post(`/:id/${decision}`, lo
   return safe(await transfers[`${decision}Transfer`](req.transfer.id, { ...req.user, decisionReason: req.body?.reason }));
 }));
 module.exports = router;
+module.exports.safeRoleChanges = safeRoleChanges;

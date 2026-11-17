@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { profileApi } from '../../api/extended';
 import { orgApi } from '../../api/client';
@@ -17,27 +18,19 @@ import { ImageCropModal } from '../../components/ui/ImageCropModal';
 const BOARD_ROLES = ['CHAIRMAN', 'VICE_CHAIRMAN', 'MEMBER', 'MANAGING_DIRECTOR', 'GENERAL_MANAGER', 'ASSISTANT_GENERAL_MANAGER', 'OTHER'];
 const DOC_TYPES = ['RBI_LICENSE', 'INCORPORATION_CERTIFICATE', 'PAN', 'GSTN', 'TAN', 'OTHER'];
 
-const BLANK_BRANCH = { name: '', branchCode: '', address: '', phone: '', isHeadOffice: false };
 const BLANK_BOARD = { name: '', role: 'MEMBER', roleOther: '', displayOrder: '' };
 
-/* Bank identity, board, branches and statutory documents — one page
-   (routes/orgSettings.js /org/profile* and routes/serviceBook for scans). */
+/* Bank identity, board and statutory documents — branches live in Organisation Structure. */
 export function OrgProfilePage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState(null);
-  const [deleteBranchTarget, setDeleteBranchTarget] = useState(null);
   const [deleteBoardTarget, setDeleteBoardTarget] = useState(null);
   const [deleteDocTarget, setDeleteDocTarget] = useState(null);
   const [actionError, setActionError] = useState('');
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [rawLogoSrc, setRawLogoSrc] = useState(null);
   const [logoPreviewSrc, setLogoPreviewSrc] = useState(null);
-
-  const [branchOpen, setBranchOpen] = useState(false);
-  const [branchEditing, setBranchEditing] = useState(null);
-  const [branchForm, setBranchForm] = useState(BLANK_BRANCH);
-  const [branchError, setBranchError] = useState('');
 
   const [boardOpen, setBoardOpen] = useState(false);
   const [boardEditing, setBoardEditing] = useState(null);
@@ -75,28 +68,6 @@ export function OrgProfilePage() {
       toast.add('Logo updated successfully.', 'success');
     },
     onError: (err) => toast.add(err.message || 'Logo upload failed.', 'error'),
-  });
-
-  const saveBranch = useMutation({
-    mutationFn: (payload) => (branchEditing
-      ? profileApi.updateBranch(branchEditing.id, payload)
-      : profileApi.createBranch(payload)),
-    onSuccess: () => {
-      invalidate();
-      setBranchOpen(false); setBranchEditing(null); setBranchForm(BLANK_BRANCH); setBranchError('');
-      toast.add(branchEditing ? 'Branch updated.' : 'Branch added.', 'success');
-    },
-    onError: (err) => setBranchError(err.message || 'Could not save.'),
-  });
-
-  const removeBranch = useMutation({
-    mutationFn: (row) => profileApi.deleteBranch(row.id),
-    onSuccess: () => {
-      invalidate();
-      toast.add('Branch removed.', 'success');
-      setDeleteBranchTarget(null);
-    },
-    onError: (err) => setActionError(err.message || 'Could not remove branch.'),
   });
 
   const saveBoard = useMutation({
@@ -156,32 +127,7 @@ export function OrgProfilePage() {
 
   const o = data.organization;
   const board = data.board || [];
-  const branches = data.branches || [];
   const documents = data.documents || [];
-
-  const branchColumns = [
-    { field: 'name', label: 'Branch' },
-    { field: 'code', label: 'Code', mono: true, render: (r) => r.code || '—' },
-    { field: 'address', label: 'Address', render: (r) => r.address || '—' },
-    { field: 'phone', label: 'Phone', mono: true, render: (r) => r.phone || '—' },
-    { field: 'isHeadOffice', label: 'Type', render: (r) => (r.isHeadOffice ? <Badge variant="success">Head Office</Badge> : 'Branch') },
-    {
-      field: 'actions', label: '', sortable: false,
-      render: (r) => (
-        <div className="row-actions">
-          <Button variant="secondary" size="sm" onClick={() => {
-            setBranchEditing(r);
-            setBranchForm({ name: r.name || '', branchCode: r.code || '', address: r.address || '', phone: r.phone || '', isHeadOffice: !!r.isHeadOffice });
-            setBranchError(''); setBranchOpen(true);
-          }}>Edit</Button>
-          <Button variant="secondary" size="sm" onClick={() => {
-            setActionError('');
-            setDeleteBranchTarget(r);
-          }}>Remove</Button>
-        </div>
-      ),
-    },
-  ];
 
   const boardColumns = [
     { field: 'displayOrder', label: '#', mono: true, align: 'right' },
@@ -230,7 +176,8 @@ export function OrgProfilePage() {
     <div className="page">
       <header className="page-header">
         <h1>Organisation Profile</h1>
-        <p>Bank identity, board, branches, and statutory documents</p>
+        <p>Bank identity, board presentation, and statutory documents</p>
+        <Link to="/organisation-structure">Manage Head Office, branches, and the organisation chart</Link>
       </header>
 
       <Card title="Bank Identity">
@@ -324,17 +271,6 @@ export function OrgProfilePage() {
         <Table columns={boardColumns} data={board} keyField="id" emptyMessage="No board members recorded." />
       </Card>
 
-      <Card title="Branches" noPadding>
-        <div className="table-toolbar">
-          <div />
-          <Button onClick={() => {
-            setBranchEditing(null); setBranchForm(BLANK_BRANCH);
-            setBranchError(''); setBranchOpen(true);
-          }}>Add Branch</Button>
-        </div>
-        <Table columns={branchColumns} data={branches} keyField="id" emptyMessage="No branches recorded." />
-      </Card>
-
       <Card title="Statutory Documents" noPadding>
         <div className="table-toolbar">
           <span className="form-note">RBI licence, incorporation certificate, PAN, GSTN and TAN scans.</span>
@@ -342,32 +278,6 @@ export function OrgProfilePage() {
         </div>
         <Table columns={docColumns} data={documents} keyField="id" emptyMessage="No documents uploaded." />
       </Card>
-
-      <Modal
-        open={branchOpen}
-        onClose={() => setBranchOpen(false)}
-        title={branchEditing ? 'Edit Branch' : 'Add Branch'}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setBranchOpen(false)}>Cancel</Button>
-            <Button loading={saveBranch.isPending} onClick={() => { setBranchError(''); saveBranch.mutate(branchForm); }}>Save</Button>
-          </>
-        }
-      >
-        <form noValidate>
-          {branchError && <div className="auth-error" role="alert">{branchError}</div>}
-          <div className="form-grid">
-            <Input id="br-name" label="Branch Name" value={branchForm.name} onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })} required />
-            <Input id="br-code" label="Branch Code" value={branchForm.branchCode} onChange={(e) => setBranchForm({ ...branchForm, branchCode: e.target.value })} mono />
-            <Input id="br-phone" label="Phone" value={branchForm.phone} onChange={(e) => setBranchForm({ ...branchForm, phone: e.target.value })} mono />
-            <Input id="br-addr" label="Address" value={branchForm.address} onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })} />
-          </div>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={!!branchForm.isHeadOffice} onChange={(e) => setBranchForm({ ...branchForm, isHeadOffice: e.target.checked })} />
-            <span>This is the head office</span>
-          </label>
-        </form>
-      </Modal>
 
       <Modal
         open={boardOpen}
@@ -429,25 +339,6 @@ export function OrgProfilePage() {
           </div>
         </form>
       </Modal>
-
-      <ConfirmationModal
-        open={deleteBranchTarget != null}
-        onClose={() => setDeleteBranchTarget(null)}
-        onConfirm={() => removeBranch.mutate(deleteBranchTarget)}
-        title="Remove Branch"
-        itemName={deleteBranchTarget?.name}
-        details={{
-          'Branch Code': deleteBranchTarget?.code || '—',
-          'Address': deleteBranchTarget?.address || '—',
-          'Phone': deleteBranchTarget?.phone || '—',
-          'Type': deleteBranchTarget?.isHeadOffice ? 'Head Office' : 'Branch',
-        }}
-        warningMessage="Removing this branch will detach it from the bank profile. Existing employees assigned to this branch remain in the database."
-        confirmLabel="Confirm Deletion"
-        confirmVariant="danger"
-        loading={removeBranch.isPending}
-        error={actionError}
-      />
 
       <ConfirmationModal
         open={deleteBoardTarget != null}

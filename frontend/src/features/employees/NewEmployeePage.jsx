@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { masterDataApi } from '../../api/client';
 import { compensationApi } from '../../api/compensation';
+import { organizationAccessApi } from '../../api/organizationAccess';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
@@ -32,22 +33,31 @@ const EMPTY = {
 export function NewEmployeePage() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, canPermission } = useAuth();
+  const permissionMode = user?.accessControlMode === 'PERMISSIONS';
   const [step, setStep] = useState(0);
   const [error, setError] = useState('');
   const [form, setForm] = useState(EMPTY);
+  const [organizationAssignment, setOrganizationAssignment] = useState({ branchId: '', departmentId: '', positionId: '', effectiveFrom: '' });
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
-  const { data: posts } = useQuery({ queryKey: ['post-cadres-lite'], queryFn: () => masterDataApi.postCadres() });
-  const { data: scales } = useQuery({ queryKey: ['pay-scales-lite'], queryFn: () => masterDataApi.payScales() });
-  const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions });
+  const canLegacyCompensationView = canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']);
+  const { data: posts } = useQuery({ queryKey: ['post-cadres-lite'], queryFn: () => masterDataApi.postCadres(), enabled: !permissionMode && canLegacyCompensationView });
+  const { data: scales } = useQuery({ queryKey: ['pay-scales-lite'], queryFn: () => masterDataApi.payScales(), enabled: !permissionMode && canLegacyCompensationView });
+  const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions, enabled: !permissionMode && canLegacyCompensationView });
   const catalogueBank = !!adoption?.requiresCatalogueAdoption;
+  const branchesQuery = useQuery({ queryKey: ['new-employee-branches'], queryFn: organizationAccessApi.branches, enabled: permissionMode && canPermission('branches.view', ['ORG_ADMIN']) });
+  const departmentsQuery = useQuery({ queryKey: ['new-employee-departments'], queryFn: organizationAccessApi.departments, enabled: permissionMode && !!organizationAssignment.branchId && canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN']) });
+  const positionsQuery = useQuery({ queryKey: ['new-employee-positions'], queryFn: organizationAccessApi.positions, enabled: permissionMode && !!organizationAssignment.branchId && canPermission('positions.view', ['ORG_ADMIN']) });
+  const activeBranches = (branchesQuery.data?.rows || []).filter(row => row.status === 'ACTIVE');
+  const activeDepartments = (departmentsQuery.data?.rows || []).filter(row => row.status === 'ACTIVE' && String(row.branchId) === String(organizationAssignment.branchId));
+  const activePositions = (positionsQuery.data?.rows || []).filter(row => row.status === 'ACTIVE' && String(row.branchId) === String(organizationAssignment.branchId) && (!organizationAssignment.departmentId || String(row.departmentId) === String(organizationAssignment.departmentId)));
 
   const { data: stages } = useQuery({
     queryKey: ['pay-stages', form.currentPayScaleId],
     queryFn: () => masterDataApi.payScaleStages(form.currentPayScaleId),
-    enabled: !!form.currentPayScaleId,
+    enabled: !permissionMode && canLegacyCompensationView && !!form.currentPayScaleId,
   });
 
   const createMutation = useMutation({
@@ -61,8 +71,8 @@ export function NewEmployeePage() {
 
   const canAdvance = () => {
     if (step === 0) return form.name && form.empCode && form.dob && form.gender;
-    if (step === 1) return form.doj && form.postCadreId;
-    if (step === 2) return catalogueBank || (form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay);
+    if (step === 1) return form.doj && (permissionMode || form.postCadreId) && (!permissionMode || organizationAssignment.branchId && organizationAssignment.effectiveFrom && activeBranches.some(row => String(row.id) === String(organizationAssignment.branchId)));
+    if (step === 2) return permissionMode || catalogueBank || (form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay);
     if (step === 3) return form.bankName && form.bankAccountNumber && form.bankIfsc;
     return true;
   };
@@ -124,23 +134,39 @@ export function NewEmployeePage() {
         )}
 
         {step === 1 && (
+          <>
           <div className="form-grid">
             <Input id="doj" label="Date of Joining" type="date" value={form.doj} onChange={(e) => set({ doj: e.target.value })} required />
-            <div className="field">
+            {!permissionMode && <div className="field">
               <label className="field-label" htmlFor="post">Post &amp; Cadre</label>
               <select id="post" className="input" value={form.postCadreId} onChange={(e) => set({ postCadreId: e.target.value })}>
                 <option value="">Select a post…</option>
                 {(posts?.rows || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
-            </div>
-            <Input id="desig" label="Designation" value={form.designation} onChange={(e) => set({ designation: e.target.value })} required />
-            <Input id="dept" label="Department" value={form.department} onChange={(e) => set({ department: e.target.value })} />
+            </div>}
+            {!permissionMode && <Input id="desig" label="Designation" value={form.designation} onChange={(e) => set({ designation: e.target.value })} required />}
+            {!permissionMode && <Input id="dept" label="Department" value={form.department} onChange={(e) => set({ department: e.target.value })} />}
           </div>
+          {permissionMode && <section className="new-employee-structure" aria-labelledby="new-employee-structure-title">
+            <h3 id="new-employee-structure-title">Organisation assignment</h3>
+            <p className="form-note">Select the real branch and effective date for this employee. Department and position are optional.</p>
+            {!canPermission('branches.view', ['ORG_ADMIN']) && <div className="auth-notice" role="status">Branch selection requires branches.view access. Ask an organisation administrator to include that permission before creating this employee.</div>}
+            {branchesQuery.error && <div className="auth-error" role="alert">{branchesQuery.error.message || 'Branches could not be loaded.'} Retry after checking your branch access.</div>}
+            {departmentsQuery.error && <div className="auth-error" role="alert">{departmentsQuery.error.message || 'Departments could not be loaded.'} You can continue without a department.</div>}
+            {positionsQuery.error && <div className="auth-error" role="alert">{positionsQuery.error.message || 'Positions could not be loaded.'} You can continue without a position.</div>}
+            <div className="form-grid">
+              <div className="field"><label className="field-label" htmlFor="new-employee-branch">Branch</label><select id="new-employee-branch" className="input" required value={organizationAssignment.branchId} disabled={branchesQuery.isLoading || !canPermission('branches.view', ['ORG_ADMIN'])} onChange={event => setOrganizationAssignment(value => ({ ...value, branchId: event.target.value, departmentId: '', positionId: '' }))}><option value="">Select branch</option>{activeBranches.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+              <Input id="new-employee-structure-date" label="Assignment effective date" type="date" required value={organizationAssignment.effectiveFrom} onChange={event => setOrganizationAssignment(value => ({ ...value, effectiveFrom: event.target.value }))} />
+              <div className="field"><label className="field-label" htmlFor="new-employee-department">Department (optional)</label><select id="new-employee-department" className="input" value={organizationAssignment.departmentId} disabled={!organizationAssignment.branchId || !canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN'])} onChange={event => setOrganizationAssignment(value => ({ ...value, departmentId: event.target.value, positionId: '' }))}><option value="">No department</option>{activeDepartments.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+              <div className="field"><label className="field-label" htmlFor="new-employee-position">Position (optional)</label><select id="new-employee-position" className="input" value={organizationAssignment.positionId} disabled={!organizationAssignment.branchId || !canPermission('positions.view', ['ORG_ADMIN'])} onChange={event => { const position = activePositions.find(row => String(row.id) === event.target.value); setOrganizationAssignment(value => ({ ...value, positionId: event.target.value, ...(value.departmentId || !position?.departmentId ? {} : { departmentId: String(position.departmentId) }) })); }}><option value="">No position</option>{activePositions.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+            </div>
+          </section>}
+          </>
         )}
 
         {step === 2 && (
           <>
-            {catalogueBank ? <p className="form-note">Salary is assigned after creation from the adopted government stage, or as approved direct pay. A separate authority approves the assignment before payroll.</p> : <>
+            {permissionMode ? <p className="form-note">Salary is assigned separately by an authorised compensation user after onboarding. This step does not collect salary amounts.</p> : catalogueBank ? <p className="form-note">Salary is assigned after creation from the adopted government stage, or as approved direct pay. A separate authority approves the assignment before payroll.</p> : <>
             <div className="form-grid">
               {form.directPay ? (
                 <Input id="basic" label="Bank-set Monthly Gross Salary (₹)" type="number" value={form.currentBasicPay} onChange={(e) => set({ currentBasicPay: e.target.value })} mono required />
@@ -198,10 +224,17 @@ export function NewEmployeePage() {
             <ReviewRow label="PAN / Aadhaar" value={`${form.panNumber} / ${form.aadhaarNumber}`} />
             <ReviewRow label="Personal Email" value={form.personalEmail} />
             <ReviewRow label="Date of Joining" value={form.doj} />
-            <ReviewRow label="Post" value={postName(form.postCadreId)} />
-            <ReviewRow label="Designation" value={form.designation} />
-            <ReviewRow label="Department" value={form.department} />
-            {catalogueBank ? <ReviewRow label="Salary" value="Pending separate approval" /> : <>
+            {!permissionMode && <ReviewRow label="Post" value={postName(form.postCadreId)} />}
+            {permissionMode ? <>
+              <ReviewRow label="Branch" value={activeBranches.find(row => String(row.id) === String(organizationAssignment.branchId))?.name} />
+              <ReviewRow label="Department" value={activeDepartments.find(row => String(row.id) === String(organizationAssignment.departmentId))?.name || 'No department selected'} />
+              <ReviewRow label="Position" value={activePositions.find(row => String(row.id) === String(organizationAssignment.positionId))?.name || 'No position selected'} />
+              <ReviewRow label="Assignment effective date" value={organizationAssignment.effectiveFrom} />
+            </> : <>
+              <ReviewRow label="Designation" value={form.designation} />
+              <ReviewRow label="Department" value={form.department} />
+            </>}
+            {permissionMode || catalogueBank ? <ReviewRow label="Salary" value="Assigned separately after onboarding" /> : <>
               <ReviewRow label={form.directPay ? 'Bank-set Monthly Gross' : 'Basic Pay'} value={form.currentBasicPay} />
               {!form.directPay && <ReviewRow label="Pay Scale" value={scaleName(form.currentPayScaleId)} />}
               {!form.directPay && <ReviewRow label="HRA Basis" value={form.hraType === 'FIXED' ? `Fixed Amount (₹${Number(form.fixedHraAmount || 0).toLocaleString('en-IN')})` : 'Calculated from Basic Pay (%)'} />}
@@ -217,7 +250,7 @@ export function NewEmployeePage() {
           {step < STEPS.length - 1 ? (
             <Button onClick={next} disabled={!canAdvance()}>Next</Button>
           ) : (
-            <Button loading={createMutation.isPending} onClick={() => { setError(''); createMutation.mutate(catalogueBank ? { ...form, currentPayScaleId: null, currentStageId: null, currentBasicPay: null, fixedHraAmount: null, riskAllowance: null, otherAllowance: null } : form); }}>
+            <Button loading={createMutation.isPending} disabled={!canAdvance()} onClick={() => { setError(''); const payload = permissionMode || catalogueBank ? { ...form, postCadreId: permissionMode ? null : form.postCadreId, currentPayScaleId: null, currentStageId: null, currentBasicPay: null, fixedHraAmount: null, riskAllowance: null, otherAllowance: null } : { ...form }; if (permissionMode) { delete payload.department; delete payload.designation; payload.organizationAssignment = { branchId: Number(organizationAssignment.branchId), departmentId: organizationAssignment.departmentId ? Number(organizationAssignment.departmentId) : null, positionId: organizationAssignment.positionId ? Number(organizationAssignment.positionId) : null, effectiveFrom: organizationAssignment.effectiveFrom }; } createMutation.mutate(payload); }}>
               Create Employee
             </Button>
           )}

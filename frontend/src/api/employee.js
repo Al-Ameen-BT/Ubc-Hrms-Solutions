@@ -1,4 +1,4 @@
-import { api, downloadFile, openFile } from './client';
+import { api, downloadFile, openFile } from './client.js';
 
 export const employeeApi = {
   context: () => api.get('/me/context'),
@@ -12,6 +12,7 @@ export const employeeApi = {
   policy: () => api.get('/me/policy'),
   acknowledgePolicy: (version) => api.post('/me/policy/acknowledge', { version }),
   calendar: (year, month) => api.get(`/me/calendar?${new URLSearchParams({ year, month })}`),
+  chart: () => api.get('/me/chart'),
   workplace: () => api.get('/me/workplace'),
   time: (year, month) => api.get(`/me/time?${new URLSearchParams({ year, month })}`),
   checkIn: () => api.post('/me/time/check-in', {}),

@@ -1,4 +1,44 @@
-import { api } from './client.js';
+import { api, ApiError, downloadFile, isSessionEndingError } from './client.js';
+
+const structurePath = '/org/structure';
+const workbookType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+async function structureBinary(path, options = {}) {
+  const token = sessionStorage.getItem('token');
+  const response = await fetch(`/api/v1${path}`, {
+    ...options,
+    credentials: 'same-origin',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
+  });
+  if (!response.ok) {
+    let body = null;
+    try { body = await response.json(); } catch { /* The response may not contain JSON. */ }
+    const error = new ApiError(body?.message || `Request failed (${response.status})`, response.status, body);
+    if (isSessionEndingError(error)) {
+      const message = body?.code === 'ACCESS_CHANGED'
+        ? 'Your access has changed. Please sign in again. Relink your phone from My Account → Linked devices if you use the QR-only mobile app.'
+        : 'Your session has ended. Please sign in again.';
+      sessionStorage.removeItem('token');
+      window.dispatchEvent(new CustomEvent('ucb:logout', { detail: { message, kind: 'warn' } }));
+    }
+    throw error;
+  }
+  return response;
+}
+
+async function previewBranchImport(file) {
+  if (!file || !/\.xlsx$/i.test(file.name || '') || file.size > 2 * 1024 * 1024) throw new ApiError('Choose an .xlsx workbook of at most 2 MiB.', 400, null);
+  const response = await structureBinary(`${structurePath}/branches/import/preview`, {
+    method: 'POST', headers: { 'Content-Type': workbookType }, body: file,
+  });
+  const payload = await response.json();
+  return payload?.data ?? payload;
+}
+
+async function loadStructurePhoto(path) {
+  const response = await structureBinary(path.replace(/^\/api\/v1/, ''), { method: 'GET' });
+  return URL.createObjectURL(await response.blob());
+}
 
 export const organizationAccessApi = {
   catalogue: () => api.get('/org/roles/catalogue'),
@@ -15,8 +55,32 @@ export const organizationAccessApi = {
   updateAssignment: (id, body) => api.put(`/org/role-assignments/${id}`, body),
   endAssignment: id => api.delete(`/org/role-assignments/${id}`),
   preview: userId => api.get(`/org/access-preview/${userId}`),
-  branches: () => api.get('/org/structure/branches'),
-  departments: () => api.get('/org/structure/departments'),
+  branches: () => api.get(`${structurePath}/branches`),
+  configureHeadOffice: body => api.post(`${structurePath}/head-office`, body),
+  createBranch: body => api.post(`${structurePath}/branches`, body),
+  updateBranch: (id, body) => api.put(`${structurePath}/branches/${id}`, body),
+  deactivateBranch: id => api.delete(`${structurePath}/branches/${id}`),
+  departments: () => api.get(`${structurePath}/departments`),
+  createDepartment: body => api.post(`${structurePath}/departments`, body),
+  updateDepartment: (id, body) => api.put(`${structurePath}/departments/${id}`, body),
+  deactivateDepartment: id => api.delete(`${structurePath}/departments/${id}`),
+  positions: () => api.get(`${structurePath}/positions`),
+  createPosition: body => api.post(`${structurePath}/positions`, body),
+  updatePosition: (id, body) => api.put(`${structurePath}/positions/${id}`, body),
+  deactivatePosition: id => api.delete(`${structurePath}/positions/${id}`),
+  organizationAssignments: () => api.get(`${structurePath}/assignments`),
+  assignEmployee: body => api.post(`${structurePath}/assignments`, body),
+  responsibilities: () => api.get(`${structurePath}/responsibilities`),
+  assignResponsibility: body => api.post(`${structurePath}/responsibilities`, body),
+  chart: at => api.get(`${structurePath}/chart${at ? `?${new URLSearchParams({ at })}` : ''}`),
+  downloadBranchTemplate: () => downloadFile(`${structurePath}/branches/import/template`, 'branches.xlsx'),
+  previewBranchImport,
+  applyBranchImport: body => api.post(`${structurePath}/branches/import/apply`, body),
+  loadPhoto: loadStructurePhoto,
+  transfers: () => api.get('/org/transfers'),
+  createTransfer: body => api.post('/org/transfers', body),
+  approveTransfer: (id, reason) => api.post(`/org/transfers/${id}/approve`, { reason }),
+  rejectTransfer: (id, reason) => api.post(`/org/transfers/${id}/reject`, { reason }),
 };
 
 export const canManageCustomRoles = readiness => readiness?.ready === true && readiness.accessControlMode === 'PERMISSIONS';
@@ -38,6 +102,7 @@ const PAYROLL_READERS = STAFF.filter(role => role !== 'DEPARTMENT_HEAD');
 const PROCESSORS = ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'];
 const ROUTES = {
   people: [['people.view', 'users.manage'], STAFF], employees: [['people.view'], STAFF],
+  'organisation-structure': [['structure.view', 'structure.manage', 'branches.view', 'branches.manage', 'departments.view', 'departments.manage', 'positions.view', 'positions.manage', 'assignments.view', 'assignments.manage', 'transfers.view', 'transfers.manage', 'chart.view'], []],
   payroll: [['payroll.view', 'payments.view'], PAYROLL_READERS], posts: [['compensation.view'], STAFF],
   'pay-scales': [['compensation.view'], STAFF], 'pay-revisions': [['compensation.view'], STAFF],
   leave: [['leave.view'], PAYROLL_READERS], allowances: [['compensation.view'], PAYROLL_READERS],
@@ -49,7 +114,7 @@ const ROUTES = {
   'financial-changes': [['financialChanges.view'], FINANCIAL_READERS], 'mandatory-fields': [['settings.view'], ['ORG_ADMIN']],
   audit: [['audit.view'], ['ORG_ADMIN']], 'roles-permissions': [['roles.manage'], []], users: [['users.manage'], ['ORG_ADMIN']],
 };
-const SELF = { payslips: 'self.payslips', leave: 'self.leave', calendar: 'self.leave', policies: 'self.policies', expenses: 'self.claims', workplace: 'self.profile', time: 'self.attendance' };
+const SELF = { payslips: 'self.payslips', leave: 'self.leave', calendar: 'self.leave', policies: 'self.policies', expenses: 'self.claims', workplace: 'chart.view', time: 'self.attendance' };
 export const SERVICE_PERMISSIONS = {
   policy: [['hr.view'], ['ORG_ADMIN']], holidays: [['hr.view'], ['ORG_ADMIN', 'HR_ADMIN']],
   time: [['attendance.view'], ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']],

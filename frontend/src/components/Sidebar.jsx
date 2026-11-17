@@ -26,6 +26,7 @@ const NAV = {
       label: 'Establishment',
       items: [
         { to: '/people', label: 'People', icon: 'employees' },
+        { to: '/organisation-structure', label: 'Organisation Structure', icon: 'orgs' },
         { to: '/posts', label: 'Posts & Cadres', icon: 'posts' },
         { to: '/pay-scales', label: 'Pay Scales', icon: 'scales' },
         { to: '/pay-revisions', label: 'Pay Revisions', icon: 'scales' },

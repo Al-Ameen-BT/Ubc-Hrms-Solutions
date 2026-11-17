@@ -49,12 +49,13 @@ import { EmployeeServicesAdminPage } from './features/org/EmployeeServicesAdminP
 import { CatalogueAdoptionPage } from './features/org/CatalogueAdoptionPage';
 import { CompensationPage } from './features/employees/CompensationPage';
 import { FinancialApprovalsPage } from './features/org/FinancialApprovalsPage';
+import { OrganisationStructurePage } from './features/org/OrganisationStructurePage';
 
 import { hasServiceAccess } from './api/organizationAccess';
 import { RolesPermissionsPage } from './features/org/RolesPermissionsPage';
 
 function AppRoutes() {
-  const { isAuthenticated, loading, isSuperAdmin, canPermission } = useAuth();
+  const { user, isAuthenticated, loading, isSuperAdmin, canPermission } = useAuth();
 
   if (loading) {
     return (
@@ -123,6 +124,7 @@ function AppRoutes() {
         <Route path="ksr-rules" element={<KsrRulesPage />} />
 
         <Route path="org-profile" element={<OrgProfilePage />} />
+        <Route path="organisation-structure" element={<OrganisationStructurePage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="payroll-settings" element={<PayrollSettingsPage />} />
         <Route path="catalogue-adoption" element={<CatalogueAdoptionPage />} />

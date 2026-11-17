@@ -1,0 +1,81 @@
+.org-structure-page { min-width: 0; }
+.org-structure-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-5); }
+.org-structure-heading h1 { margin-bottom: var(--space-2); }
+.org-structure-heading p { max-width: 68ch; }
+.org-profile-link { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius); color: var(--accent-strong); background: var(--surface); text-decoration: none; }
+.org-profile-link:hover { background: var(--bg-glass-hover); }
+.org-structure-tabs { display: flex; gap: var(--space-2); margin: 0 0 var(--space-5); overflow-x: auto; border-bottom: 1px solid var(--border-subtle); scrollbar-width: thin; }
+.org-structure-tabs button { flex: 0 0 auto; padding: 10px var(--space-3); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; white-space: nowrap; }
+.org-structure-tabs button:hover { color: var(--text-primary); background: var(--bg-glass-subtle); }
+.org-structure-tabs button.is-active { color: var(--accent-strong); border-bottom-color: var(--accent); font-weight: 600; }
+.org-structure-tabs button:focus-visible, .org-chart-layout button:focus-visible, .org-role-starts button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.org-section-heading { margin: 0 0 var(--space-4); }
+.org-section-heading h2 { margin: 0 0 var(--space-1); }
+.org-section-heading p { margin: 0; color: var(--text-secondary); }
+.org-structure-page section > .card { margin-bottom: var(--space-4); }
+.org-structure-form { display: grid; gap: var(--space-4); }
+.org-structure-form > .form-grid { margin-bottom: 0; }
+.org-structure-page .form-grid > * { min-width: 0; }
+.org-section-state { padding: var(--space-4); color: var(--text-secondary); }
+.org-structure-error { margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: var(--radius); background: var(--danger-soft); color: var(--text-primary); overflow-wrap: anywhere; }
+.org-table-scroll { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.org-table-scroll .table { min-width: 720px; }
+.org-table-scroll th, .org-table-scroll td { padding: var(--space-3) var(--space-4); text-align: left; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.org-table-scroll th { color: var(--text-secondary); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
+.org-table-scroll td small { display: block; margin-top: var(--space-1); color: var(--text-secondary); }
+.org-table-scroll .row-actions { flex-wrap: wrap; }
+.org-check-row { display: flex; align-items: flex-start; gap: var(--space-2); color: var(--text-secondary); }
+.org-check-row input, .org-role-assignment label input { margin-top: 3px; accent-color: var(--accent-strong); }
+.org-import-actions { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto; gap: var(--space-3); align-items: end; }
+.org-import-actions .field { min-width: 0; }
+.input.org-file-picker { width: 100%; min-height: 42px; padding: 5px; color: var(--text-primary); }
+.input.org-file-picker::file-selector-button { margin-right: var(--space-3); padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-raised); color: var(--text-primary); font: inherit; cursor: pointer; }
+.input.org-file-picker::file-selector-button:hover { background: var(--bg-glass-hover); }
+.org-import-preview { display: grid; gap: var(--space-3); margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.org-preview-heading { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.org-preview-heading > span:first-of-type { color: var(--text-secondary); }
+.org-import-errors { padding: var(--space-3); border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-subtle)); border-radius: var(--radius); background: var(--danger-soft); }
+.org-import-errors h3 { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+.org-import-errors ul { margin: 0; padding-left: 1.25rem; }
+.org-transfer-section { display: grid; gap: var(--space-3); min-width: 0; margin: 0; padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+.org-transfer-section legend { padding: 0 var(--space-2); color: var(--text-primary); font-weight: 600; }
+.org-transfer-section > .form-grid { margin: 0; }
+.org-transfer-consequence { margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border-subtle)); border-radius: var(--radius); background: var(--accent-soft); color: var(--text-primary); }
+.org-role-assignment-list { display: grid; gap: var(--space-2); }
+.org-role-assignment { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); padding: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
+.org-role-assignment > span { flex: 1 1 220px; }
+.org-role-assignment label { display: inline-flex; align-items: flex-start; gap: var(--space-2); color: var(--text-secondary); }
+.org-role-start-form { align-items: end; }
+.org-role-starts { display: grid; gap: var(--space-2); margin: 0; padding-left: 1.25rem; }
+.org-role-starts li { overflow-wrap: anywhere; }
+.org-role-starts button { margin-left: var(--space-2); border: 0; background: transparent; color: var(--accent-strong); font: inherit; text-decoration: underline; cursor: pointer; }
+.org-role-history-line { display: block; margin: 0 0 var(--space-1); }
+.org-transfer-decision { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.org-chart-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+.org-chart-layout { display: inline-flex; flex: 0 0 auto; padding: 3px; border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface-sunken); }
+.org-chart-layout button { min-height: 34px; padding: 0 var(--space-3); border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; }
+.org-chart-layout button.is-active { background: var(--surface-raised); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.org-chart-tree, .org-chart-tree ul { margin: 0; padding-left: var(--space-5); list-style: none; }
+.org-chart-tree { padding-left: 0; }
+.org-chart-tree li { margin: var(--space-2) 0; }
+.org-chart-tree details > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2); cursor: pointer; }
+.org-chart-tree details > summary::marker { color: var(--accent-strong); }
+.org-chart-tree summary > span, .org-chart-tree summary > small { color: var(--text-secondary); }
+.org-chart-person, .org-leadership-list li { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: var(--space-2) 0; }
+.org-chart-person > span, .org-leadership-list li > span { display: grid; min-width: 0; gap: 2px; }
+.org-chart-person small, .org-leadership-list small { color: var(--text-secondary); overflow-wrap: anywhere; }
+.org-chart-photo, .org-chart-initial { width: 38px; height: 38px; flex: 0 0 38px; border: 1px solid var(--border-subtle); border-radius: 50%; object-fit: cover; }
+.org-chart-initial { display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+.org-leadership-list { margin: 0 0 var(--space-3); padding: 0; list-style: none; }
+.org-chart-list-person { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 190px; }
+.org-chart-list-person .org-chart-photo, .org-chart-list-person .org-chart-initial { width: 32px; height: 32px; flex-basis: 32px; }
+
+@media (max-width: 780px) {
+  .org-structure-heading, .org-chart-heading { align-items: flex-start; flex-direction: column; gap: var(--space-3); }
+  .org-profile-link { max-width: 100%; }
+  .org-import-actions { grid-template-columns: 1fr; align-items: stretch; }
+  .org-import-actions .field { width: 100%; }
+  .org-role-assignment { align-items: flex-start; flex-direction: column; }
+  .org-chart-tree, .org-chart-tree ul { padding-left: var(--space-3); }
+  .org-chart-tree { padding-left: 0; }
+}

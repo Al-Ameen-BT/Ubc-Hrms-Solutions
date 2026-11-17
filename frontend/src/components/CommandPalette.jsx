@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 const SCREENS = [
   { label: 'Overview', to: '/' },
   { label: 'People', to: '/people' },
+  { label: 'Organisation Structure', to: '/organisation-structure' },
   { label: 'Payroll', to: '/payroll' },
   { label: 'Organisations', to: '/organisations' },
   { label: 'Government Orders', to: '/government-orders' },

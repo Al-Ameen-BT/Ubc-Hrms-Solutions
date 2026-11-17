@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { employeeApi } from '../../api/employee';
@@ -12,6 +12,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ServiceBookPayslips } from '../employees/ServiceBookPayslips';
 import { masterDataApi } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { organizationAccessApi } from '../../api/organizationAccess';
 import './EmployeeServices.css';
 
 const labels = { payslips: 'My Payslips', leave: 'My Leave', policies: 'Bank Policies', calendar: 'My Calendar', workplace: 'Workplace', time: 'Check-in & Check-out', expenses: 'Reimbursement Claims' };
@@ -20,6 +21,18 @@ const dateNow = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata
 function Notice({ error }) { return error ? <p className="auth-error" role="alert">{error}</p> : null; }
 function Status({ value }) { return <Badge variant={['APPROVED', 'PAID'].includes(value) ? 'success' : ['REJECTED', 'WITHDRAWN'].includes(value) ? 'danger' : 'warning'}>{value}</Badge>; }
 function groupBy(rows, key) { return rows.reduce((groups, row) => { (groups[key(row)] ||= []).push(row); return groups; }, {}); }
+
+function WorkplacePhoto({ path, name }) {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    let mounted = true, objectUrl = '';
+    setUrl('');
+    if (!path) return undefined;
+    organizationAccessApi.loadPhoto(path).then(value => { objectUrl = value; if (mounted) setUrl(value); else URL.revokeObjectURL(value); }).catch(() => {});
+    return () => { mounted = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [path]);
+  return url ? <img className="ess-workplace-photo" src={url} alt={name ? `${name} photo` : ''} /> : <span className="ess-workplace-initial" aria-hidden="true">{name?.trim()?.[0]?.toUpperCase() || ''}</span>;
+}
 
 export function EmployeeServicesPage() {
   const { section } = useParams();
@@ -67,23 +80,26 @@ function Calendar() {
 }
 
 function Workplace() {
-  const { data, error } = useQuery({ queryKey: ['me', 'workplace'], queryFn: employeeApi.workplace });
-  const branches = groupBy(data?.rows || [], row => row.branchName || 'Unassigned branch');
+  const { data, error, isLoading } = useQuery({ queryKey: ['me', 'chart'], queryFn: employeeApi.chart });
+  const employees = data?.employees || [];
+  const assigned = data?.context?.assigned === true;
+  const ownBranchId = data?.context?.branch?.id;
+  const ownBranchRows = assigned ? employees.filter(row => String(row.branch?.id) === String(ownBranchId)) : [];
+  const headOfficeRows = employees.filter(row => row.branch?.unitType === 'HEAD_OFFICE' && (!assigned || String(row.branch.id) !== String(ownBranchId)));
+  const leadership = data?.leadership || [];
   return <>
     <Notice error={error?.message} />
-    <p>Bank → branch → department → role. This directory shows work identity only.</p>
-    {Object.entries(branches).map(([branch, people]) => <Card key={branch} title={`${branch} · ${people.length}`}>
-      <div className="ess-directory">
-        {Object.entries(groupBy(people, row => row.department || 'Unassigned department')).map(([department, staff]) => <details key={department} open>
-          <summary>{department} · {staff.length}</summary>
-          {Object.entries(groupBy(staff, row => row.designation || row.postName || 'Unassigned role')).map(([role, members]) => <div key={role} className="ess-role-group">
-            <h4>{role} · {members.length}</h4>
-            <div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th></tr></thead><tbody>{members.map(row => <tr key={row.id}><td>{row.name}</td><td>{row.empCode}</td></tr>)}</tbody></table></div>
-          </div>)}
-        </details>)}
-      </div>
-    </Card>)}
-    {!Object.keys(branches).length && <EmptyState title="No employees listed" />}
+    <p>This chart shows your own branch and current employees in Head Office leadership positions marked visible to staff. Board and leadership profiles appear separately. Only work identity is shown.</p>
+    {isLoading && <p>Loading your workplace chart…</p>}
+    {!isLoading && !assigned && <div className="auth-notice" role="status">Your branch assignment is not available. Only Head Office leadership is shown until the assignment is resolved.</div>}
+    {assigned && <Card title={`Your branch · ${data?.context?.branch?.name || 'Current branch'}`}>
+      {ownBranchRows.length ? <div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Department</th><th>Position</th></tr></thead><tbody>{ownBranchRows.map(row => <tr key={row.id}><td><span className="ess-workplace-person"><WorkplacePhoto path={row.photoRef} name={row.name} />{row.name}</span></td><td>{row.empCode}</td><td>{row.department?.name || 'Unassigned department'}</td><td>{row.position?.name || 'Unassigned position'}</td></tr>)}</tbody></table></div> : <EmptyState title="No current branch occupants" description="Current employees with active assignments in your branch appear here." />}
+    </Card>}
+    <Card title="Head Office leadership">
+      {headOfficeRows.length ? <div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Department</th><th>Position</th></tr></thead><tbody>{headOfficeRows.map(row => <tr key={row.id}><td><span className="ess-workplace-person"><WorkplacePhoto path={row.photoRef} name={row.name} />{row.name}</span></td><td>{row.empCode}</td><td>{row.department?.name || 'Unassigned department'}</td><td>{row.position?.name || 'Unassigned position'}</td></tr>)}</tbody></table></div> : <EmptyState title="No employee leadership positions are visible" description="Current Head Office occupants marked visible to employees appear here." />}
+      {leadership.length > 0 && <div className="ess-leadership-list"><h3>Board and external leadership</h3><ul>{leadership.map(row => <li key={row.id}><WorkplacePhoto path={row.photoRef} name={row.name} /><span><strong>{row.name}</strong><small>{row.roleOther || row.role}</small></span></li>)}</ul></div>}
+      {leadership.length === 0 && <p className="form-note">No manual board or external leadership profiles are published.</p>}
+    </Card>
   </>;
 }
 

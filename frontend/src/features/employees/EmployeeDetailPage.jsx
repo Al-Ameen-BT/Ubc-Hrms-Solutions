@@ -30,7 +30,10 @@ export function EmployeeDetailPage() {
   const { user: currentUser, canPermission } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const permissionMode = currentUser?.accessControlMode === 'PERMISSIONS';
   const isOrgAdmin = canPermission('users.manage', ['ORG_ADMIN']) && Boolean(currentUser?.organizationId);
+  const canViewStructure = canPermission('assignments.view', ['ORG_ADMIN']);
+  const useStructureSource = currentUser?.accessControlMode === 'PERMISSIONS' || canViewStructure;
   const orgId = currentUser?.organizationId;
   const { data: roleData } = useQuery({ queryKey: ['organization-roles'], queryFn: organizationAccessApi.roles, enabled: isOrgAdmin });
   const baselineRole = roleData?.rows?.find(role => role.isProtected && role.templateCode === 'EMPLOYEE');
@@ -47,6 +50,10 @@ export function EmployeeDetailPage() {
     queryKey: ['service-book', id],
     queryFn: () => masterDataApi.serviceBook(id),
   });
+  const structureAssignmentsQuery = useQuery({ queryKey: ['employee-structure-assignment', id], queryFn: organizationAccessApi.organizationAssignments, enabled: canViewStructure });
+  const structureBranchesQuery = useQuery({ queryKey: ['employee-structure-branches'], queryFn: organizationAccessApi.branches, enabled: canViewStructure && canPermission('branches.view', ['ORG_ADMIN']) });
+  const structureDepartmentsQuery = useQuery({ queryKey: ['employee-structure-departments'], queryFn: organizationAccessApi.departments, enabled: canViewStructure && canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN']) });
+  const structurePositionsQuery = useQuery({ queryKey: ['employee-structure-positions'], queryFn: organizationAccessApi.positions, enabled: canViewStructure && canPermission('positions.view', ['ORG_ADMIN']) });
   const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions, enabled: canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) });
   const { data: salaryHistory } = useQuery({ queryKey: ['compensation', id], queryFn: () => compensationApi.assignments(id), enabled: canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) });
   const approvalMode = !!adoption?.requiresCatalogueAdoption || !!salaryHistory?.rows?.some(row => row.status === 'APPROVED');
@@ -183,6 +190,16 @@ export function EmployeeDetailPage() {
   const employee = book?.employee;
   if (!employee) return <div className="page"><EmptyState title="Employee not found" /></div>;
 
+  const structureToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const visibleCurrentAssignments = (structureAssignmentsQuery.data?.rows || []).filter(row => String(row.employeeId) === String(employee.id) && row.status === 'ACTIVE' && row.effectiveFrom <= structureToday && (!row.effectiveTo || row.effectiveTo >= structureToday));
+  const currentStructure = visibleCurrentAssignments.length === 1 ? visibleCurrentAssignments[0] : null;
+  const structureBranch = (structureBranchesQuery.data?.rows || []).find(row => String(row.id) === String(currentStructure?.branchId));
+  const structureDepartment = (structureDepartmentsQuery.data?.rows || []).find(row => String(row.id) === String(currentStructure?.departmentId));
+  const structurePosition = (structurePositionsQuery.data?.rows || []).find(row => String(row.id) === String(currentStructure?.positionId));
+  const currentDepartmentName = useStructureSource ? (currentStructure ? structureDepartment?.name || (currentStructure.departmentId ? `Department #${currentStructure.departmentId}` : 'No department') : 'Unresolved') : employee.department || 'Not Assigned';
+  const currentPositionName = useStructureSource ? (currentStructure ? structurePosition?.name || (currentStructure.positionId ? `Position #${currentStructure.positionId}` : 'No position') : 'Unresolved') : employee.designation || employee.PostCadre?.name || 'Employee';
+  const currentBranchName = useStructureSource ? (currentStructure ? structureBranch?.name || `Branch #${currentStructure.branchId}` : 'Unresolved') : employee.branchName || employee.branchCode || 'Main Office';
+
   const linkedAccount = isOrgAdmin
     ? (orgUsers?.rows || []).find((u) => String(u.employeeId) === String(employee.id) && u.status === 'ACTIVE')
     : null;
@@ -270,28 +287,27 @@ export function EmployeeDetailPage() {
                 <span className="employee-code-badge mono">ID: {employee.empCode}</span>
               </div>
               <p className="employee-designation">
-                <span>{employee.designation || employee.PostCadre?.name || 'Employee'}</span>
-                {employee.PostCadre?.name && employee.designation && employee.PostCadre.name !== employee.designation && (
+                <span>{currentPositionName}</span>
+                {!useStructureSource && employee.PostCadre?.name && employee.designation && employee.PostCadre.name !== employee.designation && (
                   <span className="employee-cadre-tag"> ({employee.PostCadre.name})</span>
                 )}
-                {employee.department ? (
-                  <span className="employee-dept-tag"> · Dept: <strong>{employee.department}</strong></span>
+                {currentDepartmentName && currentDepartmentName !== 'Not Assigned' && currentDepartmentName !== 'No department' ? (
+                  <span className="employee-dept-tag"> · Dept: <strong>{currentDepartmentName}</strong></span>
                 ) : (
-                  <span className="employee-dept-tag" style={{ opacity: 0.65 }}> · Dept: Not Assigned</span>
+                  <span className="employee-dept-tag" style={{ opacity: 0.65 }}> · Dept: {currentDepartmentName}</span>
                 )}
-                {employee.branchName && (
-                  <span className="employee-branch-tag"> · {employee.branchName}</span>
-                )}
+                <span className="employee-branch-tag"> · {currentBranchName}</span>
               </p>
             </div>
           </div>
           <div className="employee-profile-actions">
-            {canPermission('people.edit', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>}
+            {!permissionMode && canPermission('people.edit', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>}
             {isOrgAdmin && (
               <Button variant="secondary" onClick={openPortalModal}>
                 {linkedAccount ? 'Reset Portal Password' : 'Grant Portal Login'}
               </Button>
             )}
+            {canPermission('transfers.manage', ['ORG_ADMIN']) && <Button variant="secondary" onClick={() => navigate(`/organisation-structure?employee=${encodeURIComponent(id)}`)}>Schedule transfer</Button>}
             {canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) && <Button variant="secondary" onClick={() => navigate(`/employees/${id}/compensation`)}>Salary Assignment</Button>}
             {employee.directPay ? canPermission('compensation.prepare', approvalMode ? ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER'] : ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(book?.effectiveCompensation?.basicPay || employee.currentBasicPay || ''), reason: '', effectiveDate: '' }); setError(''); setSalaryModalOpen(true); }}>Prepare salary change</Button> : (approvalMode ? canPermission('financialChanges.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER']) : canPermission('people.edit', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'])) && <Button variant="secondary" onClick={openPayModal}>Prepare allowance change</Button>}
             <Button variant="secondary" onClick={() => navigate('/people')}>Back</Button>
@@ -299,18 +315,27 @@ export function EmployeeDetailPage() {
         </div>
       </div>
 
+      {useStructureSource && <Card title="Current organisation structure">
+        {!canViewStructure && <div className="auth-notice" role="status">Authoritative assignment details are not visible under your current permissions.</div>}
+        {canViewStructure && structureAssignmentsQuery.isLoading && <p>Loading current organisation assignment…</p>}
+        {canViewStructure && structureAssignmentsQuery.error && <div className="auth-error" role="alert">{structureAssignmentsQuery.error.message || 'Could not load the current organisation assignment.'} Check structure access and retry.</div>}
+        {canViewStructure && structureAssignmentsQuery.isSuccess && visibleCurrentAssignments.length === 0 && <div className="auth-notice" role="status"><strong>Legacy assignment warning:</strong> no current authoritative assignment was returned. Older branch or department values may be missing, expired, or ambiguous. Resolve the record through Staffing before scheduling a transfer.</div>}
+        {canViewStructure && structureAssignmentsQuery.isSuccess && visibleCurrentAssignments.length > 1 && <div className="auth-error" role="alert"><strong>Ambiguous current assignment:</strong> multiple active structure assignments were returned. Resolve this in Staffing before scheduling a transfer.</div>}
+        {currentStructure && <div className="form-grid"><div><strong>Branch / office</strong><p>{currentBranchName}</p></div><div><strong>Department</strong><p>{currentDepartmentName}</p></div><div><strong>Position</strong><p>{currentPositionName}</p></div><div><strong>Effective from</strong><p className="mono">{currentStructure.effectiveFrom}</p></div></div>}
+      </Card>}
+
       {/* Employment Details Ribbon (Clean horizontal metadata) */}
       <div className="employee-meta-strip">
         <div className="meta-strip-item">
           <span className="meta-strip-label">Department</span>
-          <span className="meta-strip-val" title={employee.department || 'Not Assigned'}>
-            {employee.department || <span style={{ opacity: 0.5, fontWeight: 400 }}>Not Assigned</span>}
+          <span className="meta-strip-val" title={currentDepartmentName}>
+            {currentDepartmentName || <span style={{ opacity: 0.5, fontWeight: 400 }}>Not Assigned</span>}
           </span>
         </div>
         <div className="meta-strip-item">
           <span className="meta-strip-label">Branch / Office</span>
-          <span className="meta-strip-val" title={employee.branchName || employee.branchCode || 'Main Office'}>
-            {employee.branchName || employee.branchCode || 'Main Office'}
+          <span className="meta-strip-val" title={currentBranchName}>
+            {currentBranchName}
           </span>
         </div>
         <div className="meta-strip-item">
