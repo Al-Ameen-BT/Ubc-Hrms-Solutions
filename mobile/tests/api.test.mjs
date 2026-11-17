@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createApi } from '../src/api.ts';
+import * as apiModule from '../src/api.ts';
+
+const { createApi } = apiModule;
 
 test('QR link claim is sent only to the configured origin', async () => {
   const calls = [];
@@ -34,6 +36,45 @@ test('expired device access renews and retries once with the new token', async (
   assert.deepEqual(await api.get('/me/payslips', 'old'), { rows: [1] });
   assert.deepEqual(seen, ['Bearer old', 'Bearer new']);
   assert.equal(expired, false);
+});
+
+test('access changes end the session without refreshing a revoked token', async () => {
+  let renewals = 0; const ended = [];
+  const api = createApi('https://hrms.example.invalid', async () => ({ ok: false, status: 401, json: async () => ({ code: 'ACCESS_CHANGED', message: 'Access changed' }) }), async code => { await new Promise(resolve => setTimeout(resolve, 5)); ended.push(code); }, async () => { renewals++; return 'new'; });
+  await assert.rejects(api.get('/me/chart', 'old'), error => error.code === 'ACCESS_CHANGED');
+  assert.equal(renewals, 0);
+  assert.deepEqual(ended, ['ACCESS_CHANGED']);
+});
+
+test('employee chart parser keeps only scoped work identity and private photo references', () => {
+  assert.equal(typeof apiModule.parseEmployeeChart, 'function');
+  const chart = apiModule.parseEmployeeChart({
+    at: '2026-11-17', view: 'employee', salary: 999999, bankAccount: 'private',
+    context: { assigned: true, branch: { id: 10, code: 'BR1', name: 'Main Branch', unitType: 'BRANCH', address: 'private' }, department: { id: 20, code: 'OPS', name: 'Operations' }, position: { id: 30, code: 'CLERK', name: 'Clerk', reportsToPositionId: 40 } },
+    employees: [{ id: 1, empCode: 'E001', name: 'A very long employee name that must remain complete', photoRef: '/api/v1/employees/1/photo?view=employee', mobile: 'private', currentBasicPay: 50000, branch: { id: 10, code: 'BR1', name: 'Main Branch', unitType: 'BRANCH' }, department: { id: 20, code: 'OPS', name: 'Operations' }, position: { id: 30, code: 'CLERK', name: 'Clerk', reportsToPositionId: 40 } }],
+    leadership: [{ id: 2, name: 'External Chair', role: 'CHAIRMAN', roleOther: null, displayOrder: 1, photoRef: 'https://evil.example.invalid/photo', email: 'private@example.invalid' }],
+  });
+  assert.equal(chart.employees[0].name, 'A very long employee name that must remain complete');
+  assert.equal(chart.employees[0].photoRef, '/api/v1/employees/1/photo?view=employee');
+  assert.equal(chart.leadership[0].photoRef, null);
+  assert.equal(JSON.stringify(chart).includes('private'), false);
+  assert.deepEqual(Object.keys(chart.employees[0]).sort(), ['branch', 'department', 'empCode', 'id', 'name', 'photoRef', 'position']);
+});
+
+test('employee chart sections separate Head Office leadership from the current branch', () => {
+  assert.equal(typeof apiModule.employeeChartSections, 'function');
+  const chart = apiModule.parseEmployeeChart({
+    at: '2026-11-17', view: 'employee', context: { assigned: true, branch: { id: 10, code: 'BR1', name: 'Main Branch', unitType: 'BRANCH' }, department: null, position: null },
+    employees: [
+      { id: 1, empCode: 'E1', name: 'Own branch employee', photoRef: null, branch: { id: 10, code: 'BR1', name: 'Main Branch', unitType: 'BRANCH' }, department: null, position: null },
+      { id: 2, empCode: 'E2', name: 'Head Office leader', photoRef: null, branch: { id: 11, code: 'HO', name: 'Head Office', unitType: 'HEAD_OFFICE' }, department: null, position: { id: 12, code: 'GM', name: 'General Manager', reportsToPositionId: null } },
+    ],
+    leadership: [{ id: 3, name: 'Chair', role: 'CHAIRMAN', roleOther: null, displayOrder: 1, photoRef: null }],
+  });
+  const sections = apiModule.employeeChartSections(chart);
+  assert.deepEqual(sections.leadership.map(row => row.name), ['Chair', 'Head Office leader']);
+  assert.equal(sections.branch?.name, 'Main Branch');
+  assert.deepEqual(sections.branch?.employees.map(row => row.name), ['Own branch employee']);
 });
 
 test('rate-limited access renewal does not end the device session', async () => {

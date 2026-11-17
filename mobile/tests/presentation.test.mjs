@@ -8,6 +8,7 @@ import {
   navigationItems,
   statusMeta,
 } from '../src/presentation.ts';
+import fs from 'node:fs';
 
 test('status metadata gives financial and workflow states readable labels and tones', () => {
   assert.deepEqual(statusMeta('APPROVED'), { label: 'Approved', tone: 'success' });
@@ -53,4 +54,20 @@ test('employee display helpers remain safe for missing and long names', () => {
   assert.equal(initials('Al Ameen N R'), 'AA');
   assert.equal(initials('Single'), 'S');
   assert.equal(initials(undefined), 'E');
+});
+
+test('workplace chart presents photos, wrapped identity and no management controls', () => {
+  const source = fs.readFileSync(new URL('../src/screens/Services.tsx', import.meta.url), 'utf8');
+  assert.match(source, /\/me\/chart/);
+  assert.match(source, /Authorization: `Bearer \$\{session\.token\}`/);
+  assert.match(source, /accessibilityLabel=\{`\$\{person\.name\} profile photo`\}/);
+  assert.doesNotMatch(source, /numberOfLines=\{1\}[^\n]*person\.name/);
+  assert.doesNotMatch(source, /Manage (?:branch|employee|position)|vacanc/i);
+});
+
+test('QR linking screen can explain that changed access requires relinking', () => {
+  const app = fs.readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const auth = fs.readFileSync(new URL('../src/screens/Auth.tsx', import.meta.url), 'utf8');
+  assert.match(app, /relinkNotice/);
+  assert.match(auth, /relinkNotice/);
 });

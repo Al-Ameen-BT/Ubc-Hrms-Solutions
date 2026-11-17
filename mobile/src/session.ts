@@ -6,6 +6,8 @@ export type TokenStore = Pick<typeof import('expo-secure-store'), 'getItemAsync'
 export type EmployeeSession = { token: string; user: EmployeeUser; context: EmployeeContext };
 type Tokens = { accessToken: string; refreshToken: string };
 type LinkResult = Tokens & { user: EmployeeUser };
+export const ACCESS_RELINK_MESSAGE = 'Your workplace access changed. For your security, link this phone again from your self-service portal.';
+export const relinkMessageFor = (code?: string) => ['ACCESS_CHANGED', 'DEVICE_REVOKED', 'DEVICE_SESSION_INVALID'].includes(code || '') ? ACCESS_RELINK_MESSAGE : '';
 
 async function readTokens(store: TokenStore): Promise<Tokens | null> {
   const raw = await store.getItemAsync(SESSION_KEY);
@@ -17,7 +19,7 @@ async function readTokens(store: TokenStore): Promise<Tokens | null> {
 }
 
 export async function acceptEmployeeLink(result: LinkResult, api: Pick<Api, 'get'>, store: TokenStore): Promise<EmployeeSession> {
-  if (!result.accessToken || !result.refreshToken || result.user?.role !== 'EMPLOYEE') throw new Error('This app is for linked employee accounts only.');
+  if (!result.accessToken || !result.refreshToken || !result.user?.id) throw new Error('This app is for linked employee accounts only.');
   const context = await api.get<EmployeeContext>('/me/context', result.accessToken);
   if (!context.linked || !context.employee) throw new Error('Your account is not linked to an active employee. Ask HR to link it.');
   await store.setItemAsync(SESSION_KEY, JSON.stringify({ accessToken: result.accessToken, refreshToken: result.refreshToken }));
@@ -30,23 +32,24 @@ export async function refreshEmployeeSession(api: Pick<Api, 'post'>, store: Toke
   if (!tokens) throw new Error('Link this phone from your self-service portal.');
   if (staleToken && tokens.accessToken !== staleToken) return tokens;
   const result = await api.post<LinkResult>('/mobile/session/refresh', { refreshToken: tokens.refreshToken });
-  if (!result.accessToken || !result.refreshToken || result.user?.role !== 'EMPLOYEE') throw new Error('Employee device session is invalid.');
+  if (!result.accessToken || !result.refreshToken || !result.user?.id) throw new Error('Employee device session is invalid.');
   await store.setItemAsync(SESSION_KEY, JSON.stringify({ accessToken: result.accessToken, refreshToken: result.refreshToken }));
   return result;
 }
 
-export async function restoreEmployeeSession(api: Pick<Api, 'get' | 'post'>, store: TokenStore): Promise<EmployeeSession | null> {
+export async function restoreEmployeeSession(api: Pick<Api, 'get' | 'post'>, store: TokenStore, onRelinkRequired?: (message: string) => void | Promise<void>): Promise<EmployeeSession | null> {
   if (!(await readTokens(store))) { await store.deleteItemAsync(LEGACY_KEY); return null; }
   try {
     const renewed = await refreshEmployeeSession(api, store);
     const user = await api.get<EmployeeUser>('/auth/me', renewed.accessToken);
-    if (user.role !== 'EMPLOYEE') throw new Error('Employee access required.');
     const context = await api.get<EmployeeContext>('/me/context', renewed.accessToken);
     if (!context.linked || !context.employee) throw new Error('Employee link unavailable.');
     return { token: renewed.accessToken, user, context };
   } catch (error) {
     if (!isSessionEndingError(error as ApiError)) throw error;
     await clearEmployeeSession(store);
+    const message = relinkMessageFor((error as ApiError).code);
+    if (message) await onRelinkRequired?.(message);
     return null;
   }
 }

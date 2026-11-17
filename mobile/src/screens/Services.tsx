@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { Api } from '../api';
+import { employeeChartSections, parseEmployeeChart, type Api, type ChartPerson } from '../api';
 import type { EmployeeSession } from '../session';
 import { sharePrivateFile, pickReceipt } from '../files';
 import { bankToday, claimAmount, periodQuery } from '../validation';
-import { isCurrentBankPeriod, statusMeta } from '../presentation';
+import { initials, isCurrentBankPeriod, statusMeta } from '../presentation';
 import { Action, Card, DataRow, Empty, ErrorText, Field, Loading, Notice, Page, radius, ScreenHeading, StatusBadge, colors, dateText, money, styles, timeText, useResource } from '../ui';
 import { PasswordForm } from './Auth';
 import { version } from '../../package.json';
@@ -16,7 +16,6 @@ type Balance = { id: number; closingBalance: string | number; LeaveType?: LeaveT
 type LeaveApplication = { id: number; fromDate: string; toDate: string; days: string | number; status: string; LeaveType?: LeaveType };
 type Policy = { policy: { version: number; title: string; body: string } | null; acknowledged: boolean; history: { id: number; acknowledgedAt: string; EmployeePolicy?: { title: string; version: number } }[] };
 type CalendarData = { holidays: { date: string; name: string }[]; leave: LeaveApplication[]; time: TimeEntry[] };
-type Person = { id: number; empCode: string; name: string; branchName?: string; department?: string; designation?: string; postName?: string };
 type TimeEntry = { id: number; localDate: string; checkInAt: string; checkOutAt?: string | null; correctionReason?: string };
 type Claim = { id: number; expenseDate: string; category: string; purpose: string; amount: number; status: string; decisionReason?: string; paidAt?: string; paymentReference?: string };
 
@@ -102,12 +101,25 @@ function Calendar({ api, session }: Props) {
   </Page>;
 }
 
+function ChartPersonRow({ api, session, person }: Pick<Props, 'api' | 'session'> & { person: ChartPerson }) {
+  const employee = 'empCode' in person;
+  const title = employee ? person.position?.name || 'Position not assigned' : person.roleOther || statusMeta(person.role).label;
+  const detail = employee ? [person.department?.name, person.empCode].filter(Boolean).join(' · ') : 'Head Office leadership';
+  return <View style={local.person}>
+    {person.photoRef
+      ? <Image source={{ uri: `${api.root}${person.photoRef}`, headers: { Authorization: `Bearer ${session.token}` } }} style={local.personPhoto} accessibilityLabel={`${person.name} profile photo`} />
+      : <View style={local.personMark}><Text style={local.personMarkText}>{initials(person.name)}</Text></View>}
+    <View style={local.personCopy}><Text style={styles.body}>{person.name}</Text><Text style={local.personRole}>{title}</Text><Text style={styles.muted}>{detail}</Text></View>
+  </View>;
+}
+
 function Workplace({ api, session }: Props) {
-  const { data, error, loading } = useResource<Person[]>(api, '/me/workplace', session.token);
-  const branches = [...new Set((data || []).map(row => row.branchName || 'Unassigned branch'))];
-  return <Page><ScreenHeading eyebrow="Organisation" title="Workplace tree" description="Bank → branch → department → role" /><Feedback error={error} loading={loading} />
-    {branches.map(branch => <Card key={branch}><View style={local.branchTitle}><Text style={local.branchGlyph}>⌂</Text><Text style={styles.cardTitle}>{branch}</Text></View>{[...new Set((data || []).filter(row => (row.branchName || 'Unassigned branch') === branch).map(row => row.department || 'Unassigned department'))].map(department => <View key={department} style={local.department}><Text style={local.departmentTitle}>{department}</Text>{[...new Set((data || []).filter(row => (row.branchName || 'Unassigned branch') === branch && (row.department || 'Unassigned department') === department).map(row => row.designation || row.postName || 'Unassigned role'))].map(role => <View key={role} style={local.role}><Text style={styles.eyebrow}>{role}</Text>{(data || []).filter(row => (row.branchName || 'Unassigned branch') === branch && (row.department || 'Unassigned department') === department && (row.designation || row.postName || 'Unassigned role') === role).map(person => <View key={person.id} style={local.person}><View style={local.personMark}><Text style={local.personMarkText}>{person.name.trim()[0]?.toUpperCase() || 'E'}</Text></View><View><Text style={styles.body}>{person.name}</Text><Text style={styles.muted}>{person.empCode}</Text></View></View>)}</View>)}</View>)}</Card>)}
-    {!loading && !branches.length && <Empty message="No employees are listed in the workplace tree." />}
+  const { data, error, loading } = useResource<unknown>(api, '/me/chart', session.token);
+  const sections = data ? employeeChartSections(parseEmployeeChart(data)) : null;
+  const departments = [...new Set(sections?.branch?.employees.map(person => person.department?.name || 'Department not assigned') || [])];
+  return <Page><ScreenHeading eyebrow="Organisation" title="My workplace" description="Your branch and Head Office leadership, based on current assignments." /><Feedback error={error} loading={loading} />
+    {sections && <Card title="Head Office leadership">{sections.leadership.length ? sections.leadership.map(person => <ChartPersonRow key={`${'empCode' in person ? 'employee' : 'leader'}-${person.id}`} api={api} session={session} person={person} />) : <Empty message="No Head Office leadership profiles are available." />}</Card>}
+    {sections?.branch ? <Card><View style={local.branchTitle}><Text style={local.branchGlyph}>⌂</Text><View style={local.personCopy}><Text style={styles.cardTitle}>{sections.branch.name}</Text><Text style={styles.muted}>Your current work location</Text></View></View>{departments.map(department => <View key={department} style={local.department}><Text style={local.departmentTitle}>{department}</Text>{sections.branch?.employees.filter(person => (person.department?.name || 'Department not assigned') === department).map(person => <ChartPersonRow key={person.id} api={api} session={session} person={person} />)}</View>)}</Card> : sections && <Empty message="Your branch is not assigned yet. Ask HR to complete your workplace assignment." />}
   </Page>;
 }
 
@@ -200,8 +212,11 @@ const local = StyleSheet.create({
   department: { marginLeft: 8, paddingLeft: 14, borderLeftWidth: 2, borderLeftColor: '#c9dce7', gap: 10, paddingVertical: 8 },
   departmentTitle: { color: colors.ink, fontSize: 16, fontWeight: '800' },
   role: { gap: 7, paddingTop: 5 },
-  person: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 5 },
-  personMark: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.pale, alignItems: 'center', justifyContent: 'center' },
+  person: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingVertical: 8 },
+  personCopy: { flex: 1, minWidth: 0, gap: 2 },
+  personRole: { color: colors.blue, fontSize: 13, lineHeight: 18, fontWeight: '800' },
+  personPhoto: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.pale },
+  personMark: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.pale, alignItems: 'center', justifyContent: 'center' },
   personMarkText: { color: colors.blue, fontWeight: '900' },
   profileLogo: { width: '100%', height: 72, marginBottom: 4 },
   serviceRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 13, padding: 14, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },

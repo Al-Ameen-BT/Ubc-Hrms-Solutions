@@ -4,7 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import { createApi, type Api } from './src/api';
-import { clearEmployeeSession, refreshEmployeeSession, restoreEmployeeSession, revokeEmployeeSession, type EmployeeSession } from './src/session';
+import { clearEmployeeSession, refreshEmployeeSession, relinkMessageFor, restoreEmployeeSession, revokeEmployeeSession, type EmployeeSession } from './src/session';
 import { AuthScreen } from './src/screens/Auth';
 import { Home } from './src/screens/Home';
 import { Services } from './src/screens/Services';
@@ -17,10 +17,14 @@ function EmployeeApp() {
   const [session, setSession] = useState<EmployeeSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [restoreError, setRestoreError] = useState('');
+  const [relinkNotice, setRelinkNotice] = useState('');
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [section, setSection] = useState<Section>('Home');
   const refreshInFlight = React.useRef<Promise<string> | null>(null);
-  const expire = useCallback(() => { setSession(null); clearEmployeeSession(SecureStore).catch(() => {}); }, []);
+  const expire = useCallback(async (code?: string) => {
+    try { await clearEmployeeSession(SecureStore); }
+    finally { setSession(null); setSection('Home'); setRelinkNotice(relinkMessageFor(code)); }
+  }, []);
   const configured = useMemo(() => {
     try {
       let instance: Api;
@@ -39,14 +43,14 @@ function EmployeeApp() {
   useEffect(() => {
     if (!api) { setLoading(false); return; }
     setLoading(true); setRestoreError('');
-    restoreEmployeeSession(api, SecureStore).then(restored => setSession(restored)).catch(error => setRestoreError(error.message)).finally(() => setLoading(false));
+    restoreEmployeeSession(api, SecureStore, setRelinkNotice).then(restored => setSession(restored)).catch(error => setRestoreError(error.message)).finally(() => setLoading(false));
   }, [api, restoreAttempt]);
 
   const signOut = async () => {
     if (!api) return;
     try {
       await revokeEmployeeSession(api, SecureStore);
-      setSession(null); setSection('Home'); setRestoreError('');
+      setSession(null); setSection('Home'); setRestoreError(''); setRelinkNotice('');
     } catch (error) { Alert.alert('Could not sign out', error instanceof Error ? `${error.message} Try again when connected.` : 'Try again when connected.'); }
   };
 
@@ -59,7 +63,7 @@ function EmployeeApp() {
     <View style={{ width: '70%', marginTop: 5 }}><Loading rows={2} /></View>
   </View>;
   if (restoreError) return <Page><ScreenHeading eyebrow="Connection" title="We could not open your account" description="Your linked session is still safe. Reconnect and try again." /><ErrorText message={restoreError} /><Action title="Retry connection" onPress={() => setRestoreAttempt(value => value + 1)} /><Action title="Use another linked account" secondary onPress={signOut} /></Page>;
-  if (!session) return <AuthScreen api={api} onAuthenticated={setSession} />;
+  if (!session) return <AuthScreen api={api} relinkNotice={relinkNotice} onAuthenticated={restored => { setRelinkNotice(''); setSession(restored); }} />;
   if (session.user.mustChangePassword) return <Page><ScreenHeading eyebrow="Account security" title="Complete account setup" description="Change your temporary password in the web self-service portal, then link this phone again." /><Action title="Sign out" onPress={signOut} /></Page>;
 
   const organization = session.user.organization?.name || session.user.organizationName || 'Your bank';

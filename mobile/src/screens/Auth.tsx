@@ -8,7 +8,7 @@ import { acceptEmployeeLink, type EmployeeSession } from '../session';
 import { parseLinkQr } from '../link';
 import { Action, Card, colors, ErrorText, Field, Notice, Page, radius, ScreenHeading, styles } from '../ui';
 
-export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated: (session: EmployeeSession) => void }) {
+export function AuthScreen({ api, relinkNotice, onAuthenticated }: { api: Api; relinkNotice?: string; onAuthenticated: (session: EmployeeSession) => void }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
   const [claim, setClaim] = useState<{ linkId: number; claimSecret: string; verificationCode: string; organizationName: string; expiresAt: string } | null>(null);
@@ -67,6 +67,7 @@ export function AuthScreen({ api, onAuthenticated }: { api: Api; onAuthenticated
     <View style={local.steps} accessibilityLabel={`Device linking step ${step} of 3`}>{['Portal', 'Scan', 'Approve'].map((label, index) => <View key={label} style={local.step}><View style={[local.stepDot, step >= index + 1 && local.stepDotActive]}><Text style={[local.stepNumber, step >= index + 1 && local.stepNumberActive]}>{index + 1}</Text></View><Text style={[local.stepLabel, step >= index + 1 && local.stepLabelActive]}>{label}</Text></View>)}</View>
     {!scanning && !claim && <View style={local.illustration}><Image source={require('../../assets/link-illustration.png')} resizeMode="contain" style={local.art} accessibilityLabel="Phone linking securely to your bank" /></View>}
     <ScreenHeading eyebrow="Device linking" title={claim ? 'Approve this phone' : scanning ? 'Scan your portal QR' : 'Link your employee app'} description={claim ? 'Match the code below in your self-service portal. This keeps your account protected.' : scanning ? 'Hold the portal QR code inside the frame. Scanning happens automatically.' : 'Create a QR code from My Account → Linked devices in your bank’s web self-service portal.'} />
+    <Notice message={relinkNotice} />
     <Card>
       <ErrorText message={error} />
       {claim ? <><Text style={styles.eyebrow}>{claim.organizationName}</Text><View style={local.codePanel}><Text style={local.codeLabel}>Verification code</Text><Text selectable style={local.code}>{claim.verificationCode}</Text></View><Notice message="Waiting for approval in your portal. Keep this screen open." /><Text style={styles.muted}>The code expires automatically. If it does, create a new QR from the portal.</Text><Action title="Cancel and start again" secondary onPress={() => { setClaim(null); setError(''); }} /></> : <>

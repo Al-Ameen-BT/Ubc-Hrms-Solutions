@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError } from '../src/api.ts';
 import { parseLinkQr } from '../src/link.ts';
-import { acceptEmployeeLink, restoreEmployeeSession, refreshEmployeeSession, revokeEmployeeSession } from '../src/session.ts';
+import { ACCESS_RELINK_MESSAGE, acceptEmployeeLink, restoreEmployeeSession, refreshEmployeeSession, revokeEmployeeSession } from '../src/session.ts';
 
 const storage = () => {
   const values = new Map();
@@ -19,10 +19,11 @@ test('QR parser accepts only app link challenges', () => {
 test('linked employee verification precedes secure token storage', async () => {
   const store = storage();
   const api = { get: async () => ({ linked: true, employee: { id: 3, name: 'A' } }) };
-  await assert.rejects(acceptEmployeeLink({ ...linked, user: { role: 'ORG_ADMIN' } }, api, store), /employee/i);
+  await assert.rejects(acceptEmployeeLink(linked, { get: async () => ({ linked: false, employee: null }) }, store), /employee/i);
   assert.equal(store.peek('employeeDeviceSession'), undefined);
-  const session = await acceptEmployeeLink(linked, api, store);
+  const session = await acceptEmployeeLink({ ...linked, user: { ...linked.user, role: 'HR_OFFICER', employeeId: 3 } }, api, store);
   assert.equal(session.token, 'access-1');
+  assert.equal(session.user.role, 'HR_OFFICER');
   assert.deepEqual(JSON.parse(store.peek('employeeDeviceSession')), { accessToken: 'access-1', refreshToken: 'refresh-1' });
 });
 
@@ -60,6 +61,18 @@ test('invalid and suspended sessions clear stored device credentials', async () 
     assert.equal(await restoreEmployeeSession({ post: async () => { throw error; } }, store), null);
     assert.equal(store.peek('employeeDeviceSession'), undefined);
   }
+});
+
+test('access-change device revocation clears credentials before requesting a QR relink', async () => {
+  const store = storage(); const notices = [];
+  await store.setItemAsync('employeeDeviceSession', JSON.stringify({ accessToken: 'old', refreshToken: 'old-refresh' }));
+  const restored = await restoreEmployeeSession({ post: async () => { throw new ApiError('Device revoked', 401, 'DEVICE_REVOKED'); } }, store, message => {
+    assert.equal(store.peek('employeeDeviceSession'), undefined);
+    notices.push(message);
+  });
+  assert.equal(restored, null);
+  assert.deepEqual(notices, [ACCESS_RELINK_MESSAGE]);
+  assert.match(ACCESS_RELINK_MESSAGE, /link this phone again/i);
 });
 
 test('stale concurrent renewal reuses new access token without rotating twice', async () => {
