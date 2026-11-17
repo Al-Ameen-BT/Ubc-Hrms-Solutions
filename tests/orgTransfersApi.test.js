@@ -15,14 +15,13 @@ test('transfers use service authorization, isolate tenants, retain maker checker
   assert.equal((await request(staff, '', 'POST', input)).status, 403);
   const result = await request(f.admin, '', 'POST', input); assert.equal(result.status, 201); assert.equal(result.body.data.status, 'PENDING'); assert.equal(Object.hasOwn(result.body.data, 'amount'), false);
   const laterDate = new Date(Date.parse(`${todayIST()}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
-  const historyTransfer = await request(f.admin, '', 'POST', { ...input, effectiveDate: laterDate });
-  assert.equal(historyTransfer.status, 201);
   const roleChanges = { closeAssignmentIds: [7], retainAssignmentIds: [8], start: [{ roleId: 9, scopeType: 'SELECTED_BRANCHES', branchIds: [f.branch.id], departmentIds: [], amount: 12000, email: 'private@invalid.test' }] };
-  await m.EmployeeTransfer.findByPk(historyTransfer.body.data.id).then(row => row.update({ roleChanges: { ...roleChanges, internalProposal: { amount: 12000 } } }));
+  // Persist a legacy/corrupt JSON fixture directly; validated POST rejects these unknown private fields.
+  const historyTransfer = await m.EmployeeTransfer.create({ organizationId: f.org.id, employeeId: f.employee.id, branchId: f.branch.id, effectiveDate: laterDate, reason: 'History', preparedBy: f.admin.id, roleChanges: { ...roleChanges, internalProposal: { amount: 12000 } } });
   const listed = await request(f.admin, '');
   const safePlan = { closeAssignmentIds: [7], retainAssignmentIds: [8], start: [{ roleId: 9, scopeType: 'SELECTED_BRANCHES', branchIds: [f.branch.id], departmentIds: [] }] };
-  assert.deepEqual(listed.body.data.find(row => row.id === historyTransfer.body.data.id).roleChanges, safePlan);
-  const detailed = await request(f.admin, `/${historyTransfer.body.data.id}`);
+  assert.deepEqual(listed.body.data.find(row => row.id === historyTransfer.id).roleChanges, safePlan);
+  const detailed = await request(f.admin, `/${historyTransfer.id}`);
   assert.deepEqual(detailed.body.data.roleChanges, safePlan);
   assert.equal(Object.hasOwn(detailed.body.data.roleChanges.start[0], 'amount'), false);
   assert.equal(Object.hasOwn(detailed.body.data.roleChanges.start[0], 'email'), false);
