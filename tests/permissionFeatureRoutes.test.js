@@ -86,6 +86,22 @@ test('permission-mode onboarding atomically creates the scoped authoritative ass
   assert.equal((await call(f.actor, `/employees/${f.people[1].id}`, 'PUT', { currentBasicPay: 50000 })).status, 403);
   assert.equal((await call(f.actor, '/employees', 'POST', { ...payload, empCode: 'Salary', currentBasicPay: 50000 })).status, 403);
 });
+test('people.create can read only safe branch options within its effective scope without branches.view', async () => {
+  const officer = await fixture('PERMISSIONS', 'EMPLOYEE', 'HR_OFFICER', ['people.create']);
+  const scoped = await call(officer.actor, '/org/structure/branch-options');
+  assert.equal(scoped.status, 200, JSON.stringify(scoped.body));
+  assert.deepEqual(scoped.body.data, [{ id: officer.a.id, name: 'A', status: 'ACTIVE' }]);
+  assert.equal((await call(officer.actor, '/org/structure/branches')).status, 403);
+  assert.equal((await call(officer.actor, '/org/structure/branches', 'POST', { code: 'NEW', name: 'New branch' })).status, 403);
+
+  const hrAdmin = await fixture('PERMISSIONS', 'EMPLOYEE', 'HR_ADMIN', ['people.create']);
+  const organisationWide = await call(hrAdmin.actor, '/org/structure/branch-options');
+  assert.equal(organisationWide.status, 200, JSON.stringify(organisationWide.body));
+  assert.deepEqual(organisationWide.body.data, [
+    { id: hrAdmin.a.id, name: 'A', status: 'ACTIVE' },
+    { id: hrAdmin.b.id, name: 'B', status: 'ACTIVE' },
+  ]);
+});
 test('ambiguous current employee placements fail closed and attendance lists exclude other branches at query time', async () => {
   const f = await fixture();
   await m.EmployeeOrganizationAssignment.create({ organizationId: f.org.id, employeeId: f.people[1].id, branchId: f.b.id, effectiveFrom: '2026-01-01' });

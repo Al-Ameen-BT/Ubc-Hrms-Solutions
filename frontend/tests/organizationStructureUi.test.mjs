@@ -30,11 +30,19 @@ test('structure assignment reads keep role assignment API wiring intact', async 
   const paths = [];
   api.get = async path => { paths.push(path); return {}; };
   try {
+    await organizationAccessApi.onboardingBranches();
     await organizationAccessApi.assignments(7);
     await organizationAccessApi.organizationAssignments();
     await employeeApi.chart();
   } finally { api.get = originalGet; }
-  assert.deepEqual(paths, ['/org/role-assignments?userId=7', '/org/structure/assignments', '/me/chart']);
+  assert.deepEqual(paths, ['/org/structure/branch-options', '/org/role-assignments?userId=7', '/org/structure/assignments', '/me/chart']);
+});
+
+test('permission-mode onboarding requests branch options with people.create access', () => {
+  const page = source('features/employees/NewEmployeePage.jsx');
+  matches(page, /queryFn: organizationAccessApi\.onboardingBranches/, 'onboarding reads the scoped branch-options endpoint');
+  matches(page, /enabled: permissionMode && canPermission\('people\.create'/, 'branch options load for authorized employee creators');
+  matches(page, /disabled=\{branchesQuery\.isLoading \|\| !canPermission\('people\.create'/, 'branch selector follows employee creation permission');
 });
 
 test('branch import uses a labeled xlsx picker and requires a clean signed preview before apply', () => {

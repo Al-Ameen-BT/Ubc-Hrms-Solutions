@@ -10,14 +10,7 @@ import { Card } from '../../components/ui/Card';
 import { Stepper } from '../../components/ui/Stepper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-
-const STEPS = [
-  { key: 'identity', label: 'Identity' },
-  { key: 'service', label: 'Service' },
-  { key: 'pay', label: 'Pay' },
-  { key: 'bank', label: 'Bank' },
-  { key: 'review', label: 'Review' },
-];
+import { buildEmployeeCreatePayload, employeeOnboardingSteps } from './employeeOnboarding.js';
 
 const EMPTY = {
   empCode: '', name: '', dob: '', gender: 'MALE', category: 'GENERAL',
@@ -35,6 +28,7 @@ export function NewEmployeePage() {
   const toast = useToast();
   const { user, canPermission } = useAuth();
   const permissionMode = user?.accessControlMode === 'PERMISSIONS';
+  const steps = employeeOnboardingSteps(permissionMode);
   const [step, setStep] = useState(0);
   const [error, setError] = useState('');
   const [form, setForm] = useState(EMPTY);
@@ -47,7 +41,7 @@ export function NewEmployeePage() {
   const { data: scales } = useQuery({ queryKey: ['pay-scales-lite'], queryFn: () => masterDataApi.payScales(), enabled: !permissionMode && canLegacyCompensationView });
   const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions, enabled: !permissionMode && canLegacyCompensationView });
   const catalogueBank = !!adoption?.requiresCatalogueAdoption;
-  const branchesQuery = useQuery({ queryKey: ['new-employee-branches'], queryFn: organizationAccessApi.branches, enabled: permissionMode && canPermission('branches.view', ['ORG_ADMIN']) });
+  const branchesQuery = useQuery({ queryKey: ['new-employee-branches'], queryFn: organizationAccessApi.onboardingBranches, enabled: permissionMode && canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) });
   const departmentsQuery = useQuery({ queryKey: ['new-employee-departments'], queryFn: organizationAccessApi.departments, enabled: permissionMode && !!organizationAssignment.branchId && canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN']) });
   const positionsQuery = useQuery({ queryKey: ['new-employee-positions'], queryFn: organizationAccessApi.positions, enabled: permissionMode && !!organizationAssignment.branchId && canPermission('positions.view', ['ORG_ADMIN']) });
   const activeBranches = (branchesQuery.data?.rows || []).filter(row => row.status === 'ACTIVE');
@@ -70,14 +64,15 @@ export function NewEmployeePage() {
   });
 
   const canAdvance = () => {
-    if (step === 0) return form.name && form.empCode && form.dob && form.gender;
-    if (step === 1) return form.doj && (permissionMode || form.postCadreId) && (!permissionMode || organizationAssignment.branchId && organizationAssignment.effectiveFrom && activeBranches.some(row => String(row.id) === String(organizationAssignment.branchId)));
-    if (step === 2) return permissionMode || catalogueBank || (form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay);
-    if (step === 3) return form.bankName && form.bankAccountNumber && form.bankIfsc;
+    if (currentStep === 'identity') return form.name && form.empCode && form.dob && form.gender;
+    if (currentStep === 'service') return form.doj && (permissionMode || form.postCadreId) && (!permissionMode || organizationAssignment.branchId && organizationAssignment.effectiveFrom && activeBranches.some(row => String(row.id) === String(organizationAssignment.branchId)));
+    if (currentStep === 'pay') return permissionMode || catalogueBank || (form.directPay ? Number(form.currentBasicPay) > 0 : form.currentPayScaleId && form.currentStageId && form.currentBasicPay);
+    if (currentStep === 'bank') return form.bankName && form.bankAccountNumber && form.bankIfsc;
     return true;
   };
 
-  const next = () => canAdvance() && setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  const currentStep = steps[step]?.key;
+  const next = () => canAdvance() && setStep((s) => Math.min(s + 1, steps.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
   const scaleName = (id) => (scales?.rows || []).find((s) => String(s.id) === String(id))?.name || '—';
@@ -90,12 +85,12 @@ export function NewEmployeePage() {
         <p>Create a new employee record and service book</p>
       </header>
 
-      <Stepper steps={STEPS} current={step} onStepClick={setStep} />
+      <Stepper steps={steps} current={step} onStepClick={setStep} />
 
       <Card>
         {error && <div className="auth-error" role="alert">{error}</div>}
 
-        {step === 0 && (
+        {currentStep === 'identity' && (
           <>
             <div className="form-grid">
               <Input id="name" label="Full Name" value={form.name} onChange={(e) => set({ name: e.target.value })} required />
@@ -133,7 +128,7 @@ export function NewEmployeePage() {
           </>
         )}
 
-        {step === 1 && (
+        {currentStep === 'service' && (
           <>
           <div className="form-grid">
             <Input id="doj" label="Date of Joining" type="date" value={form.doj} onChange={(e) => set({ doj: e.target.value })} required />
@@ -150,12 +145,12 @@ export function NewEmployeePage() {
           {permissionMode && <section className="new-employee-structure" aria-labelledby="new-employee-structure-title">
             <h3 id="new-employee-structure-title">Organisation assignment</h3>
             <p className="form-note">Select the real branch and effective date for this employee. Department and position are optional.</p>
-            {!canPermission('branches.view', ['ORG_ADMIN']) && <div className="auth-notice" role="status">Branch selection requires branches.view access. Ask an organisation administrator to include that permission before creating this employee.</div>}
+            {!canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <div className="auth-notice" role="status">Branch selection requires people.create access. Ask an organisation administrator to include that permission before creating this employee.</div>}
             {branchesQuery.error && <div className="auth-error" role="alert">{branchesQuery.error.message || 'Branches could not be loaded.'} Retry after checking your branch access.</div>}
             {departmentsQuery.error && <div className="auth-error" role="alert">{departmentsQuery.error.message || 'Departments could not be loaded.'} You can continue without a department.</div>}
             {positionsQuery.error && <div className="auth-error" role="alert">{positionsQuery.error.message || 'Positions could not be loaded.'} You can continue without a position.</div>}
             <div className="form-grid">
-              <div className="field"><label className="field-label" htmlFor="new-employee-branch">Branch</label><select id="new-employee-branch" className="input" required value={organizationAssignment.branchId} disabled={branchesQuery.isLoading || !canPermission('branches.view', ['ORG_ADMIN'])} onChange={event => setOrganizationAssignment(value => ({ ...value, branchId: event.target.value, departmentId: '', positionId: '' }))}><option value="">Select branch</option>{activeBranches.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+              <div className="field"><label className="field-label" htmlFor="new-employee-branch">Branch</label><select id="new-employee-branch" className="input" required value={organizationAssignment.branchId} disabled={branchesQuery.isLoading || !canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'])} onChange={event => setOrganizationAssignment(value => ({ ...value, branchId: event.target.value, departmentId: '', positionId: '' }))}><option value="">Select branch</option>{activeBranches.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
               <Input id="new-employee-structure-date" label="Assignment effective date" type="date" required value={organizationAssignment.effectiveFrom} onChange={event => setOrganizationAssignment(value => ({ ...value, effectiveFrom: event.target.value }))} />
               <div className="field"><label className="field-label" htmlFor="new-employee-department">Department (optional)</label><select id="new-employee-department" className="input" value={organizationAssignment.departmentId} disabled={!organizationAssignment.branchId || !canPermission('departments.view', ['ORG_ADMIN', 'HR_ADMIN'])} onChange={event => setOrganizationAssignment(value => ({ ...value, departmentId: event.target.value, positionId: '' }))}><option value="">No department</option>{activeDepartments.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
               <div className="field"><label className="field-label" htmlFor="new-employee-position">Position (optional)</label><select id="new-employee-position" className="input" value={organizationAssignment.positionId} disabled={!organizationAssignment.branchId || !canPermission('positions.view', ['ORG_ADMIN'])} onChange={event => { const position = activePositions.find(row => String(row.id) === event.target.value); setOrganizationAssignment(value => ({ ...value, positionId: event.target.value, ...(value.departmentId || !position?.departmentId ? {} : { departmentId: String(position.departmentId) }) })); }}><option value="">No position</option>{activePositions.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
@@ -164,7 +159,7 @@ export function NewEmployeePage() {
           </>
         )}
 
-        {step === 2 && (
+        {currentStep === 'pay' && (
           <>
             {permissionMode ? <p className="form-note">Salary is assigned separately by an authorised compensation user after onboarding. This step does not collect salary amounts.</p> : catalogueBank ? <p className="form-note">Salary is assigned after creation from the adopted government stage, or as approved direct pay. A separate authority approves the assignment before payroll.</p> : <>
             <div className="form-grid">
@@ -207,7 +202,7 @@ export function NewEmployeePage() {
           </>
         )}
 
-        {step === 3 && (
+        {currentStep === 'bank' && (
           <div className="form-grid">
             <Input id="bankName" label="Bank Name" value={form.bankName} onChange={(e) => set({ bankName: e.target.value })} required />
             <Input id="bankAcc" label="Account Number" value={form.bankAccountNumber} onChange={(e) => set({ bankAccountNumber: e.target.value })} mono required />
@@ -215,7 +210,7 @@ export function NewEmployeePage() {
           </div>
         )}
 
-        {step === 4 && (
+        {currentStep === 'review' && (
           <div className="review-list">
             <ReviewRow label="Name" value={form.name} />
             <ReviewRow label="Code" value={form.empCode} />
@@ -240,17 +235,17 @@ export function NewEmployeePage() {
               {!form.directPay && <ReviewRow label="HRA Basis" value={form.hraType === 'FIXED' ? `Fixed Amount (₹${Number(form.fixedHraAmount || 0).toLocaleString('en-IN')})` : 'Calculated from Basic Pay (%)'} />}
               {!form.directPay && Number(form.riskAllowance) > 0 && <ReviewRow label="Risk Allowance" value={`₹${Number(form.riskAllowance).toLocaleString('en-IN')}`} />}
             </>}
-            <ReviewRow label="Bank" value={`${form.bankName} · ${form.bankAccountNumber} · ${form.bankIfsc}`} />
+            {!permissionMode && <ReviewRow label="Bank" value={`${form.bankName} · ${form.bankAccountNumber} · ${form.bankIfsc}`} />}
           </div>
         )}
 
         <div className="card-actions stepper-actions">
           <Button variant="secondary" onClick={() => navigate('/people')}>Cancel</Button>
           {step > 0 && <Button variant="secondary" onClick={back}>Back</Button>}
-          {step < STEPS.length - 1 ? (
+          {step < steps.length - 1 ? (
             <Button onClick={next} disabled={!canAdvance()}>Next</Button>
           ) : (
-            <Button loading={createMutation.isPending} disabled={!canAdvance()} onClick={() => { setError(''); const payload = permissionMode || catalogueBank ? { ...form, postCadreId: permissionMode ? null : form.postCadreId, currentPayScaleId: null, currentStageId: null, currentBasicPay: null, fixedHraAmount: null, riskAllowance: null, otherAllowance: null } : { ...form }; if (permissionMode) { delete payload.department; delete payload.designation; payload.organizationAssignment = { branchId: Number(organizationAssignment.branchId), departmentId: organizationAssignment.departmentId ? Number(organizationAssignment.departmentId) : null, positionId: organizationAssignment.positionId ? Number(organizationAssignment.positionId) : null, effectiveFrom: organizationAssignment.effectiveFrom }; } createMutation.mutate(payload); }}>
+            <Button loading={createMutation.isPending} disabled={!canAdvance()} onClick={() => { setError(''); createMutation.mutate(buildEmployeeCreatePayload(form, { permissionMode, catalogueBank, organizationAssignment })); }}>
               Create Employee
             </Button>
           )}

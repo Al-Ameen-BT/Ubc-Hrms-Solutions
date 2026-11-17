@@ -56,6 +56,7 @@ export const organizationAccessApi = {
   endAssignment: id => api.delete(`/org/role-assignments/${id}`),
   preview: userId => api.get(`/org/access-preview/${userId}`),
   branches: () => api.get(`${structurePath}/branches`),
+  onboardingBranches: () => api.get(`${structurePath}/branch-options`),
   configureHeadOffice: body => api.post(`${structurePath}/head-office`, body),
   createBranch: body => api.post(`${structurePath}/branches`, body),
   updateBranch: (id, body) => api.put(`${structurePath}/branches/${id}`, body),
@@ -90,6 +91,11 @@ export function scopeLabel(assignment, branches = [], departments = []) {
   if (assignment.scopeType === 'SELECTED_BRANCHES') return names(assignment.branchIds, branches);
   if (assignment.scopeType === 'DEPARTMENT') return names(assignment.departmentIds, departments);
   return assignment.scopeType === 'OWN' ? 'Own record' : 'Entire organisation';
+}
+
+export function orgProfileLinkAccess(canPermission) {
+  const canView = !!canPermission('settings.view', ['ORG_ADMIN']);
+  return { canView, canManage: canView && !!canPermission('settings.configure', ['ORG_ADMIN']) };
 }
 
 // Missing actor history cannot prove that a decision is independent.

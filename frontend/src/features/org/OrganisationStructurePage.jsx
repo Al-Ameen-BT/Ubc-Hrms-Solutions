@@ -3,7 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { masterDataApi, usersApi } from '../../api/client';
 import { compensationApi } from '../../api/compensation';
-import { canDecide, organizationAccessApi, scopeLabel } from '../../api/organizationAccess';
+import { canDecide, organizationAccessApi, orgProfileLinkAccess, scopeLabel } from '../../api/organizationAccess';
+import { eligibleTransferCompensation } from './transferCompensationOptions.js';
 import { useAuth } from '../../auth/AuthContext';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -96,6 +97,7 @@ export function OrganisationStructurePage() {
   const [retainRoleIds, setRetainRoleIds] = useState([]);
 
   const can = code => canPermission(code, LEGACY_ACTION_ROLES[code] || []);
+  const profileLinks = orgProfileLinkAccess(canPermission);
   const branchQuery = useQuery({ queryKey: ['org-structure', 'branches'], queryFn: organizationAccessApi.branches, enabled: can('branches.view') });
   const departmentQuery = useQuery({ queryKey: ['org-structure', 'departments'], queryFn: organizationAccessApi.departments, enabled: can('departments.view') });
   const positionQuery = useQuery({ queryKey: ['org-structure', 'positions'], queryFn: organizationAccessApi.positions, enabled: can('positions.view') });
@@ -198,7 +200,7 @@ export function OrganisationStructurePage() {
   const employeeCompensation = compensationForEmployee(transferForm.employeeId);
   const transferDepartments = activeDepartments.filter(row => String(row.branchId) === String(transferForm.branchId));
   const transferPositions = activePositions.filter(row => String(row.branchId) === String(transferForm.branchId) && (!transferForm.departmentId || String(row.departmentId) === String(transferForm.departmentId)));
-  const currentCompensation = employeeCompensation.filter(row => row.status === 'PENDING' && row.effectiveDate === transferForm.effectiveDate || selectedTransferEmployee?.directPay && row.status === 'APPROVED' && row.effectiveDate <= transferForm.effectiveDate);
+  const currentCompensation = eligibleTransferCompensation(employeeCompensation, selectedTransferEmployee?.directPay, transferForm.effectiveDate);
   const adoptedRevision = (adoptionsQuery.data?.history || []).filter(row => row.status === 'APPROVED' && row.effectiveDate <= transferForm.effectiveDate).sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))[0];
   const adoptedCatalogue = adoptedRevision?.BankRuleCatalogue;
   const selectedCataloguePost = adoptedCatalogue?.posts?.find(row => row.code === transferForm.postCode);
@@ -276,7 +278,7 @@ export function OrganisationStructurePage() {
     <header className="page-header">
       <div className="org-structure-heading">
         <div><h1>Organisation structure</h1><p>Manage units, reporting positions, employee assignments, and transfers from one authoritative workspace.</p></div>
-        <Link className="org-profile-link" to="/org-profile">Organisation profile and board records</Link>
+        {profileLinks.canView && <Link className="org-profile-link" to="/org-profile">Organisation profile and board records</Link>}
       </div>
     </header>
     {pageError && <div className="org-structure-error" role="alert">{pageError}{/deactiv|dependent|capacity/i.test(pageError) && <span> Reassign affected employees or dependent positions and responsibilities, then retry.</span>}</div>}
@@ -475,7 +477,7 @@ export function OrganisationStructurePage() {
       {chartQuery.isLoading ? <p className="org-section-state">Loading organisation chart…</p> : <>
         <Card title="Head Office leadership">
           {chart.leadership?.length ? <ul className="org-leadership-list">{chart.leadership.map(row => <li key={row.id}><AuthenticatedPhoto path={row.photoRef} name={row.name} /><span><strong>{row.name}</strong><small>{row.roleOther || row.role}</small></span></li>)}</ul> : <EmptyState title="No manual leadership profiles" description="Board and external leadership profiles are maintained in Organisation Profile." />}
-          <Link to="/org-profile">Manage board and external leadership profiles</Link>
+          {profileLinks.canManage && <Link to="/org-profile">Manage board and external leadership profiles</Link>}
         </Card>
         <Card title="Current employees">
           {!chartEmployees.length ? <EmptyState title="No current occupants in this chart" description="Only active employees with current organisation assignments appear here." /> : chartLayout === 'tree' ? <ul className="org-chart-tree" aria-label="Current organisation chart">{chartUnits.map(branch => {

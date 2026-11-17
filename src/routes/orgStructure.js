@@ -40,6 +40,7 @@ function boundary(group, Model) {
 }
 router.use(authenticate); legacy.use(authenticate);
 router.get('/chart', requirePermission('chart.view'), handle(req => organizationChart({ actor: req.user, at: req.query.at, view: req.query.view })));
+router.get('/branch-options', requirePermission('people.create'), handle(req => structure.branchOptions(req.access)));
 router.get('/board/:id/photo', requirePermission('chart.view'), photoHandler('board'));
 router.post('/head-office', requirePermission('branches.manage'), boundary('branches', models.OrganizationBranch), handle(async req => safe(await structure.configureHeadOffice({ organizationId: req.user.organizationId, actor: req.user, data: req.body }), 'branches'), 201));
 router.get('/branches/import/template', requirePermission('branches.manage'), async (req, res) => {

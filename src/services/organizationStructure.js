@@ -8,7 +8,7 @@ const {
 const { branchFields, OrgFieldError } = require('./orgFields');
 const { todayIST } = require('./orgAccess');
 const { sameId } = require('./organizationAccessPolicy');
-const { effectiveAccess, can } = require('./accessControl');
+const { effectiveAccess, can, scopedWhere } = require('./accessControl');
 const { invalidateUserAccess } = require('./userAdmin');
 
 const current = at => ({ status: 'ACTIVE', effectiveFrom: { [Op.lte]: at }, [Op.or]: [{ effectiveTo: null }, { effectiveTo: { [Op.gte]: at } }] });
@@ -252,6 +252,16 @@ async function onboardEmployee(options) {
   }).then(async employee => employee.reload({ transaction: options.transaction }));
 }
 
+async function branchOptions(access) {
+  if (!can(access, 'people.create')) return [];
+  const branches = await Branch.findAll({
+    where: { [Op.and]: [scopedWhere(access, 'people.create', 'OrganizationBranch'), { status: 'ACTIVE' }] },
+    attributes: ['id', 'name', 'status'],
+    order: [['name', 'ASC'], ['id', 'ASC']],
+  });
+  return branches.map(branch => ({ id: branch.id, name: branch.name, status: branch.status }));
+}
+
 async function assignResponsibility(options) {
   return mutate(options, 'assignments.manage', async o => {
     const data = o.data || {}, range = dates(data);
@@ -342,5 +352,5 @@ async function reconcileEffectiveAssignments(options) {
 module.exports = {
   configureHeadOffice, createBranch, updateBranch, deactivateBranch,
   createDepartment, updateDepartment, deactivateDepartment, createPosition, updatePosition, deactivatePosition,
-  onboardEmployee, assignEmployeeOrganization, assignResponsibility, currentResponsibility, reconcileEffectiveAssignments,
+  onboardEmployee, branchOptions, assignEmployeeOrganization, assignResponsibility, currentResponsibility, reconcileEffectiveAssignments,
 };
