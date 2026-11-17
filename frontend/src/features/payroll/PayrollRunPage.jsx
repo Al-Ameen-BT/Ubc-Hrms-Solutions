@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, downloadFile, fmt } from '../../api/client';
+import { canDecide } from '../../api/organizationAccess';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
@@ -57,9 +58,9 @@ function PayslipBody({ payslip }) {
 export function PayrollRunPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, can } = useAuth();
+  const { user, canPermission } = useAuth();
   const orgId = user?.organizationId;
-  const isApprover = can('ORG_ADMIN', 'APPROVING_AUTHORITY');
+  const isApprover = canPermission('payroll.approve', ['ORG_ADMIN', 'APPROVING_AUTHORITY']);
   const queryClient = useQueryClient();
   const toast = useToast();
   const [viewLine, setViewLine] = useState(null);
@@ -163,8 +164,8 @@ export function PayrollRunPage() {
       field: '__actions', label: '', sortable: false,
       render: (r) => (
         <div className="row-actions">
-          <Button variant="secondary" size="sm" onClick={() => setViewLine(r)}>Payslip</Button>
-          <Button variant="secondary" size="sm" onClick={() => exportFile(payrollApi.payslipPdfUrl(orgId, id, r.employeeId), 'Payslip PDF')}>PDF</Button>
+          {canPermission('payroll.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) && <Button variant="secondary" size="sm" onClick={() => setViewLine(r)}>Payslip</Button>}
+          {canPermission('payroll.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) && <Button variant="secondary" size="sm" onClick={() => exportFile(payrollApi.payslipPdfUrl(orgId, id, r.employeeId), 'Payslip PDF')}>PDF</Button>}
         </div>
       ),
     },
@@ -215,13 +216,13 @@ export function PayrollRunPage() {
         </div>
 
         <div className="card-actions">
-          {run?.status === 'PROCESSED' && isApprover && (
+          {run?.status === 'PROCESSED' && isApprover && canDecide(user, run, ['processedByUserId']) && (
             <>
               <Button
                 loading={approve.isPending}
                 onClick={() => { if (window.confirm('Approve this run? Once approved it is locked and cannot be re-processed.')) approve.mutate(); }}
               >
-                Approve
+                Approve independently
               </Button>
               <Button
                 variant="secondary"
@@ -236,15 +237,15 @@ export function PayrollRunPage() {
               </Button>
             </>
           )}
-          {run?.status === 'APPROVED' && isApprover && (
+          {run?.status === 'APPROVED' && canPermission('payments.pay', ['ORG_ADMIN', 'APPROVING_AUTHORITY']) && canDecide(user, run, ['processedByUserId', 'approvedByUserId']) && (
             <Button
               loading={markPaid.isPending}
               onClick={() => { if (window.confirm('Mark this run as paid? This records disbursement — it does not move money.')) markPaid.mutate(); }}
             >
-              Mark as Paid
+              Record payment
             </Button>
           )}
-          {(run?.status === 'PROCESSED' || run?.status === 'REJECTED') && (
+          {canPermission('payroll.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']) && (run?.status === 'PROCESSED' || run?.status === 'REJECTED') && (
             <>
               <Button
                 variant="secondary"
@@ -272,11 +273,11 @@ export function PayrollRunPage() {
         <div className="table-toolbar">
           <span className="form-note">Download the register for records, or the bank transfer file once the run is approved.</span>
           <div className="row-actions">
-            <Button variant="secondary" size="sm" onClick={() => exportFile(payrollApi.registerCsvUrl(orgId, id), 'Payroll register')}>Register CSV</Button>
-            <Button variant="secondary" size="sm" disabled={!canExportBank} onClick={() => exportFile(payrollApi.bankTransferCsvUrl(orgId, id), 'Bank transfer file')}>Bank Transfer CSV</Button>
+            {canPermission('payroll.export', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) && <Button variant="secondary" size="sm" onClick={() => exportFile(payrollApi.registerCsvUrl(orgId, id), 'Payroll register')}>Register CSV</Button>}
+            <Button variant="secondary" size="sm" disabled={!canExportBank || !canPermission('payments.export', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'])} onClick={() => exportFile(payrollApi.bankTransferCsvUrl(orgId, id), 'Bank transfer file')}>Bank Transfer CSV</Button>
             <Button
               variant="secondary" size="sm"
-              disabled={run?.status === 'REJECTED'}
+              disabled={run?.status === 'REJECTED' || !canPermission('payroll.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'])}
               loading={sendPayslips.isPending}
               onClick={() => { if (window.confirm('Email the payslip PDF to every employee in this run?')) sendPayslips.mutate(); }}
             >Email Payslips</Button>

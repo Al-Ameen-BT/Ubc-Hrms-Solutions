@@ -27,7 +27,7 @@ export function TempPasswordModal({ credentials, onClose }) {
   const emailSent = Boolean(emailStatus?.sent);
   const smtpNotConfigured = emailStatus?.smtpConfigured === false;
   const emailFailed = Boolean(emailStatus?.requested && !emailSent && emailStatus?.error && !smtpNotConfigured);
-  const isEmployee = user?.role === 'EMPLOYEE';
+  const isEmployee = !!user?.employeeId;
 
   const copyText = async (text, label, fieldKey) => {
     try {

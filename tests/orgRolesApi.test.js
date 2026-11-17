@@ -239,3 +239,39 @@ test('activation blocks payable legacy arrears with missing calculator, plan app
   await installment.update({ status: 'PAID' });
   assert.equal((await f.request('/roles/activate', 'POST', {})).status, 200);
 });
+
+test('role catalogue exposes only immutable platform metadata and role lists include active assignee counts', async () => {
+  const f = await fixture();
+  const result = await f.request('/roles/catalogue');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.templates.length, 9);
+  assert.ok(result.body.data.templates.every(role => role.description && role.isProtected));
+  assert.ok(result.body.data.permissions.every(permission => permission.allowedScopes && permission.guardrails && permission.risk));
+  const list = (await f.request('/roles')).body.data;
+  assert.equal(list.find(role => role.code === 'ORGANISATION_ADMIN').activeAssigneeCount, 1);
+  const employee = await f.account();
+  assert.equal((await f.request('/roles/catalogue', 'GET', undefined, employee)).status, 403);
+  assert.equal(JSON.stringify(result.body).includes('passwordHash'), false);
+});
+
+test('auth me gives the client safe access mode and bootstrap restriction without expanding effective grants', async () => {
+  const f = await fixture();
+  async function me(actor) {
+    const response = await fetch(`${base}/auth/me`, { headers: { authorization: `Bearer ${signToken(await actor.reload())}` } });
+    assert.equal(response.status, 200);
+    return (await response.json()).data;
+  }
+  const legacy = await me(f.admin);
+  assert.equal(legacy.accessControlMode, 'LEGACY'); assert.equal(legacy.bootstrapRestricted, false);
+  assert.deepEqual(legacy.permissionCodes, (await require('../src/services/accessControl').effectiveAccess(f.admin.id)).permissionCodes);
+  const bootstrap = await f.account('ORG_ADMIN', false);
+  await require('../src/services/accessBootstrap').bootstrapOrganizationAccess({ organizationId: f.org.id });
+  const restricted = await me(bootstrap);
+  assert.equal(restricted.bootstrapRestricted, true);
+  assert.equal(restricted.permissionCodes.includes('roles.manage'), true);
+  assert.equal(restricted.permissionCodes.includes('compensation.prepare'), false);
+  await f.org.update({ accessControlMode: 'PERMISSIONS' });
+  const active = await me(f.admin);
+  assert.equal(active.accessControlMode, 'PERMISSIONS');
+  assert.deepEqual(active.permissionCodes, (await require('../src/services/accessControl').effectiveAccess(f.admin.id)).permissionCodes);
+});

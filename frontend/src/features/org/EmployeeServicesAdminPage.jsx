@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { employeeAdminApi } from '../../api/employee';
 import { fmt } from '../../api/client';
+import { hasServiceAccess, canDecide } from '../../api/organizationAccess';
 import { useAuth } from '../../auth/AuthContext';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -18,22 +19,23 @@ const bankIso = value => value ? new Date(`${value}:00+05:30`).toISOString() : n
 const sections = { policy: 'Policy', holidays: 'Holidays', time: 'Time corrections', expenses: 'Expense approvals' };
 function Notice({ error }) { return error ? <p className="auth-error" role="alert">{error}</p> : null; }
 export function EmployeeServicesAdminPage() {
-  const { section = 'expenses' } = useParams(); const { user } = useAuth();
-  const allowed = { policy: ['ORG_ADMIN'], holidays: ['ORG_ADMIN', 'HR_ADMIN'], time: ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'], expenses: ['ORG_ADMIN', 'HR_ADMIN', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'] };
-  const visible = Object.entries(sections).filter(([key]) => allowed[key].includes(user?.role));
+  const { section = 'expenses' } = useParams(); const { canPermission } = useAuth();
+  const visible = Object.entries(sections).filter(([key]) => hasServiceAccess(key, canPermission));
   const Component = { policy: PolicyEditor, holidays: Holidays, time: TimeCorrections, expenses: ExpenseReview }[section];
-  return <div className="page"><header className="page-header"><h1>Employee Services</h1><p>Manage policies, holidays, time corrections, and reimbursement claims</p></header><nav className="ess-tabs" aria-label="Employee services">{visible.map(([key, label]) => <Link key={key} to={`/employee-services/${key}`} aria-current={section === key ? 'page' : undefined}>{label}</Link>)}</nav>{allowed[section]?.includes(user?.role) && Component ? <Component /> : <EmptyState title="No access to this section" />}</div>;
+  return <div className="page"><header className="page-header"><h1>Employee Services</h1><p>Manage policies, holidays, time corrections, and reimbursement claims</p></header><nav className="ess-tabs" aria-label="Employee services">{visible.map(([key, label]) => <Link key={key} to={`/employee-services/${key}`} aria-current={section === key ? 'page' : undefined}>{label}</Link>)}</nav>{hasServiceAccess(section, canPermission) && Component ? <Component /> : <EmptyState title="No access to this section" />}</div>;
 }
 
 function PolicyEditor() {
+  const { canPermission } = useAuth();
   const client = useQueryClient(); const [error, setError] = useState(''); const [form, setForm] = useState(null);
   const { data, error: queryError } = useQuery({ queryKey: ['org', 'employee-policy'], queryFn: employeeAdminApi.policy });
   const save = useMutation({ mutationFn: employeeAdminApi.publishPolicy, onSuccess: () => { client.invalidateQueries({ queryKey: ['org', 'employee-policy'] }); setForm(null); setError(''); }, onError: e => setError(e.message) });
   const value = form || { title: data?.title || '', body: data?.body || '' };
-  return <><Notice error={error || queryError?.message} /><Card title="Published policy"><p>Saving changed text publishes a new version and asks employees to acknowledge it again.</p><form onSubmit={e => { e.preventDefault(); save.mutate(value); }} className="ess-policy-form"><Input id="policy-title" label="Title" required value={value.title} onChange={e => setForm({ ...value, title: e.target.value })} /><div className="field"><label className="field-label" htmlFor="policy-body">Policy text</label><textarea id="policy-body" className="input ess-textarea" required value={value.body} onChange={e => setForm({ ...value, body: e.target.value })} /></div><div className="row-actions"><span>Current version: {data?.version || 'None'}</span><Button type="submit" loading={save.isPending}>Publish policy</Button></div></form></Card></>;
+  return <><Notice error={error || queryError?.message} /><Card title="Published policy"><p>Saving changed text publishes a new version and asks employees to acknowledge it again.</p><form onSubmit={e => { e.preventDefault(); save.mutate(value); }} className="ess-policy-form"><Input id="policy-title" label="Title" readOnly={!canPermission('hr.manage', ['ORG_ADMIN'])} required value={value.title} onChange={e => setForm({ ...value, title: e.target.value })} /><div className="field"><label className="field-label" htmlFor="policy-body">Policy text</label><textarea id="policy-body" className="input ess-textarea" readOnly={!canPermission('hr.manage', ['ORG_ADMIN'])} required value={value.body} onChange={e => setForm({ ...value, body: e.target.value })} /></div><div className="row-actions"><span>Current version: {data?.version || 'None'}{!canPermission('hr.manage', ['ORG_ADMIN']) ? ' · View only: publishing requires HR management access.' : ''}</span><Button type="submit" disabled={!canPermission('hr.manage', ['ORG_ADMIN'])} loading={save.isPending}>Publish policy</Button></div></form></Card></>;
 }
 
 function Holidays() {
+  const { canPermission } = useAuth();
   const client = useQueryClient();
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
@@ -52,27 +54,28 @@ function Holidays() {
   });
   return <>
     <Notice error={error || queryError?.message} />
-    <Card title={editing ? 'Edit holiday' : 'Add holiday'}>
+    {canPermission('hr.manage', ['ORG_ADMIN', 'HR_ADMIN']) && <Card title={editing ? 'Edit holiday' : 'Add holiday'}>
       <form onSubmit={e => { e.preventDefault(); save.mutate(); }} className="ess-form">
         <Input id="holiday-date" label="Date" type="date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
         <Input id="holiday-name" label="Name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
         <div className="row-actions"><Button type="submit" loading={save.isPending}>{editing ? 'Save holiday' : 'Add holiday'}</Button>{editing && <Button variant="secondary" onClick={() => { setEditing(null); setForm({ date: '', name: '' }); }}>Cancel</Button>}</div>
       </form>
-    </Card>
-    <Card title="Bank holidays"><div className="ess-scroll"><table className="table"><thead><tr><th>Date</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead><tbody>{(data?.rows || []).map(row => <tr key={row.id}><td>{fmt.date(row.date)}</td><td>{row.name}</td><td><Badge variant={row.status === 'ACTIVE' ? 'success' : 'default'}>{row.status}</Badge></td><td><div className="row-actions"><Button size="sm" variant="secondary" onClick={() => { setEditing(row); setForm({ date: row.date, name: row.name }); }}>Edit</Button><Button size="sm" variant="secondary" loading={changeStatus.isPending} onClick={() => changeStatus.mutate({ id: row.id, status: row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })}>{row.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</Button></div></td></tr>)}</tbody></table></div>{!(data?.rows || []).length && <EmptyState title="No holidays entered" />}</Card>
+    </Card>}
+    <Card title="Bank holidays"><div className="ess-scroll"><table className="table"><thead><tr><th>Date</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead><tbody>{(data?.rows || []).map(row => <tr key={row.id}><td>{fmt.date(row.date)}</td><td>{row.name}</td><td><Badge variant={row.status === 'ACTIVE' ? 'success' : 'default'}>{row.status}</Badge></td><td>{canPermission('hr.manage', ['ORG_ADMIN', 'HR_ADMIN']) && <div className="row-actions"><Button size="sm" variant="secondary" onClick={() => { setEditing(row); setForm({ date: row.date, name: row.name }); }}>Edit</Button><Button size="sm" variant="secondary" loading={changeStatus.isPending} onClick={() => changeStatus.mutate({ id: row.id, status: row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })}>{row.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</Button></div>}</td></tr>)}</tbody></table></div>{!(data?.rows || []).length && <EmptyState title="No holidays entered" />}</Card>
   </>;
 }
 
 function TimeCorrections() {
+  const { canPermission } = useAuth();
   const client = useQueryClient(); const [error, setError] = useState(''); const today = new Date(); const [period, setPeriod] = useState({ year: today.getFullYear(), month: today.getMonth() + 1 });
   const { data, error: queryError } = useQuery({ queryKey: ['org', 'time', period.year, period.month], queryFn: () => employeeAdminApi.time(period.year, period.month) });
   const [editing, setEditing] = useState(null); const [reason, setReason] = useState(''); const [checkInAt, setCheckInAt] = useState(''); const [checkOutAt, setCheckOutAt] = useState('');
   const correct = useMutation({ mutationFn: () => employeeAdminApi.correctTime(editing.id, { checkInAt: bankIso(checkInAt), checkOutAt: bankIso(checkOutAt), reason }), onSuccess: () => { client.invalidateQueries({ queryKey: ['org', 'time'] }); setEditing(null); setError(''); }, onError: e => setError(e.message) });
-  return <><Notice error={error || queryError?.message} /><Card title="Daily time records" actions={<input aria-label="Month" className="input" type="month" value={`${period.year}-${String(period.month).padStart(2, '0')}`} onChange={e => { if (e.target.value) { const [year, month] = e.target.value.split('-').map(Number); setPeriod({ year, month }); } }} />}><p>Corrections require a reason and are recorded in the audit log. Monthly LOP remains a separate payroll action.</p><div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Date</th><th>Check-in</th><th>Check-out</th><th></th></tr></thead><tbody>{(data?.rows || []).map(row => <tr key={row.id}><td>{row.Employee?.name} · {row.Employee?.empCode}</td><td>{fmt.date(row.localDate)}</td><td>{bankTime(row.checkInAt)}</td><td>{row.checkOutAt ? bankTime(row.checkOutAt) : 'Open'}</td><td><Button size="sm" variant="secondary" onClick={() => { setEditing(row); setReason(''); setCheckInAt(bankInput(row.checkInAt)); setCheckOutAt(bankInput(row.checkOutAt)); }}>Correct</Button></td></tr>)}</tbody></table></div>{!(data?.rows || []).length && <EmptyState title="No entries this month" />}</Card>{editing && <Card title={`Correct ${editing.Employee?.name} · ${editing.localDate}`}><form onSubmit={e => { e.preventDefault(); correct.mutate(); }} className="ess-form"><Input id="time-correct-in" label="Check-in time (IST)" type="datetime-local" required value={checkInAt} onChange={e => setCheckInAt(e.target.value)} /><Input id="time-correct-out" label="Check-out time (IST)" type="datetime-local" value={checkOutAt} onChange={e => setCheckOutAt(e.target.value)} /><Input id="time-correct-reason" label="Reason" required value={reason} onChange={e => setReason(e.target.value)} /><div className="row-actions"><Button type="submit" loading={correct.isPending}>Save correction</Button><Button variant="secondary" onClick={() => setEditing(null)}>Cancel</Button></div></form></Card>}</>;
+  return <><Notice error={error || queryError?.message} /><Card title="Daily time records" actions={<input aria-label="Month" className="input" type="month" value={`${period.year}-${String(period.month).padStart(2, '0')}`} onChange={e => { if (e.target.value) { const [year, month] = e.target.value.split('-').map(Number); setPeriod({ year, month }); } }} />}><p>Corrections require a reason and are recorded in the audit log. Monthly LOP remains a separate payroll action.</p><div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Date</th><th>Check-in</th><th>Check-out</th><th></th></tr></thead><tbody>{(data?.rows || []).map(row => <tr key={row.id}><td>{row.Employee?.name} · {row.Employee?.empCode}</td><td>{fmt.date(row.localDate)}</td><td>{bankTime(row.checkInAt)}</td><td>{row.checkOutAt ? bankTime(row.checkOutAt) : 'Open'}</td><td>{canPermission('attendance.manage', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setReason(''); setCheckInAt(bankInput(row.checkInAt)); setCheckOutAt(bankInput(row.checkOutAt)); }}>Correct</Button>}</td></tr>)}</tbody></table></div>{!(data?.rows || []).length && <EmptyState title="No entries this month" />}</Card>{editing && <Card title={`Correct ${editing.Employee?.name} · ${editing.localDate}`}><form onSubmit={e => { e.preventDefault(); correct.mutate(); }} className="ess-form"><Input id="time-correct-in" label="Check-in time (IST)" type="datetime-local" required value={checkInAt} onChange={e => setCheckInAt(e.target.value)} /><Input id="time-correct-out" label="Check-out time (IST)" type="datetime-local" value={checkOutAt} onChange={e => setCheckOutAt(e.target.value)} /><Input id="time-correct-reason" label="Reason" required value={reason} onChange={e => setReason(e.target.value)} /><div className="row-actions"><Button type="submit" loading={correct.isPending}>Save correction</Button><Button variant="secondary" onClick={() => setEditing(null)}>Cancel</Button></div></form></Card>}</>;
 }
 
 function ExpenseReview() {
-  const { user } = useAuth();
+  const { user, canPermission } = useAuth();
   const client = useQueryClient();
   const [error, setError] = useState('');
   const [payment, setPayment] = useState(null);
@@ -103,9 +106,9 @@ function ExpenseReview() {
           <td><Badge variant={['APPROVED', 'PAID'].includes(row.status) ? 'success' : ['REJECTED', 'WITHDRAWN'].includes(row.status) ? 'danger' : 'warning'}>{row.status}</Badge></td>
           <td><div className="row-actions">
             <Button size="sm" variant="secondary" onClick={() => employeeAdminApi.openExpenseReceipt(row.id).catch(e => setError(e.message))}>Receipt</Button>
-            {row.status === 'SUBMITTED' && ['ACCOUNTS_OFFICER', 'PAYROLL_OFFICER'].includes(user?.role) && <Button size="sm" onClick={() => action.mutate({ id: row.id, kind: 'prepare' })}>Prepare</Button>}
-            {row.status === 'PREPARED' && ['ORG_ADMIN', 'APPROVING_AUTHORITY'].includes(user?.role) && <><Button size="sm" onClick={() => action.mutate({ id: row.id, kind: 'APPROVED' })}>Approve</Button><Button size="sm" variant="secondary" onClick={() => { setRejection(row); setReason(''); }}>Reject</Button></>}
-            {row.status === 'APPROVED' && user?.role === 'ACCOUNTS_OFFICER' && <Button size="sm" onClick={() => setPayment(row)}>Record payment</Button>}
+            {row.status === 'SUBMITTED' && canPermission('financialChanges.prepare', ['ACCOUNTS_OFFICER', 'PAYROLL_OFFICER']) && canDecide(user, row, ['submittedBy']) && <Button size="sm" onClick={() => action.mutate({ id: row.id, kind: 'prepare' })}>Prepare</Button>}
+            {row.status === 'PREPARED' && canPermission('expenses.approve', ['ORG_ADMIN', 'APPROVING_AUTHORITY']) && canDecide(user, row, ['submittedBy', 'preparedBy']) && <><Button size="sm" onClick={() => action.mutate({ id: row.id, kind: 'APPROVED' })}>Approve independently</Button><Button size="sm" variant="secondary" onClick={() => { setRejection(row); setReason(''); }}>Reject</Button></>}
+            {row.status === 'APPROVED' && canPermission('payments.pay', ['ACCOUNTS_OFFICER']) && canDecide(user, row, ['submittedBy', 'preparedBy', 'decidedBy']) && <Button size="sm" onClick={() => setPayment(row)}>Record payment</Button>}
           </div></td>
         </tr>)}
       </tbody></table></div>

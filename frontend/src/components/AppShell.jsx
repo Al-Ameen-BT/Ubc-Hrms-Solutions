@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import { canVisitRoute } from '../api/organizationAccess';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from '../auth/ThemeContext';
 import { Sidebar } from './Sidebar';
@@ -8,12 +9,12 @@ import { SectionLabel } from './SectionLabel';
 import { CommandPalette } from './CommandPalette';
 
 export function AppShell() {
-  const { user } = useAuth();
+  const { canPermission, isSuperAdmin } = useAuth();
   const location = useLocation();
   const { theme, toggle } = useTheme();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  if (user?.role === 'EMPLOYEE' && !['/', '/account'].includes(location.pathname) && !location.pathname.startsWith('/my/')) return <Navigate to="/" replace />;
+  const authorized = canVisitRoute(location.pathname, canPermission, isSuperAdmin);
 
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -26,7 +27,7 @@ export function AppShell() {
         <Sidebar collapsed={sidebarCollapsed} />
         <main className="app-main" id="main-content">
           <SectionLabel />
-          <Outlet />
+          {authorized ? <Outlet /> : <section className="page"><h1>Access unavailable</h1><p>Your current assignments do not allow this page. Ask your Organisation Admin to review your access.</p><Link to="/account" className="btn btn-secondary">Go to My Account</Link></section>}
         </main>
       </div>
       <CommandPalette />

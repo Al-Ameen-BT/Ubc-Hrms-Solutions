@@ -50,8 +50,11 @@ import { CatalogueAdoptionPage } from './features/org/CatalogueAdoptionPage';
 import { CompensationPage } from './features/employees/CompensationPage';
 import { FinancialApprovalsPage } from './features/org/FinancialApprovalsPage';
 
+import { hasServiceAccess } from './api/organizationAccess';
+import { RolesPermissionsPage } from './features/org/RolesPermissionsPage';
+
 function AppRoutes() {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, isSuperAdmin, canPermission } = useAuth();
 
   if (loading) {
     return (
@@ -91,9 +94,10 @@ function AppRoutes() {
         <Route path="organisations/:id" element={<OrganisationDetailPage />} />
         <Route path="platform-users" element={<PlatformUsersPage />} />
         <Route path="platform-settings" element={<PlatformSettingsPage />} />
-        <Route path="bank-rules" element={user?.role === 'SUPER_ADMIN' ? <BankRulesPage /> : <Navigate to="/" replace />} />
-        <Route path="bank-rules/:id" element={user?.role === 'SUPER_ADMIN' ? <BankRulesPage /> : <Navigate to="/" replace />} />
+        <Route path="bank-rules" element={isSuperAdmin ? <BankRulesPage /> : <Navigate to="/" replace />} />
+        <Route path="bank-rules/:id" element={isSuperAdmin ? <BankRulesPage /> : <Navigate to="/" replace />} />
 
+        <Route path="roles-permissions" element={<RolesPermissionsPage />} />
         <Route path="people" element={<PeoplePage />} />
         <Route path="employees" element={<Navigate to="/people" replace />} />
         <Route path="employees/new" element={<NewEmployeePage />} />
@@ -126,9 +130,9 @@ function AppRoutes() {
         <Route path="mandatory-fields" element={<MandatoryFieldsPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="account" element={<MyAccountPage />} />
-        <Route path="my/:section" element={user?.role === 'EMPLOYEE' ? <EmployeeServicesPage /> : <Navigate to="/" replace />} />
-        <Route path="employee-services/:section" element={user?.role !== 'EMPLOYEE' && user?.role !== 'SUPER_ADMIN' ? <EmployeeServicesAdminPage /> : <Navigate to="/" replace />} />
-        <Route path="employee-services" element={<Navigate to={user?.role === 'HR_OFFICER' ? '/employee-services/time' : '/employee-services/expenses'} replace />} />
+        <Route path="my/:section" element={<EmployeeServicesPage />} />
+        <Route path="employee-services/:section" element={<EmployeeServicesAdminPage />} />
+        <Route path="employee-services" element={<Navigate to={hasServiceAccess('expenses', canPermission) ? '/employee-services/expenses' : hasServiceAccess('time', canPermission) ? '/employee-services/time' : hasServiceAccess('holidays', canPermission) ? '/employee-services/holidays' : '/employee-services/policy'} replace />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
@@ -137,9 +141,11 @@ function AppRoutes() {
 }
 
 function HomeRoute() {
-  const { isSuperAdmin, user } = useAuth();
-  if (user?.role === 'EMPLOYEE') return <EmployeePortalPage />;
-  return isSuperAdmin ? <PlatformDashboard /> : <OrgDashboard />;
+  const { isSuperAdmin, canPermission } = useAuth();
+  if (isSuperAdmin) return <PlatformDashboard />;
+  if (canPermission('settings.view', ['ORG_ADMIN'])) return <OrgDashboard />;
+  if (canPermission('self.profile')) return <EmployeePortalPage />;
+  return <div className="page"><h1>Your workspace</h1><p>Use the navigation to open the functions granted by your current assignments.</p></div>;
 }
 
 const router = createHashRouter([{ path: '*', element: <AppRoutes /> }]);

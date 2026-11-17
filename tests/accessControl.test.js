@@ -11,6 +11,8 @@ const { requirePermission, requireAnyPermission } = require('../src/middleware/p
 const { authenticate } = require('../src/middleware/auth');
 const { signToken } = require('../src/services/authService');
 const { bootstrapOrganizationAccess } = require('../src/services/accessBootstrap');
+const at = new Date().toISOString().slice(0, 10);
+const shiftDate = days => { const date = new Date(`${at}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
 let serial = 0;
 before(() => sequelize.sync());
 after(() => sequelize.close());
@@ -23,7 +25,7 @@ async function fixture(mode = 'PERMISSIONS', legacyRole = 'EMPLOYEE') {
   const employees = [];
   for (const [i, branchId, departmentId] of [[1, branch.id, department.id], [2, branch.id, department.id], [3, second.id, null]]) {
     const employee = await Employee.create({ organizationId: org.id, empCode: `E${i}`, name: `Employee ${i}`, doj: '2020-01-01', postCadreId: post.id, branchId, departmentId });
-    await models.EmployeeOrganizationAssignment.create({ organizationId: org.id, employeeId: employee.id, branchId, departmentId, effectiveFrom: '2026-01-01' });
+    await models.EmployeeOrganizationAssignment.create({ organizationId: org.id, employeeId: employee.id, branchId, departmentId, effectiveFrom: at });
     employees.push(employee);
   }
   const user = await User.create({ organizationId: org.id, employeeId: employees[0].id, email: `access${++serial}@example.invalid`, name: 'User', passwordHash: 'unused', role: legacyRole });
@@ -32,10 +34,9 @@ async function fixture(mode = 'PERMISSIONS', legacyRole = 'EMPLOYEE') {
 async function assign(b, templateCode, permissionCodes, scopeType, extra = {}) {
   const role = await Role.create({ organizationId: b.org.id, code: `R${++serial}`, name: `Role ${serial}`, templateCode });
   for (const permissionCode of permissionCodes) await RolePermission.create({ organizationId: b.org.id, roleId: role.id, permissionCode });
-  const assignment = await Assignment.create({ organizationId: b.org.id, userId: b.user.id, roleId: role.id, scopeType, effectiveFrom: '2026-01-01', ...extra });
+  const assignment = await Assignment.create({ organizationId: b.org.id, userId: b.user.id, roleId: role.id, scopeType, effectiveFrom: at, ...extra });
   return { role, assignment };
 }
-const at = '2026-11-16';
 const resource = employee => ({ ...employee.get({ plain: true }), resourceType: 'Employee' });
 const ids = async (access, code, type = 'Employee') => (await models[type].findAll({ where: scopedWhere(access, code, type), order: [['id', 'ASC']] })).map(row => row.id);
 const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
@@ -85,13 +86,13 @@ test('department predicates require active tenant-owned departments and their ac
 
 test('expired, future and inactive assignments or roles contribute nothing; end dates are inclusive', async () => {
   const b = await fixture();
-  for (const extra of [{ effectiveTo: '2026-11-15' }, { effectiveFrom: '2027-01-01' }, { status: 'INACTIVE' }]) await assign(b, 'PAYROLL_OFFICER', ['payroll.prepare'], 'ORGANISATION', extra);
+  for (const extra of [{ effectiveTo: shiftDate(-1) }, { effectiveFrom: shiftDate(100) }, { status: 'INACTIVE' }]) await assign(b, 'PAYROLL_OFFICER', ['payroll.prepare'], 'ORGANISATION', extra);
   const inactive = await assign(b, 'PAYROLL_OFFICER', ['payroll.prepare'], 'ORGANISATION');
   await inactive.role.update({ status: 'INACTIVE' });
   assert.equal(can(await effectiveAccess(b.user.id, at), 'payroll.prepare'), false);
   await assign(b, 'PAYROLL_OFFICER', ['payroll.prepare'], 'ORGANISATION', { effectiveFrom: at, effectiveTo: at });
   assert.equal(can(await effectiveAccess(b.user.id, at), 'payroll.prepare'), true);
-  assert.equal(can(await effectiveAccess(b.user.id, '2026-11-17'), 'payroll.prepare'), false);
+  assert.equal(can(await effectiveAccess(b.user.id, shiftDate(1)), 'payroll.prepare'), false);
 });
 
 test('selected branches reject inactive and foreign resources and query scopes cannot escape the tenant', async () => {

@@ -10,7 +10,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 
 export function MyAccountPage() {
-  const { user } = useAuth();
+  const { user, canPermission } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
 
@@ -25,7 +25,7 @@ export function MyAccountPage() {
         <button className={`tab ${activeTab === 'profile' ? 'tab-active' : ''}`} onClick={() => setActiveTab('profile')}>Profile</button>
         <button className={`tab ${activeTab === 'mfa' ? 'tab-active' : ''}`} onClick={() => setActiveTab('mfa')}>Two-Factor Auth</button>
         <button className={`tab ${activeTab === 'security' ? 'tab-active' : ''}`} onClick={() => setActiveTab('security')}>Security</button>
-        {user?.role === 'EMPLOYEE' && <button className={`tab ${activeTab === 'devices' ? 'tab-active' : ''}`} onClick={() => setActiveTab('devices')}>Linked devices</button>}
+        {canPermission('self.devices') && <button className={`tab ${activeTab === 'devices' ? 'tab-active' : ''}`} onClick={() => setActiveTab('devices')}>Linked devices</button>}
       </div>
 
       {activeTab === 'profile' && (
@@ -62,7 +62,7 @@ export function MyAccountPage() {
         </Card>
       )}
 
-      {activeTab === 'devices' && user?.role === 'EMPLOYEE' && <LinkedDevices />}
+      {activeTab === 'devices' && canPermission('self.devices') && <LinkedDevices />}
     </div>
   );
 }

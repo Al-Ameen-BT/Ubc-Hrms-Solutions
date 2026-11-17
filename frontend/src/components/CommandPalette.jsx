@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { canVisitRoute } from '../api/organizationAccess';
 import { useAuth } from '../auth/AuthContext';
 
 const SCREENS = [
@@ -11,23 +12,24 @@ const SCREENS = [
   { label: 'Government Orders', to: '/government-orders' },
   { label: 'KSR Rules', to: '/ksr-rules' },
   { label: 'Pay Scales', to: '/pay-scales' },
-  { label: 'Bank Classes & Rules', to: '/bank-rules', roles: ['SUPER_ADMIN'] },
+  { label: 'Bank Classes & Rules', to: '/bank-rules' },
   { label: 'Posts & Cadres', to: '/posts' },
   { label: 'Leave', to: '/leave' },
   { label: 'Audit Log', to: '/audit' },
   { label: 'Settings', to: '/settings' },
+  { label: 'Roles & Permissions', to: '/roles-permissions' },
   { label: 'My Account', to: '/account' },
-  { label: 'My Payslips', to: '/my/payslips', roles: ['EMPLOYEE'] },
-  { label: 'My Leave', to: '/my/leave', roles: ['EMPLOYEE'] },
-  { label: 'Calendar', to: '/my/calendar', roles: ['EMPLOYEE'] },
-  { label: 'Policies', to: '/my/policies', roles: ['EMPLOYEE'] },
-  { label: 'Reimbursements', to: '/my/expenses', roles: ['EMPLOYEE'] },
-  { label: 'Workplace', to: '/my/workplace', roles: ['EMPLOYEE'] },
-  { label: 'Check-in & out', to: '/my/time', roles: ['EMPLOYEE'] },
+  { label: 'My Payslips', to: '/my/payslips' },
+  { label: 'My Leave', to: '/my/leave' },
+  { label: 'Calendar', to: '/my/calendar' },
+  { label: 'Policies', to: '/my/policies' },
+  { label: 'Reimbursements', to: '/my/expenses' },
+  { label: 'Workplace', to: '/my/workplace' },
+  { label: 'Check-in & out', to: '/my/time' },
 ];
 
 export function CommandPalette() {
-  const { user } = useAuth();
+  const { canPermission, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -54,11 +56,11 @@ export function CommandPalette() {
   useEffect(() => {
     const q = query.trim().toLowerCase();
     const screenHits = SCREENS
-      .filter((s) => user?.role === 'EMPLOYEE' ? ['/', '/account'].includes(s.to) || s.roles?.includes('EMPLOYEE') : !s.roles || s.roles.includes(user?.role))
+      .filter(s => canVisitRoute(s.to, canPermission, isSuperAdmin))
       .filter((s) => !q || s.label.toLowerCase().includes(q))
       .map((s) => ({ group: 'Screens', label: s.label, action: () => navigate(s.to) }));
 
-    if (!q || user?.role === 'EMPLOYEE') { setResults(screenHits); return; }
+    if (!q || !canVisitRoute('/employees', canPermission, isSuperAdmin)) { setResults(screenHits); return; }
 
     let cancelled = false;
     api.get(`/employees?search=${encodeURIComponent(q)}&limit=5`)
@@ -72,7 +74,7 @@ export function CommandPalette() {
       .catch(() => setResults(screenHits));
 
     return () => { cancelled = true; };
-  }, [query, navigate, user?.role]);
+  }, [query, navigate, canPermission, isSuperAdmin]);
 
   if (!open) return null;
 

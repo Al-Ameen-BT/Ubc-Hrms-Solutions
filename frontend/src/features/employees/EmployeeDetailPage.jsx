@@ -18,6 +18,7 @@ import { EmployeeAttendanceTab } from './EmployeeAttendanceTab';
 import { EmployeeDocumentsTab } from './EmployeeDocumentsTab';
 import { EmployeePayslipTab } from './EmployeePayslipTab';
 import { ServiceBookPayslips } from './ServiceBookPayslips';
+import { organizationAccessApi } from '../../api/organizationAccess';
 import { compensationApi } from '../../api/compensation';
 
 const TABS = ['Service Book', 'Pay History', 'Leave', 'Attendance', 'Bank Accounts', 'Loans', 'Documents', 'Payslip'];
@@ -26,11 +27,13 @@ const NON_PAY_EVENTS = ['APPOINTMENT', 'PROBATION', 'CONFIRMATION', 'TRANSFER', 
 export function EmployeeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, canPermission } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const isOrgAdmin = currentUser?.role === 'ORG_ADMIN' && Boolean(currentUser?.organizationId);
+  const isOrgAdmin = canPermission('users.manage', ['ORG_ADMIN']) && Boolean(currentUser?.organizationId);
   const orgId = currentUser?.organizationId;
+  const { data: roleData } = useQuery({ queryKey: ['organization-roles'], queryFn: organizationAccessApi.roles, enabled: isOrgAdmin });
+  const baselineRole = roleData?.rows?.find(role => role.isProtected && role.templateCode === 'EMPLOYEE');
   const [tab, setTab] = useState('Service Book');
   const [eventOpen, setEventOpen] = useState(false);
   const [eventForm, setEventForm] = useState({ eventType: 'CONFIRMATION', eventDate: '', remarks: '' });
@@ -44,8 +47,8 @@ export function EmployeeDetailPage() {
     queryKey: ['service-book', id],
     queryFn: () => masterDataApi.serviceBook(id),
   });
-  const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions });
-  const { data: salaryHistory } = useQuery({ queryKey: ['compensation', id], queryFn: () => compensationApi.assignments(id) });
+  const { data: adoption } = useQuery({ queryKey: ['catalogue-adoptions'], queryFn: compensationApi.adoptions, enabled: canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) });
+  const { data: salaryHistory } = useQuery({ queryKey: ['compensation', id], queryFn: () => compensationApi.assignments(id), enabled: canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) });
   const approvalMode = !!adoption?.requiresCatalogueAdoption || !!salaryHistory?.rows?.some(row => row.status === 'APPROVED');
 
   const { data: orgUsers } = useQuery({
@@ -129,6 +132,7 @@ export function EmployeeDetailPage() {
       email: payload.email,
       role: 'EMPLOYEE',
       employeeId: Number(id),
+      assignments: [{ roleId: baselineRole?.id, scopeType: 'OWN', effectiveFrom: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) }],
       sendEmail: smtpConfigured ? Boolean(payload.sendEmail) : false,
     }),
     onSuccess: (res) => {
@@ -282,14 +286,14 @@ export function EmployeeDetailPage() {
             </div>
           </div>
           <div className="employee-profile-actions">
-            <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>
+            {canPermission('people.edit', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button variant="secondary" onClick={openProfileModal}>Edit Details</Button>}
             {isOrgAdmin && (
               <Button variant="secondary" onClick={openPortalModal}>
                 {linkedAccount ? 'Reset Portal Password' : 'Grant Portal Login'}
               </Button>
             )}
-            <Button variant="secondary" onClick={() => navigate(`/employees/${id}/compensation`)}>Salary Assignment</Button>
-            {employee.directPay ? <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(book?.effectiveCompensation?.basicPay || employee.currentBasicPay || ''), reason: '', effectiveDate: '' }); setError(''); setSalaryModalOpen(true); }}>Edit Salary</Button> : <Button variant="secondary" onClick={openPayModal}>Edit Allowances</Button>}
+            {canPermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']) && <Button variant="secondary" onClick={() => navigate(`/employees/${id}/compensation`)}>Salary Assignment</Button>}
+            {employee.directPay ? canPermission('compensation.prepare', approvalMode ? ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER'] : ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button variant="secondary" onClick={() => { setSalaryForm({ amount: String(book?.effectiveCompensation?.basicPay || employee.currentBasicPay || ''), reason: '', effectiveDate: '' }); setError(''); setSalaryModalOpen(true); }}>Prepare salary change</Button> : (approvalMode ? canPermission('financialChanges.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER']) : canPermission('people.edit', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'])) && <Button variant="secondary" onClick={openPayModal}>Prepare allowance change</Button>}
             <Button variant="secondary" onClick={() => navigate('/people')}>Back</Button>
           </div>
         </div>
@@ -391,7 +395,7 @@ export function EmployeeDetailPage() {
         <Card noPadding>
           <div className="table-toolbar">
             <span className="mono">{book?.timelineCount || 0} entries</span>
-            <Button onClick={() => { setError(''); setEventOpen(true); }}>Add Entry</Button>
+            {canPermission('hr.manage', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) && <Button onClick={() => { setError(''); setEventOpen(true); }}>Add Entry</Button>}
           </div>
           <div className="service-book-timeline">
             {timeline.length ? timeline.map((entry) => (
@@ -654,7 +658,7 @@ export function EmployeeDetailPage() {
             <Button variant="secondary" onClick={() => setPortalModalOpen(false)}>Cancel</Button>
             <Button
               loading={createPortalUser.isPending || linkExistingUser.isPending || resetPortalPassword.isPending}
-              disabled={!linkedAccount && portalForm.mode === 'link' && !portalForm.existingUserId}
+              disabled={!linkedAccount && (portalForm.mode === 'link' ? !portalForm.existingUserId : !baselineRole)}
               onClick={() => {
                 setPortalError('');
                 if (linkedAccount) {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { arrearsApi } from '../../api/extended';
 import { masterDataApi, fmt } from '../../api/client';
+import { canDecide } from '../../api/organizationAccess';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
@@ -17,7 +18,7 @@ const NEXT_STATUS = { DRAFT: 'APPROVED', APPROVED: 'ACTIVE', ACTIVE: 'CLOSED' };
 
 export function ArrearsPage() {
   const navigate = useNavigate();
-  const { can } = useAuth();
+  const { user, canPermission } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
   const [selected, setSelected] = useState(null);
@@ -80,11 +81,11 @@ export function ArrearsPage() {
         <div className="row-actions">
           <Button variant="secondary" size="sm" onClick={() => navigate(`/da-revisions/${r.id}`)}>Detail</Button>
           <Button variant="secondary" size="sm" onClick={() => setSelected(r.id)}>Cases</Button>
-          <Button variant="secondary" size="sm" loading={calculateMutation.isPending} onClick={() => calculateMutation.mutate(r.id)}>Calculate</Button>
+          {canPermission('arrears.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']) && <Button variant="secondary" size="sm" loading={calculateMutation.isPending} onClick={() => calculateMutation.mutate(r.id)}>Calculate</Button>}
           {NEXT_STATUS[r.status] && (() => {
             const to = NEXT_STATUS[r.status];
             const needsApprover = to === 'APPROVED';
-            const allowed = needsApprover ? can('ORG_ADMIN', 'APPROVING_AUTHORITY') : can('ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER');
+            const allowed = needsApprover ? canPermission('arrears.approve', ['ORG_ADMIN', 'APPROVING_AUTHORITY']) && canDecide(user, r, ['preparedBy']) : canPermission('arrears.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']);
             if (!allowed) return null;
             return (
               <Button size="sm" onClick={() => advanceMutation.mutate({ id: r.id, status: to })}>
@@ -123,7 +124,7 @@ export function ArrearsPage() {
       <Card title="DA Revisions" noPadding>
         <div className="table-toolbar">
           <div />
-          <Button onClick={() => setModalOpen(true)}>Add DA Revision</Button>
+          {canPermission('arrears.prepare', ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']) && <Button onClick={() => setModalOpen(true)}>Add DA Revision</Button>}
         </div>
         <Table columns={revisionColumns} data={rows} keyField="id" loading={isLoading} emptyMessage="No DA revisions recorded." />
       </Card>

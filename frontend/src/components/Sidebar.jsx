@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { canVisitRoute } from '../api/organizationAccess';
 import { version } from '../../../package.json';
 
-/* Navigation is grouped by section. `roles` gates an item the same way the
-   backend route does — see AuthContext.can(). */
+/* Server permission codes control organisation navigation; the API remains authoritative. */
 const NAV = {
   platform: [
     {
@@ -26,21 +26,21 @@ const NAV = {
       label: 'Establishment',
       items: [
         { to: '/people', label: 'People', icon: 'employees' },
-        { to: '/posts', label: 'Posts & Cadres', icon: 'posts', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
-        { to: '/pay-scales', label: 'Pay Scales', icon: 'scales', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
-        { to: '/pay-revisions', label: 'Pay Revisions', icon: 'scales', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
-        { to: '/catalogue-adoption', label: 'Bank Class Adoption', icon: 'rules', roles: ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'] },
+        { to: '/posts', label: 'Posts & Cadres', icon: 'posts' },
+        { to: '/pay-scales', label: 'Pay Scales', icon: 'scales' },
+        { to: '/pay-revisions', label: 'Pay Revisions', icon: 'scales' },
+        { to: '/catalogue-adoption', label: 'Bank Class Adoption', icon: 'rules' },
       ],
     },
     {
       label: 'Payroll',
       items: [
-        { to: '/payroll', label: 'Payroll', icon: 'payroll', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
+        { to: '/payroll', label: 'Payroll', icon: 'payroll' },
         { to: '/leave', label: 'Leave', icon: 'leave' },
-        { to: '/employee-services', label: 'Employee Services', icon: 'users', roles: ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'] },
-        { to: '/allowances', label: 'Allowances', icon: 'payroll', roles: ['ORG_ADMIN', 'HR_ADMIN'] },
-        { to: '/arrears', label: 'DA Arrears', icon: 'scales', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
-        { to: '/year-end', label: 'Year-End', icon: 'go', roles: ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'] },
+        { to: '/employee-services', label: 'Employee Services', icon: 'users' },
+        { to: '/allowances', label: 'Allowances', icon: 'payroll' },
+        { to: '/arrears', label: 'DA Arrears', icon: 'scales' },
+        { to: '/year-end', label: 'Year-End', icon: 'go' },
       ],
     },
     {
@@ -48,12 +48,13 @@ const NAV = {
       items: [
         { to: '/government-orders', label: 'GO Register', icon: 'go' },
         { to: '/ksr-rules', label: 'KSR Rules', icon: 'rules' },
-        { to: '/org-profile', label: 'Org Profile', icon: 'orgs', roles: ['ORG_ADMIN'] },
-        { to: '/settings', label: 'Settings', icon: 'settings', roles: ['ORG_ADMIN'] },
-        { to: '/payroll-settings', label: 'Payroll Settings', icon: 'payroll', roles: ['ORG_ADMIN'] },
-        { to: '/financial-changes', label: 'Financial Changes', icon: 'audit', roles: ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'] },
-        { to: '/mandatory-fields', label: 'Mandatory Fields', icon: 'rules', roles: ['ORG_ADMIN'] },
-        { to: '/audit', label: 'Audit Log', icon: 'audit', roles: ['ORG_ADMIN'] },
+        { to: '/org-profile', label: 'Org Profile', icon: 'orgs' },
+        { to: '/settings', label: 'Settings', icon: 'settings' },
+        { to: '/payroll-settings', label: 'Payroll Settings', icon: 'payroll' },
+        { to: '/financial-changes', label: 'Financial Changes', icon: 'audit' },
+        { to: '/mandatory-fields', label: 'Mandatory Fields', icon: 'rules' },
+        { to: '/audit', label: 'Audit Log', icon: 'audit' },
+        { to: '/roles-permissions', label: 'Roles & Permissions', icon: 'users' },
       ],
     },
   ],
@@ -107,9 +108,10 @@ function NavIcon({ name }) {
 const TOP_LIMIT = 3;
 
 export function Sidebar({ collapsed }) {
-  const { isSuperAdmin, user, can } = useAuth();
+  const { isSuperAdmin, canPermission, permissionCodes } = useAuth();
   const location = useLocation();
-  const groups = user?.role === 'EMPLOYEE' ? NAV.employee : isSuperAdmin ? NAV.platform : NAV.org;
+  const operational = permissionCodes.some(code => !code.startsWith('self.') && code !== 'chart.view');
+  const groups = isSuperAdmin ? NAV.platform : operational ? [...NAV.org, ...NAV.employee.map(group => ({ ...group, label: 'My workspace', items: group.items.filter(item => item.to !== '/') }))] : NAV.employee;
 
   const [expandedGroups, setExpandedGroups] = useState({});
   const [hoveredGroup, setHoveredGroup] = useState(null);
@@ -125,7 +127,8 @@ export function Sidebar({ collapsed }) {
     <nav className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Main navigation">
       <div className="sidebar-nav">
         {groups.map((group) => {
-          const authorizedItems = group.items.filter((item) => !item.roles || can(...item.roles));
+          const authorizedItems = group.items.filter((item) => canVisitRoute(item.to, canPermission, isSuperAdmin));
+          if (!authorizedItems.length) return null;
           const hasMore = authorizedItems.length > TOP_LIMIT;
 
           // Auto-expand if active route is among the items beyond top 3

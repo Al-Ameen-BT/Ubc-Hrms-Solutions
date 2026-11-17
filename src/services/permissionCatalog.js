@@ -46,8 +46,19 @@ const PERMISSIONS = Object.freeze(definitions.flatMap(([module, actions, scopes]
 }))));
 
 const codes = (...modules) => PERMISSIONS.filter(p => modules.includes(p.module)).map(p => p.code);
+const descriptions = {
+  ORGANISATION_ADMIN: 'Manage organisation structure, users, roles, settings and audit. Financial preparation, approval and payment remain separate responsibilities.',
+  HR_ADMIN: 'Manage organisation-wide people, HR policy, leave and attendance without financial powers.',
+  HR_OFFICER: 'Manage non-financial employee records, leave and attendance within selected branches.',
+  ACCOUNTS_OFFICER: 'Process approved payments and permitted masked payment data. Cannot prepare or approve the same transaction.',
+  PAYROLL_OFFICER: 'Prepare payroll, arrears and financial proposals. Cannot approve or pay the same transaction.',
+  APPROVING_AUTHORITY: 'Approve or reject financial proposals prepared by another user. Cannot record their payment.',
+  DEPARTMENT_HEAD: 'View assigned department members, leave and attendance. No default final approval authority.',
+  BRANCH_MANAGER: 'View branch operations and approve branch leave. Geofence controls require the separate feature to be available.',
+  EMPLOYEE: 'Own-record self-service, linked mobile devices and the permitted organisation chart.',
+};
 const role = (code, name, allowedScopes, permissionCodes) => Object.freeze({
-  code, name, allowedScopes: Object.freeze(allowedScopes), permissionCodes: Object.freeze([...new Set(permissionCodes)]), isProtected: true,
+  code, name, description: descriptions[code], allowedScopes: Object.freeze(allowedScopes), permissionCodes: Object.freeze([...new Set(permissionCodes)]), isProtected: true,
 });
 const HR = ['people.view', 'people.create', 'people.edit', 'people.export', 'hr.view', 'hr.manage', 'leave.view', 'leave.manage', 'leave.approve', 'attendance.view', 'attendance.manage', 'documents.view', 'documents.manage', 'chart.view'];
 const ROLE_TEMPLATES = Object.freeze([

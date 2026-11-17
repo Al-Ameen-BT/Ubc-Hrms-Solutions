@@ -11,21 +11,21 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { organizationAccessApi } from '../../api/organizationAccess';
 import { TempPasswordModal } from '../../components/TempPasswordModal';
 
-const ROLES = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'EMPLOYEE'];
 
 export function UsersPage({ embedded = false }) {
-  const { user, refreshMe } = useAuth();
+  const { user, refreshMe, canPermission } = useAuth();
   const orgId = user?.organizationId;
-  const isOrgAdmin = user?.role === 'ORG_ADMIN';
+  const isOrgAdmin = canPermission('users.manage', ['ORG_ADMIN']);
   const queryClient = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', role: 'HR_OFFICER', employeeId: '', sendEmail: true });
+  const [form, setForm] = useState({ name: '', email: '', role: 'EMPLOYEE', employeeId: '', sendEmail: true });
   const [editTarget, setEditTarget] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', role: 'HR_OFFICER', employeeId: '' });
+  const [editForm, setEditForm] = useState({ name: '', role: 'EMPLOYEE', employeeId: '' });
   const [linkTarget, setLinkTarget] = useState(null);
   const [linkEmployeeId, setLinkEmployeeId] = useState('');
   const [linkEmployeeSearch, setLinkEmployeeSearch] = useState('');
@@ -50,6 +50,9 @@ export function UsersPage({ embedded = false }) {
     enabled: !!orgId,
   });
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => masterDataApi.employees(), enabled: !!orgId });
+
+  const { data: roleData, error: roleLoadError } = useQuery({ queryKey: ['organization-roles'], queryFn: organizationAccessApi.roles, enabled: canPermission('roles.manage') });
+  const baselineRole = roleData?.rows?.find(role => role.isProtected && role.templateCode === 'EMPLOYEE');
 
   const smtpConfigured = Boolean(smtpStatus?.smtpConfigured);
 
@@ -82,6 +85,9 @@ export function UsersPage({ embedded = false }) {
   const createMutation = useMutation({
     mutationFn: (payload) => usersApi.create(orgId, {
       ...payload,
+      role: 'EMPLOYEE',
+      employeeId: Number(payload.employeeId),
+      assignments: [{ roleId: baselineRole?.id, scopeType: 'OWN', effectiveFrom: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) }],
       sendEmail: smtpConfigured ? Boolean(payload.sendEmail) : false,
     }),
     onSuccess: (res) => {
@@ -94,7 +100,7 @@ export function UsersPage({ embedded = false }) {
         emailStatus: res.email,
         loginUrl: res.loginUrl || smtpStatus?.loginUrl,
       });
-      setForm({ name: '', email: '', role: 'HR_OFFICER', employeeId: '', sendEmail: smtpConfigured });
+      setForm({ name: '', email: '', role: 'EMPLOYEE', employeeId: '', sendEmail: smtpConfigured });
       toast.add('User created.', 'success');
     },
     onError: (err) => setError(err.message || 'Could not create user.'),
@@ -106,9 +112,6 @@ export function UsersPage({ embedded = false }) {
         name: editForm.name,
         employeeId: editForm.employeeId || null,
       };
-      if (editTarget?.id !== user?.id) {
-        payload.role = editForm.role;
-      }
       return usersApi.update(orgId, editTarget.id, payload);
     },
     onSuccess: async () => {
@@ -206,7 +209,7 @@ export function UsersPage({ embedded = false }) {
   const columns = [
     { field: 'name', label: 'Name' },
     { field: 'email', label: 'Email', mono: true },
-    { field: 'role', label: 'Role', render: (row) => <Badge variant={row.role === 'ORG_ADMIN' ? 'info' : 'default'}>{row.role?.replace(/_/g, ' ')}</Badge> },
+    { field: 'role', label: 'Role assignments', render: row => <Link to={`/roles-permissions?userId=${row.id}`}>Review roles & scopes</Link> },
     { field: 'employeeId', label: 'Employee', render: (row) => employeeNameById(row.employeeId) },
     { field: 'mfaEnabled', label: '2FA', render: (row) => (row.mfaEnabled ? <Badge variant="success">On</Badge> : '—') },
     { field: 'status', label: 'Status', render: (row) => <Badge variant={row.status === 'ACTIVE' ? 'success' : 'default'}>{row.status}</Badge> },
@@ -291,6 +294,9 @@ export function UsersPage({ embedded = false }) {
         <p>Manage bank users and their access</p>
       </header>}
 
+      {roleLoadError && <p className="auth-error" role="alert">Role templates could not be loaded: {roleLoadError.message}. Reload this page before creating an account.</p>}
+      <p className="form-note">Every operational account must link to an active employee. Create an own-record account here, then <Link to="/roles-permissions">assign operational roles in Roles &amp; Permissions</Link>. Role and scope changes force browser sign-in and mobile QR relinking.</p>
+      {(data?.rows || []).some(account => !account.employeeId && account.status === 'ACTIVE') && <p className="auth-notice">Unlinked accounts need resolution. Only one protected bootstrap Organisation Admin may remain unlinked during onboarding; link it before activating permission mode.</p>}
       {smtpStatus && !smtpConfigured && (
         <div className="smtp-bypass-banner" role="status">
           <span>
@@ -305,7 +311,7 @@ export function UsersPage({ embedded = false }) {
       <Card noPadding>
         <div className="table-toolbar">
           <input type="search" placeholder="Search users…" value={search} onChange={(e) => setSearch(e.target.value)} className="input table-search" />
-          <Button onClick={() => { setError(''); setForm({ name: '', email: '', role: 'HR_OFFICER', employeeId: '', sendEmail: smtpConfigured }); setModalOpen(true); }}>Add User</Button>
+          <Button disabled={!baselineRole} onClick={() => { setError(''); setForm({ name: '', email: '', role: 'EMPLOYEE', employeeId: '', sendEmail: smtpConfigured }); setModalOpen(true); }}>Add User</Button>
         </div>
         <Table columns={columns} data={rows} keyField="id" loading={isLoading} emptyMessage="No users found." />
       </Card>
@@ -317,19 +323,12 @@ export function UsersPage({ embedded = false }) {
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button loading={createMutation.isPending} onClick={() => { setError(''); createMutation.mutate(form); }}>Create</Button>
+            <Button disabled={!form.employeeId || !baselineRole || !form.name.trim() || !form.email.trim()} loading={createMutation.isPending} onClick={() => { setError(''); createMutation.mutate(form); }}>Create</Button>
           </>
         }
       >
-        <form noValidate onSubmit={(e) => { e.preventDefault(); setError(''); createMutation.mutate(form); }}>
+        <form noValidate onSubmit={(e) => { e.preventDefault(); if (!form.employeeId || !baselineRole || !form.name.trim() || !form.email.trim()) return; setError(''); createMutation.mutate(form); }}>
           {error && <div className="auth-error" role="alert">{error}</div>}
-          <div className="field">
-            <label className="field-label" htmlFor="nu-role">Role</label>
-            <select id="nu-role" className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              {ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
-            </select>
-          </div>
-          {form.role === 'EMPLOYEE' && (
             <div className="field">
               <label className="field-label" htmlFor="nu-employee">Employee record</label>
               <select id="nu-employee" className="input" value={form.employeeId} onChange={(e) => handleEmployeePick(e.target.value)}>
@@ -337,7 +336,6 @@ export function UsersPage({ embedded = false }) {
                 {createEmployeeOptions.map((employee) => <option key={employee.id} value={employee.id}>{employee.empCode} · {employee.name}</option>)}
               </select>
             </div>
-          )}
           <Input id="nu-name" label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           <Input id="nu-email" label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
           {smtpConfigured ? (
@@ -366,7 +364,7 @@ export function UsersPage({ embedded = false }) {
             <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
             <Button
               loading={editMutation.isPending}
-              disabled={!editForm.name.trim()}
+              disabled={!editForm.name.trim() || (!!editTarget?.employeeId && !editForm.employeeId)}
               onClick={() => { setActionError(''); editMutation.mutate(); }}
             >
               Save Changes
@@ -391,21 +389,7 @@ export function UsersPage({ embedded = false }) {
             onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
             required
           />
-          <div className="field">
-            <label className="field-label" htmlFor="eu-role">Role</label>
-            <select
-              id="eu-role"
-              className="input"
-              value={editForm.role}
-              disabled={editTarget?.id === user?.id}
-              onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-            >
-              {ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
-            </select>
-            {editTarget?.id === user?.id && (
-              <p className="form-note">You cannot change your own role.</p>
-            )}
-          </div>
+          <p><Link to={`/roles-permissions?userId=${editTarget?.id}`}>Manage roles and scopes</Link> in Roles &amp; Permissions.</p>
           <div className="field">
             <label className="field-label" htmlFor="eu-employee">Linked Employee</label>
             <select
@@ -414,7 +398,7 @@ export function UsersPage({ embedded = false }) {
               value={editForm.employeeId}
               onChange={(e) => setEditForm({ ...editForm, employeeId: e.target.value })}
             >
-              <option value="">Unlinked</option>
+              <option value="" disabled={!!editTarget?.employeeId}>Resolve employee link</option>
               {editEmployeeOptions.map((employee) => (
                 <option key={employee.id} value={employee.id}>{employee.empCode} · {employee.name}</option>
               ))}
@@ -466,7 +450,7 @@ export function UsersPage({ embedded = false }) {
       <TempPasswordModal credentials={credentials} onClose={() => setCredentials(null)} />
 
       <Modal open={linkTarget != null} onClose={() => setLinkTarget(null)} title={`Link employee · ${linkTarget?.name || ''}`}
-        footer={<><Button variant="secondary" onClick={() => setLinkTarget(null)}>Cancel</Button><Button loading={linkMutation.isPending} onClick={() => { setActionError(''); linkMutation.mutate(); }}>Save link</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setLinkTarget(null)}>Cancel</Button><Button disabled={!linkEmployeeId} loading={linkMutation.isPending} onClick={() => { setActionError(''); linkMutation.mutate(); }}>Save link</Button></>}>
         {actionError && <div className="auth-error" role="alert">{actionError}</div>}
         <p className="form-note">
           Account: <strong>{linkTarget?.name}</strong> (<span className="mono">{linkTarget?.email}</span>) · {linkTarget?.role?.replace(/_/g, ' ')}
@@ -480,7 +464,7 @@ export function UsersPage({ embedded = false }) {
         />
         <div className="field"><label className="field-label" htmlFor="link-employee">Employee record</label>
           <select id="link-employee" className="input" value={linkEmployeeId} onChange={(e) => setLinkEmployeeId(e.target.value)}>
-            <option value="">Unlinked</option>
+            <option value="" disabled={!!editTarget?.employeeId}>Resolve employee link</option>
             {linkEmployeeOptions.map((employee) => (
               <option key={employee.id} value={employee.id}>
                 {employee.empCode} · {employee.name}{employee.officeEmail || employee.personalEmail ? ` (${employee.officeEmail || employee.personalEmail})` : ''}

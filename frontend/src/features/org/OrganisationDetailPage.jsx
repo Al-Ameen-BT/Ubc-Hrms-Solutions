@@ -93,6 +93,7 @@ export function OrganisationDetailPage() {
   const usage = org?.usage || {};
   const signInUrl = org.loginUrl || `${window.location.origin}/o/${org.code}`;
   const admins = (users?.rows || []).filter((u) => u.role === 'ORG_ADMIN');
+  const unresolvedAdminLinks = admins.filter(account => !account.employeeId);
   const domainSaved = !!org.customDomain && form.customDomain === org.customDomain;
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -101,6 +102,7 @@ export function OrganisationDetailPage() {
 
   return (
     <div className="page">
+      {!!unresolvedAdminLinks.length && <p className="auth-notice">Bootstrap administrator employee link requires resolution before the bank activates permission mode. Manage bank role assignments from the bank’s Roles &amp; Permissions page.</p>}
       <header className="page-header">
         <div className="page-header-row">
           <div>

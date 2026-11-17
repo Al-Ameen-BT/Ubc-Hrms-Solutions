@@ -2,6 +2,7 @@
    Same error shape, same 401 session-expiry and 403 org-licence/suspension handling. */
 
 const BASE = '/api/v1';
+const ACCESS_CHANGED_MESSAGE = 'Your access has changed. Please sign in again. Relink your phone from My Account → Linked devices if you use the QR-only mobile app.';
 
 export class ApiError extends Error {
   constructor(message, status, body) {
@@ -12,7 +13,7 @@ export class ApiError extends Error {
 }
 
 export const isSessionEndingError = error =>
-  error?.status === 401 || error?.status === 403 && /^ORG_(SUSPENDED|LICENSE_EXPIRED|LICENSE_NOT_STARTED)$/.test(error?.body?.code || '');
+  error?.body?.code === 'ACCESS_CHANGED' || error?.status === 401 || error?.status === 403 && /^ORG_(SUSPENDED|LICENSE_EXPIRED|LICENSE_NOT_STARTED)$/.test(error?.body?.code || '');
 
 /** Clears the session and asks the React layer to sign out with a notice. */
 function forceLogout(message, kind = 'warn') {
@@ -57,6 +58,12 @@ async function request(method, path, body, { raw = false } = {}) {
   // as an expired session — otherwise a typo would clear the token and eject
   // the user. Mirrors the incumbent's isAuthCall check (core.js:147).
   const isAuthCall = /^\/auth\/(login|mfa\/verify-login|forgot-password|reset-password|change-password|mfa\/disable)/.test(path);
+
+  if (data?.code === 'ACCESS_CHANGED') {
+    const msg = ACCESS_CHANGED_MESSAGE;
+    forceLogout(msg, 'warn');
+    throw new ApiError(msg, res.status, data);
+  }
 
   if (res.status === 401 && !isAuthCall && data?.code !== 'INVALID_CURRENT_PASSWORD') {
     const msg = 'Your session has ended. Please sign in again.';
@@ -126,9 +133,11 @@ export async function downloadFile(path, filename) {
     credentials: 'same-origin',
   });
   if (res.status === 401) {
-    const msg = 'Your session has ended. Please sign in again.';
+    let body = null;
+    try { body = await res.json(); } catch { /* Response may be non-JSON. */ }
+    const msg = body?.code === 'ACCESS_CHANGED' ? ACCESS_CHANGED_MESSAGE : 'Your session has ended. Please sign in again.';
     forceLogout(msg, 'warn');
-    throw new ApiError(msg, 401, null);
+    throw new ApiError(msg, 401, body);
   }
   if (!res.ok) {
     let msg = `Download failed (${res.status})`;
@@ -152,6 +161,13 @@ export async function openFile(path) {
     headers: { Authorization: `Bearer ${sessionStorage.getItem('token')}` },
     credentials: 'same-origin',
   });
+  if (res.status === 401) {
+    let body = null;
+    try { body = await res.json(); } catch { /* Response may be non-JSON. */ }
+    const msg = body?.code === 'ACCESS_CHANGED' ? ACCESS_CHANGED_MESSAGE : 'Your session has ended. Please sign in again.';
+    forceLogout(msg, 'warn');
+    throw new ApiError(msg, 401, body);
+  }
   if (!res.ok) throw new ApiError(`Could not open file (${res.status})`, res.status, null);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

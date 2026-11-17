@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { compensationApi } from '../../api/compensation';
+import { canDecide } from '../../api/organizationAccess';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
@@ -9,7 +10,7 @@ import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 
 export function CatalogueAdoptionPage() {
-  const { user } = useAuth();
+  const { user, canPermission } = useAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [catalogueId, setCatalogueId] = useState('');
@@ -31,7 +32,7 @@ export function CatalogueAdoptionPage() {
     <Card title="Current approved revision">
       {current ? <p><strong>{before?.name || `Revision #${current.catalogueId}`}</strong> · {before?.orderNumber || 'No order number'} · effective {current.effectiveDate}</p> : <p>No adopted revision yet. Payroll setup is pending.</p>}
     </Card>
-    {user?.role === 'ORG_ADMIN' && <Card title="Prepare adoption">
+    {canPermission('compensation.prepare', ['ORG_ADMIN']) && <Card title="Prepare adoption">
       <div className="form-grid">
         <div className="field"><label className="field-label" htmlFor="adoption-revision">Published revision</label><select id="adoption-revision" className="input" value={catalogueId} onChange={e => setCatalogueId(e.target.value)}><option value="">Select revision</option>{available.map(row => <option key={row.id} value={row.id}>{row.name} · {row.orderNumber || 'No order'} · {row.effectiveDate}</option>)}</select></div>
         <Input id="adoption-date" label="Bank effective date" type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} />
@@ -41,7 +42,7 @@ export function CatalogueAdoptionPage() {
       <div className="card-actions"><Button disabled={!selected || !effectiveDate} loading={proposal.isPending} onClick={() => proposal.mutate({ catalogueId: Number(catalogueId), effectiveDate })}>Send for approval</Button></div>
     </Card>}
     <Card title="Adoption history">
-      {history.length ? <div className="table-wrap"><table className="table"><thead><tr><th className="table-th">Effective</th><th className="table-th">Revision</th><th className="table-th">Status</th><th className="table-th">Decision</th></tr></thead><tbody>{history.map(row => <tr key={row.id} className="table-row"><td className="table-td mono">{row.effectiveDate}</td><td className="table-td">{row.BankRuleCatalogue?.name || `#${row.catalogueId}`} · {row.BankRuleCatalogue?.orderNumber || 'No order'}</td><td className="table-td"><Badge variant={row.status === 'APPROVED' ? 'success' : 'default'}>{row.status}</Badge></td><td className="table-td">{row.status === 'PENDING' && user?.role === 'APPROVING_AUTHORITY' && <div className="row-actions"><Button size="sm" loading={decision.isPending} onClick={() => decision.mutate({ id: row.id, action: 'APPROVED' })}>Approve</Button><Button size="sm" variant="secondary" onClick={() => decision.mutate({ id: row.id, action: 'REJECTED' })}>Reject</Button></div>}</td></tr>)}</tbody></table></div> : <p>No proposals yet.</p>}
+      {history.length ? <div className="table-wrap"><table className="table"><thead><tr><th className="table-th">Effective</th><th className="table-th">Revision</th><th className="table-th">Status</th><th className="table-th">Decision</th></tr></thead><tbody>{history.map(row => <tr key={row.id} className="table-row"><td className="table-td mono">{row.effectiveDate}</td><td className="table-td">{row.BankRuleCatalogue?.name || `#${row.catalogueId}`} · {row.BankRuleCatalogue?.orderNumber || 'No order'}</td><td className="table-td"><Badge variant={row.status === 'APPROVED' ? 'success' : 'default'}>{row.status}</Badge></td><td className="table-td">{row.status === 'PENDING' && canPermission('compensation.approve', ['APPROVING_AUTHORITY']) && canDecide(user, row, ['preparedBy']) && <div className="row-actions"><Button size="sm" loading={decision.isPending} onClick={() => decision.mutate({ id: row.id, action: 'APPROVED' })}>Approve independently</Button><Button size="sm" variant="secondary" onClick={() => decision.mutate({ id: row.id, action: 'REJECTED' })}>Reject</Button></div>}</td></tr>)}</tbody></table></div> : <p>No proposals yet.</p>}
     </Card>
   </div>;
 }

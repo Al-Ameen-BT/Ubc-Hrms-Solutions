@@ -14,6 +14,7 @@ router.post('/roles/activate', authenticate, requirePermission('roles.manage'), 
 }));
 router.get('/roles', authenticate, requirePermission('roles.manage'), handle(req => users.listRoles(options(req))));
 router.post('/roles', authenticate, requirePermission('roles.manage'), handle(req => users.writeRole(options(req)), 201));
+router.get('/roles/catalogue', authenticate, requirePermission('roles.manage'), handle(() => { const { PERMISSIONS, ROLE_TEMPLATES } = require('../services/permissionCatalog'); return { permissions: PERMISSIONS, templates: ROLE_TEMPLATES }; }));
 router.get('/roles/:id', authenticate, requirePermission('roles.manage'), handle(req => users.readRole(options(req))));
 router.get('/roles/:id/impact', authenticate, requirePermission('roles.manage'), handle(req => users.previewRoleImpact(options(req))));
 router.put('/roles/:id', authenticate, requirePermission('roles.manage'), handle(req => users.writeRole(options(req))));

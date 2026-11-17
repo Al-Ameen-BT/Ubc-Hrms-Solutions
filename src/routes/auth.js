@@ -181,7 +181,7 @@ router.get('/me', authenticate, async (req, res) => {
   const user = await User.findByPk(req.user.id, withOrg);
   if (!user) return res.status(404).json({ status: 'error', message: 'Not found' });
   const access = await require('../services/accessControl').effectiveAccess(user.id);
-  res.json({ data: { ...await publicUser(user), permissionCodes: access.permissionCodes, scopeSummary: access.scopeSummary } });
+  res.json({ data: { ...await publicUser(user), accessControlMode: access.accessControlMode, bootstrapRestricted: !!access.bootstrapRestricted, permissionCodes: access.permissionCodes, scopeSummary: access.scopeSummary } });
 });
 
 router.post('/change-password', authenticate, async (req, res) => {

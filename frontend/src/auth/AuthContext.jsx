@@ -82,7 +82,7 @@ export function AuthProvider({ children }) {
     if (data.token) {
       queryClient.clear();
       sessionStorage.setItem('token', data.token);
-      setUser(data.user);
+      setUser(await authApi.me());
       return { mfaRequired: false };
     }
     return { mfaRequired: true, challengeToken: data.mfaToken };
@@ -92,7 +92,7 @@ export function AuthProvider({ children }) {
     const data = await authApi.verifyMfa(challengeToken, code);
     queryClient.clear();
     sessionStorage.setItem('token', data.token);
-    setUser(data.user);
+    setUser(await authApi.me());
   }, [queryClient]);
 
   const logout = useCallback(() => {
@@ -107,6 +107,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     function onLogout(e) {
       queryClient.clear();
+      sessionStorage.removeItem('token');
       setUser(null);
       if (e && e.detail && e.detail.message) setFlash({ message: e.detail.message, kind: e.detail.kind || 'warn' });
     }
@@ -124,17 +125,15 @@ export function AuthProvider({ children }) {
 
   const clearFlash = useCallback(() => setFlash(null), []);
 
-  /* Role gate for UI affordances whose backend route is itself
-     restricted. SUPER_ADMIN always passes. */
-  const can = useCallback((...roles) => {
-    const r = user?.role;
-    if (!r) return false;
-    if (r === 'SUPER_ADMIN') return true;
-    return roles.includes(r);
+  const permissionCodes = user?.permissionCodes || [];
+  const scopeSummary = user?.scopeSummary || null;
+  const canPermission = useCallback((code, legacyRoles = []) => {
+    if (user?.accessControlMode === 'LEGACY' && !user.bootstrapRestricted && legacyRoles.length) return legacyRoles.includes(user.role);
+    return user?.permissionCodes?.includes(code) === true;
   }, [user]);
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
-  const isOrgAdmin = user?.role === 'ORG_ADMIN';
+  const isOrgAdmin = canPermission('users.manage', ['ORG_ADMIN']);
 
   const value = {
     user,
@@ -147,7 +146,9 @@ export function AuthProvider({ children }) {
     logout,
     refreshMe,
     clearFlash,
-    can,
+    canPermission,
+    permissionCodes,
+    scopeSummary,
     isSuperAdmin,
     isOrgAdmin,
     isAuthenticated: !!user,

@@ -356,7 +356,7 @@ async function accessAudit(o, action, targetType, targetId, details) {
 }
 async function roleData(role, transaction) {
   const grants = await OrganizationRolePermission.findAll({ where: { organizationId: role.organizationId, roleId: role.id }, transaction, attributes: ['permissionCode'], order: [['permissionCode', 'ASC']] });
-  return { id: role.id, code: role.code, name: role.name, templateCode: role.templateCode, isProtected: role.isProtected, status: role.status, permissionCodes: grants.map(p => p.permissionCode), allowedScopes: template(role.templateCode)?.allowedScopes || [] };
+  return { id: role.id, code: role.code, name: role.name, templateCode: role.templateCode, isProtected: role.isProtected, status: role.status, description: template(role.templateCode)?.description || '', permissionCodes: grants.map(p => p.permissionCode), allowedScopes: template(role.templateCode)?.allowedScopes || [] };
 }
 function subset(definition, codes) {
   if (!Array.isArray(codes) || codes.some(code => typeof code !== 'string' || !definition.permissionCodes.includes(code)) || new Set(codes).size !== codes.length) bad('Permissions must be a unique subset of the source template');
@@ -369,7 +369,15 @@ async function roleImpact(o, roleId) {
   return { userIds, affectedUserCount: userIds.length, requiresReauthentication: userIds.length > 0, requiresDeviceRelink: userIds.length > 0 };
 }
 async function listRoles(options) {
-  return accessTransaction(options, async o => { await authorizeAccess(o); const roles = await OrganizationRole.findAll({ where: { organizationId: o.organizationId }, order: [['id', 'ASC']], transaction: o.transaction }); return Promise.all(roles.map(role => roleData(role, o.transaction))); });
+  return accessTransaction(options, async o => {
+    await authorizeAccess(o);
+    const roles = await OrganizationRole.findAll({ where: { organizationId: o.organizationId }, order: [['id', 'ASC']], transaction: o.transaction });
+    const assignments = await UserRoleAssignment.findAll({ where: { organizationId: o.organizationId, status: 'ACTIVE', effectiveFrom: { [Op.lte]: todayIST() }, [Op.or]: [{ effectiveTo: null }, { effectiveTo: { [Op.gte]: todayIST() } }] }, transaction: o.transaction });
+    return Promise.all(roles.map(async role => ({
+      ...await roleData(role, o.transaction),
+      activeAssigneeCount: new Set(assignments.filter(a => a.roleId === role.id).map(a => a.userId)).size,
+    })));
+  });
 }
 async function readRole(options) {
   return accessTransaction(options, async o => { const role = await tenantResource(OrganizationRole, o.id, o.organizationId, o.transaction); await authorizeAccess(o); return roleData(role, o.transaction); });
