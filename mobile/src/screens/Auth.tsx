@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image, Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -8,8 +8,19 @@ import { acceptEmployeeLink, type EmployeeSession } from '../session';
 import { parseLinkQr } from '../link';
 import { Action, Card, colors, ErrorText, Field, Notice, Page, radius, ScreenHeading, styles } from '../ui';
 
+import { PrivacyOnboardingScreen, type PublicDpdpDoc } from './PrivacyOnboarding';
+
+type PreviewData = {
+  organizationName: string;
+  requiredDocumentIds: number[];
+  employeeNotice: PublicDpdpDoc | null;
+};
+
 export function AuthScreen({ api, relinkNotice, onAuthenticated }: { api: Api; relinkNotice?: string; onAuthenticated: (session: EmployeeSession) => void }) {
   const [permission, requestPermission] = useCameraPermissions();
+  const [platformAcceptedDocIds, setPlatformAcceptedDocIds] = useState<number[] | null>(null);
+  const [preview, setPreview] = useState<{ challenge: string; data: PreviewData } | null>(null);
+  const [noticeAgreed, setNoticeAgreed] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [claim, setClaim] = useState<{ linkId: number; claimSecret: string; verificationCode: string; organizationName: string; expiresAt: string } | null>(null);
   const scanStarted = useRef(false);
@@ -41,25 +52,110 @@ export function AuthScreen({ api, relinkNotice, onAuthenticated }: { api: Api; r
     return () => { active = false; clearTimeout(timer); };
   }, [api, claim, onAuthenticated]);
 
+  if (!platformAcceptedDocIds) {
+    return <PrivacyOnboardingScreen api={api} onAccepted={docIds => setPlatformAcceptedDocIds(docIds)} />;
+  }
+
   const openScanner = async () => {
     setError('');
     const granted = permission?.granted ? permission : await requestPermission();
     if (!granted.granted) { setError('Allow camera access to scan the QR code, or enable it in phone settings.'); return; }
     scanStarted.current = false; setScanning(true);
   };
+
   const scan = async (value: string) => {
     if (scanStarted.current) return;
     scanStarted.current = true; setScanning(false); setBusy(true); setError('');
     try {
       const challenge = parseLinkQr(value);
       if (Platform.OS !== 'android' && Platform.OS !== 'ios') throw new Error('QR linking is available in the Android and iOS app.');
-      const bytes = await Crypto.getRandomBytesAsync(32);
-      const claimSecret = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
-      const result = await api.post<{ linkId: number; verificationCode: string; organizationName: string; expiresAt: string }>('/mobile/link/claim', { challenge, claimSecret, platform: Platform.OS, deviceName: Platform.OS === 'ios' ? 'iPhone' : 'Android phone' });
-      setClaim({ ...result, claimSecret });
+
+      // Call preview endpoint to inspect org notice and verify link validity
+      const previewRes = await api.post<PreviewData>('/mobile/link/preview', { challenge });
+      if (previewRes?.employeeNotice) {
+        setPreview({ challenge, data: previewRes });
+        setNoticeAgreed(false);
+      } else {
+        // No org employee notice required, proceed directly
+        await completeClaim(challenge, previewRes?.requiredDocumentIds || platformAcceptedDocIds);
+      }
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not link this phone.'); }
     finally { setBusy(false); scanStarted.current = false; }
   };
+
+  const completeClaim = async (challenge: string, docIdsToSubmit: number[]) => {
+    setBusy(true); setError('');
+    try {
+      const bytes = await Crypto.getRandomBytesAsync(32);
+      const claimSecret = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+      const result = await api.post<{ linkId: number; verificationCode: string; organizationName: string; expiresAt: string }>('/mobile/link/claim', {
+        challenge,
+        claimSecret,
+        platform: Platform.OS,
+        deviceName: Platform.OS === 'ios' ? 'iPhone' : 'Android phone',
+        acceptedDocumentIds: docIdsToSubmit,
+      });
+      setClaim({ ...result, claimSecret });
+      setPreview(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not complete linking.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (preview) {
+    const notice = preview.data.employeeNotice;
+    const allDocIds = Array.from(new Set([
+      ...platformAcceptedDocIds,
+      ...(preview.data.requiredDocumentIds || []),
+      ...(notice ? [notice.id] : []),
+    ]));
+
+    return (
+      <Page>
+        <ScreenHeading
+          eyebrow="Organisation Notice"
+          title={preview.data.organizationName}
+          description="Your organisation requires you to review and acknowledge the employee privacy notice."
+        />
+        <ErrorText message={error} />
+        {notice && (
+          <Card title={`${notice.title} (v${notice.version})`}>
+            <Text style={styles.muted}>Effective from: {notice.effectiveAt}</Text>
+            <ScrollView style={local.noticeBodyBox} nestedScrollEnabled>
+              <Text style={styles.body}>{notice.body}</Text>
+            </ScrollView>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityLabel="I have read and agree to the Employee Privacy Notice"
+              accessibilityState={{ checked: noticeAgreed }}
+              onPress={() => setNoticeAgreed(!noticeAgreed)}
+              style={[{ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.line, padding: 12, backgroundColor: colors.white }, noticeAgreed && { borderColor: colors.blue, backgroundColor: colors.pale }]}
+            >
+              <Text style={[{ width: 26, height: 26, borderRadius: 6, borderWidth: 1.5, borderColor: colors.muted, textAlign: 'center', textAlignVertical: 'center', lineHeight: 24, color: colors.blue, fontWeight: '900', backgroundColor: colors.white }, noticeAgreed && { borderColor: colors.blue }]}>
+                {noticeAgreed ? '✓' : ''}
+              </Text>
+              <Text style={[styles.body, { flex: 1, fontWeight: noticeAgreed ? '700' : '400' }]}>
+                I have read and acknowledge the bank employee privacy notice.
+              </Text>
+            </Pressable>
+          </Card>
+        )}
+        <Action
+          title="Accept and complete link"
+          disabled={notice ? !noticeAgreed : false}
+          busy={busy}
+          onPress={() => completeClaim(preview.challenge, allDocIds)}
+        />
+        <Action
+          title="Cancel"
+          secondary
+          onPress={() => { setPreview(null); setError(''); }}
+        />
+      </Page>
+    );
+  }
 
   const step = claim ? 3 : scanning ? 2 : 1;
   return <Page>
@@ -95,6 +191,7 @@ const local = StyleSheet.create({
   art: { width: '100%', height: 190 },
   instruction: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   instructionNumber: { width: 28, height: 28, borderRadius: 14, textAlign: 'center', textAlignVertical: 'center', backgroundColor: colors.pale, color: colors.blue, fontWeight: '900' },
+  noticeBodyBox: { maxHeight: 150, backgroundColor: colors.pale, borderRadius: radius.sm, padding: 12, marginVertical: 6 },
   cameraFrame: { height: 330, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.ink },
   camera: { width: '100%', height: '100%' },
   scanGuide: { position: 'absolute', left: 36, right: 36, top: 50, bottom: 50, borderRadius: 18, borderWidth: 3, borderColor: colors.white },

@@ -33,6 +33,7 @@ const attachments = require('../services/attachments');
 const attendance = require('../services/attendance');
 const compensation = require('../services/compensationResolver');
 const { todayIST } = require('../services/orgAccess');
+const { writeEmployeeBulkTemplate, parseEmployeeWorkbook, EMPLOYEE_FIELD_GROUPS } = require('../services/employeeWorkbook');
 
 const router = express.Router();
 router.get('/:id/photo', authenticate, requirePermission('chart.view'), require('../services/organizationChart').photoHandler('employee'));
@@ -127,6 +128,37 @@ const BULK_WRITERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
 const BOOL_TRUE = ['true', '1', 'yes', 'y'];
 const BOOL_FALSE = ['false', '0', 'no', 'n', ''];
 
+router.get('/bulk-template.xlsx', authenticate, requireFeaturePermission('people.export', BULK_READERS), async (req, res) => {
+  try {
+    const organizationId = req.user.role === 'SUPER_ADMIN' ? Number(req.query.organizationId || req.user.organizationId) : req.user.organizationId;
+    const buffer = await writeEmployeeBulkTemplate({ organizationId });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="employee-bulk-upload-template.xlsx"');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+router.get('/bulk-references', authenticate, requireFeaturePermission('people.export', BULK_READERS), async (req, res) => {
+  try {
+    const organizationId = req.user.role === 'SUPER_ADMIN' ? Number(req.query.organizationId || req.user.organizationId) : req.user.organizationId;
+    const [posts, scales] = await Promise.all([
+      PostCadre.findAll({ where: { organizationId }, order: [['code', 'ASC']], attributes: ['id', 'code', 'name'] }),
+      PayScale.findAll({ where: { organizationId }, order: [['code', 'ASC']], attributes: ['id', 'code', 'name', 'scaleExpression'] }),
+    ]);
+    res.json({
+      data: {
+        posts: posts.map((p) => ({ id: p.id, code: p.code, name: p.name })),
+        scales: scales.map((s) => ({ id: s.id, code: s.code, name: s.name || s.scaleExpression || s.code })),
+        fieldGroups: EMPLOYEE_FIELD_GROUPS,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 router.get('/bulk-template.csv', authenticate, requireFeaturePermission('people.export', BULK_READERS), async (req, res) => {
   const org = req.user.organizationId ? await Organization.findByPk(req.user.organizationId, { attributes: ['id', 'name', 'code'] }) : null;
   const csvContent = toCsv(BULK_EXAMPLES, BULK_COLUMNS, {
@@ -161,16 +193,108 @@ function parseTriboolCell(v) {
   return null; // blank/unrecognised = automatic
 }
 
+async function resolveImportRows(req) {
+  if (Array.isArray(req.body?.rows) && req.body.rows.length) {
+    return req.body.rows;
+  }
+  const dataUrl = req.body?.fileDataUrl || req.body?.fileBase64;
+  if (dataUrl) {
+    const base64Part = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    const buffer = Buffer.from(base64Part, 'base64');
+    return parseEmployeeWorkbook(buffer);
+  }
+  const csvText = (req.body || {}).csv;
+  if (csvText && String(csvText).trim()) {
+    return parseCsv(csvText);
+  }
+  return [];
+}
+
+router.post('/bulk-import/preview', authenticate, requireFeaturePermission('people.create', BULK_WRITERS), async (req, res) => {
+  try {
+    const organizationId = req.user.role === 'SUPER_ADMIN' ? Number(req.body.organizationId) : req.user.organizationId;
+    if (!organizationId) return res.status(400).json({ status: 'error', message: 'organizationId is required.' });
+    let rows;
+    try {
+      rows = await resolveImportRows(req);
+    } catch (parseErr) {
+      return res.status(400).json({ status: 'error', message: parseErr.message });
+    }
+    if (!rows.length) return res.status(400).json({ status: 'error', message: 'No valid data rows found in uploaded file or CSV.' });
+    if (rows.length > 1000) return res.status(400).json({ status: 'error', message: 'At most 1000 rows per upload.' });
+
+    const [posts, scales, existingEmps] = await Promise.all([
+      PostCadre.findAll({ where: { organizationId }, attributes: ['id', 'code', 'name'] }),
+      PayScale.findAll({ where: { organizationId }, attributes: ['id', 'code', 'name'] }),
+      Employee.findAll({ where: { organizationId }, attributes: ['empCode'] }),
+    ]);
+    const postByCode = {}; posts.forEach((p) => { postByCode[p.code] = p; });
+    const scaleByCode = {}; scales.forEach((s) => { scaleByCode[s.code] = s; });
+    const existingEmpCodes = new Set(existingEmps.map((e) => e.empCode?.toUpperCase()));
+    const batchEmpCodes = new Set();
+
+    const results = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const rowNo = i + 2;
+      const errors = [];
+      const codeUpper = String(r.empCode || '').trim().toUpperCase();
+
+      if (!r.empCode) errors.push('Employee Code is required');
+      else if (existingEmpCodes.has(codeUpper)) errors.push(`Employee Code "${r.empCode}" already exists in the bank`);
+      else if (batchEmpCodes.has(codeUpper)) errors.push(`Duplicate Employee Code "${r.empCode}" within upload`);
+      else batchEmpCodes.add(codeUpper);
+
+      if (!r.name) errors.push('Full Name is required');
+      if (!r.doj) errors.push('Date of Joining is required');
+      else if (!/^\d{4}-\d{2}-\d{2}$/.test(r.doj)) errors.push('doj must be YYYY-MM-DD');
+
+      if (r.dob && !/^\d{4}-\d{2}-\d{2}$/.test(r.dob)) errors.push('dob must be YYYY-MM-DD');
+      if (r.doa && !/^\d{4}-\d{2}-\d{2}$/.test(r.doa)) errors.push('doa must be YYYY-MM-DD');
+
+      if (!r.postCode) errors.push('Post Code is required');
+      else if (!postByCode[r.postCode]) errors.push(`Post Code "${r.postCode}" not found in this organisation`);
+
+      if (r.payScaleCode && !scaleByCode[r.payScaleCode]) errors.push(`Pay Scale Code "${r.payScaleCode}" not found in this organisation`);
+
+      results.push({
+        row: rowNo,
+        empCode: r.empCode || '',
+        name: r.name || '',
+        doj: r.doj || '',
+        postCode: r.postCode || '',
+        payScaleCode: r.payScaleCode || '',
+        currentBasicPay: r.currentBasicPay || '',
+        employmentType: r.employmentType || 'REGULAR',
+        valid: errors.length === 0,
+        errors,
+        message: errors.join('; '),
+      });
+    }
+
+    const validCount = results.filter((r) => r.valid).length;
+    res.json({
+      data: results,
+      summary: { total: rows.length, valid: validCount, invalid: rows.length - validCount },
+    });
+  } catch (err) {
+    res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
 router.post('/bulk-import', authenticate, requireFeaturePermission('people.create', BULK_WRITERS), async (req, res) => {
   // shortcut: legacy CSV has no authoritative assignment contract; add atomic scoped import before enabling it in permission mode.
   if (req.access?.accessControlMode === 'PERMISSIONS') return res.status(409).json({ status: 'error', message: 'Scoped bulk onboarding is unavailable. Create employees with an organizationAssignment.' });
   try {
     const organizationId = req.user.role === 'SUPER_ADMIN' ? Number(req.body.organizationId) : req.user.organizationId;
     if (!organizationId) return res.status(400).json({ status: 'error', message: 'organizationId is required.' });
-    const csvText = (req.body || {}).csv;
-    if (!csvText || !String(csvText).trim()) return res.status(400).json({ status: 'error', message: 'No CSV content provided.' });
-    const rows = parseCsv(csvText);
-    if (!rows.length) return res.status(400).json({ status: 'error', message: 'CSV has no data rows.' });
+    let rows;
+    try {
+      rows = await resolveImportRows(req);
+    } catch (parseErr) {
+      return res.status(400).json({ status: 'error', message: parseErr.message });
+    }
+    if (!rows.length) return res.status(400).json({ status: 'error', message: 'No CSV or Excel content provided.' });
     if (rows.length > 1000) return res.status(400).json({ status: 'error', message: 'At most 1000 rows per upload.' });
 
     const [posts, scales] = await Promise.all([

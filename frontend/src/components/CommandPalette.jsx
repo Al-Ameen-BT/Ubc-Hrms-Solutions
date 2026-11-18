@@ -14,6 +14,8 @@ const SCREENS = [
   { label: 'KSR Rules', to: '/ksr-rules' },
   { label: 'Pay Scales', to: '/pay-scales' },
   { label: 'Bank Classes & Rules', to: '/bank-rules' },
+  { label: 'DPDP Documents', to: '/dpdp-documents' },
+  { label: 'DPDP Compliance', to: '/dpdp-compliance' },
   { label: 'Posts & Cadres', to: '/posts' },
   { label: 'Leave', to: '/leave' },
   { label: 'Audit Log', to: '/audit' },

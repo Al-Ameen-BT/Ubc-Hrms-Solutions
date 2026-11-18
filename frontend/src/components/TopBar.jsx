@@ -26,13 +26,15 @@ export function TopBar({ theme, onToggleTheme, onToggleSidebar }) {
           ) : (
             <Link to="/" className="topbar-brand-link" title="Return to Overview">
               {branding?.logoUrl ? (
-                <img src={branding.logoUrl} alt="" className="topbar-logo" />
+                <img src={branding.logoUrl} alt={`${orgName} logo`} className="topbar-logo" />
               ) : (
                 <span className="topbar-logo-badge" aria-hidden="true">
                   {orgName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'UB'}
                 </span>
               )}
-              <span className="topbar-org-name">{orgName}</span>
+              {!branding?.logoUrl && (
+                <span className="topbar-org-name">{orgName}</span>
+              )}
             </Link>
           )}
         </div>

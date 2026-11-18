@@ -122,17 +122,80 @@ employee.post('/:id/revoke', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+const dpdpDocuments = require('../services/dpdpDocuments');
+const dpdpAcknowledgements = require('../services/dpdpAcknowledgements');
+
+function isAtLeast18(dob) {
+  if (!dob) return false;
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return false;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age >= 18;
+}
+
+mobile.post('/link/preview', deviceOwn(async (req, res) => {
+  try {
+    const { challenge } = req.body || {};
+    if (!validSecret(challenge)) return error(res, 400, 'LINK_INVALID', 'Invalid challenge.');
+    const link = await EmployeeDeviceLink.findOne({ where: { challengeHash: secretBox.sha256(challenge), expiresAt: { [Op.gt]: new Date() } } });
+    if (!link) return error(res, 400, 'LINK_INVALID', 'This QR code has expired or is invalid.');
+    if (link.status !== 'PENDING') return error(res, 409, 'LINK_UNAVAILABLE', 'This QR code has already been scanned. Start again.');
+
+    const user = await eligibleUser(link.userId);
+    if (!user || user.organizationId !== link.organizationId) return error(res, 400, 'LINK_INVALID', 'This account is unavailable.');
+
+    const bundle = await dpdpDocuments.activeBundle({ organizationId: link.organizationId });
+    const requiredDocumentIds = dpdpDocuments.requiredDocumentIds(bundle);
+
+    res.json({
+      data: {
+        organizationName: user.Organization.name,
+        requiredDocumentIds,
+        employeeNotice: dpdpDocuments.publicDocumentView(bundle.employeeNotice),
+      },
+    });
+  } catch (err) { fail(res, err); }
+}));
+
 mobile.post('/link/claim', deviceOwn(async (req, res) => {
   try {
-    const { challenge, claimSecret, platform, deviceName } = req.body || {};
+    const { challenge, claimSecret, platform, deviceName, acceptedDocumentIds } = req.body || {};
     if (!validSecret(challenge) || !validSecret(claimSecret) || !['android', 'ios'].includes(platform) || typeof deviceName !== 'string' || !deviceName.trim() || deviceName.length > 80) return error(res, 400, 'LINK_INVALID', 'Invalid link request.');
     const link = await EmployeeDeviceLink.findOne({ where: { challengeHash: secretBox.sha256(challenge), expiresAt: { [Op.gt]: new Date() } } });
     if (!link) return error(res, 400, 'LINK_INVALID', 'This QR code has expired or is invalid.');
     if (link.status !== 'PENDING') return error(res, 409, 'LINK_UNAVAILABLE', 'This QR code has already been scanned. Start again.');
     const user = await eligibleUser(link.userId);
     if (!user || user.organizationId !== link.organizationId) return error(res, 400, 'LINK_INVALID', 'This QR code has expired or is invalid.');
+
+    const { Employee } = require('../models');
+    const emp = await Employee.findByPk(user.employeeId);
+    if (!emp || !emp.dob) return error(res, 403, 'AGE_RESTRICTED', 'Date of birth verification is required for mobile app linking.');
+    if (!isAtLeast18(emp.dob)) return error(res, 403, 'AGE_RESTRICTED', 'Mobile application access is limited to individuals aged 18 and above.');
+
+    const bundle = await dpdpDocuments.activeBundle({ organizationId: link.organizationId });
+    const currentRequiredIds = dpdpDocuments.requiredDocumentIds(bundle);
+    const acceptedIds = Array.isArray(acceptedDocumentIds) ? acceptedDocumentIds.map(Number) : [];
+
+    for (const reqId of currentRequiredIds) {
+      if (!acceptedIds.includes(reqId)) {
+        return error(res, 400, 'DPDP_DOCUMENT_UPDATED', 'All current legal documents must be accepted before linking.');
+      }
+    }
+
     const verificationCode = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
-    const [changed] = await EmployeeDeviceLink.update({ status: 'CLAIMED', claimHash: secretBox.sha256(claimSecret), platform, deviceName: deviceName.trim(), verificationCode }, { where: { id: link.id, status: 'PENDING', expiresAt: { [Op.gt]: new Date() } } });
+    const [changed] = await EmployeeDeviceLink.update({
+      status: 'CLAIMED',
+      claimHash: secretBox.sha256(claimSecret),
+      platform,
+      deviceName: deviceName.trim(),
+      verificationCode,
+      acceptedDocumentIds: JSON.stringify(acceptedIds),
+    }, { where: { id: link.id, status: 'PENDING', expiresAt: { [Op.gt]: new Date() } } });
     if (!changed) return error(res, 409, 'LINK_UNAVAILABLE', 'This QR code has already been scanned. Start again.');
     await audit(req, 'employee_device.link.claim', { actor: { id: user.id }, organizationId: user.organizationId, targetType: 'employee_device_link', targetId: link.id });
     res.set('Cache-Control', 'no-store');
@@ -160,6 +223,23 @@ mobile.post('/link/status', deviceOwn(async (req, res) => {
       const refreshToken = signDeviceRefreshToken(user, device.id, 0);
       await device.update({ refreshHash: secretBox.sha256(refreshToken) }, { transaction });
       await link.update({ deviceId: device.id }, { transaction });
+
+      // Record mobile channel acknowledgements for acceptedDocumentIds
+      const dpdpStatus = await dpdpAcknowledgements.acknowledgementStatus({ user, channel: 'MOBILE', deviceLinkId: link.id, transaction });
+      if (dpdpStatus.requiredDocumentIds.length) {
+        const docIds = JSON.parse(link.acceptedDocumentIds || '[]');
+        const { Employee } = require('../models');
+        const emp = await Employee.findByPk(user.employeeId, { transaction });
+        await dpdpAcknowledgements.recordAcknowledgements({
+          user,
+          employee: emp,
+          documentIds: docIds,
+          channel: 'MOBILE',
+          deviceLinkId: link.id,
+          transaction,
+        });
+      }
+
       tokens = { accessToken: signDeviceAccessToken(user, device.id), refreshToken, user: await mobileUser(user) };
     });
     if (!tokens) return error(res, 409, 'LINK_UNAVAILABLE', 'This link is no longer available.');
@@ -179,6 +259,11 @@ mobile.post('/session/refresh', deviceOwn(async (req, res) => {
     if (!user || user.organizationId !== device.organizationId || Date.now() - new Date(device.lastUsedAt).getTime() > INACTIVE_MS) {
       await device.update({ revokedAt: new Date() });
       return error(res, 401, 'DEVICE_REVOKED', 'This device is no longer linked.');
+    }
+    const dpdpStatus = await dpdpAcknowledgements.acknowledgementStatus({ user, channel: 'MOBILE' });
+    if (!dpdpStatus.isCurrent) {
+      await device.update({ revokedAt: new Date() });
+      return error(res, 401, 'DPDP_ACKNOWLEDGEMENT_REQUIRED', 'Legal documents changed. Link this device again from your portal.');
     }
     if (payload.rotation !== device.rotation || secretBox.sha256(req.body.refreshToken) !== device.refreshHash) {
       await device.update({ revokedAt: new Date() });

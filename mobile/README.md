@@ -13,7 +13,15 @@ The server must be reachable from the phone. A local development server can use 
 
 ## Employee features
 
-Home, finalized payslips and PDF sharing, leave balances and requests, current policy acknowledgement, calendar, workplace directory, check-in/out, reimbursement claims with PDF or image receipts, and profile/password change. The app uses the existing `/api/v1/me/*` endpoints. Claims and check-in records do not alter payroll automatically.
+Home, finalized payslips and PDF sharing, leave balances and requests, current policy acknowledgement, calendar, workplace directory, check-in/out, reimbursement claims with PDF or image receipts, DPDP Act privacy and data rights requests (`ACCESS`, `CORRECTION`, `ERASURE`, `GRIEVANCE`, `NOMINATION`), and profile/password change. The app uses the existing `/api/v1/me/*` endpoints. Claims and check-in records do not alter payroll automatically.
+
+## DPDP Act Compliance & Mobile Privacy
+
+The mobile app implements strict Digital Personal Data Protection Act, 2023 (DPDP Act) compliance:
+- **Privacy Onboarding:** Users review and explicitly affirm Platform Terms of Service, Platform Privacy Policy, and an Age Verification affirmation ($\ge 18$ years) before camera permission is requested.
+- **Link Preview & Bank Notice:** On scanning the portal QR code, the app previews the employer organisation's privacy notice and verifies age eligibility before claiming the device link.
+- **Contextual Permissions:** Camera access is requested only when scanning the portal QR code. Location access is foreground-only and used solely for geofenced attendance verification without logging coordinates.
+- **Rights Requests:** Employees can submit statutory data rights requests directly from `More → Privacy & data rights` to their bank's Data Protection Officer (DPO).
 
 The short-lived access token and rotating refresh token are kept in OS secure storage. A portal revocation blocks the phone immediately, including before the access token expires. Mobile sign-in is QR-only; password reset and MFA remain in the web portal. After changing a password, link the phone again. Employee API data stays in memory; authenticated files are placed in app cache only while sharing. The app needs a network connection and does not queue offline writes or send push notifications.
 

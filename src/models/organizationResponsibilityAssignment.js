@@ -7,7 +7,7 @@ module.exports = sequelize.define('OrganizationResponsibilityAssignment', {
   organizationId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'organization_id' },
   employeeId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'employee_id' },
   userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'user_id' },
-  responsibility: { type: DataTypes.ENUM('BRANCH_MANAGER', 'SENIOR_MANAGER', 'GENERAL_MANAGER'), allowNull: false },
+  responsibility: { type: DataTypes.ENUM('BRANCH_MANAGER', 'SENIOR_MANAGER', 'GENERAL_MANAGER', 'DATA_PROTECTION_OFFICER'), allowNull: false },
   scopeType: { type: DataTypes.ENUM('BRANCH', 'ORGANISATION'), allowNull: false, field: 'scope_type' },
   branchId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'branch_id' },
   effectiveFrom: { type: DataTypes.DATEONLY, allowNull: false, field: 'effective_from' },

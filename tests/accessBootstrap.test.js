@@ -180,7 +180,7 @@ test('db:init bootstraps existing tenants after migration and reruns with aggreg
       assert.ok(line, JSON.stringify(output));
       return JSON.parse(line.slice('Organisation access bootstrap:'.length));
     };
-    assert.equal(summary(first).rolesCreated, 9);
+    assert.equal(summary(first).rolesCreated, 10);
     assert.equal(summary(first).assignmentsCreated, 1);
     assert.equal(summary(second).rolesCreated, 0);
     assert.equal(summary(second).permissionsCreated, 0);
@@ -237,7 +237,7 @@ test('LEGACY hard-delete cleans only user access rows and preserves employee and
   assert.ok(await Employee.findByPk(e.id));
   assert.ok(await EmployeeOrganizationAssignment.findOne({ where: { employeeId: e.id } }));
   assert.ok(await models.AuditLog.findOne({ where: { action: 'user.delete', targetId: String(officer.id) } }));
-  assert.equal(await OrganizationRole.count({ where: { organizationId: b.org.id } }), 9);
+  assert.equal(await OrganizationRole.count({ where: { organizationId: b.org.id } }), 10);
 });
 
 test('an inactive bootstrap admin permanently exits bootstrap when linked before unlinking and reactivation', async () => {

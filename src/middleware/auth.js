@@ -3,6 +3,7 @@
 const { verifyToken, hasActiveEmployeeLink } = require('../services/authService');
 const { checkOrgAccess } = require('../services/orgAccess');
 const { User, Organization, EmployeeMobileDevice } = require('../models');
+const dpdpAcknowledgements = require('../services/dpdpAcknowledgements');
 
 /**
  * Verifies the Bearer token and attaches req.user = { id, role, organizationId }.
@@ -46,7 +47,39 @@ async function authenticate(req, res, next) {
         return res.status(403).json({ status: 'error', code: access.code, message: access.message });
       }
     }
-    req.user = { id: user.id, role: user.role, organizationId: user.organizationId, employeeId: user.employeeId, email: user.email, name: user.name, deviceId: payload.deviceId || null, accessControlMode };
+    req.user = {
+      id: user.id,
+      role: user.role,
+      organizationId: user.organizationId,
+      employeeId: user.employeeId,
+      email: user.email,
+      name: user.name,
+      deviceId: payload.deviceId || null,
+      dpdpPending: Boolean(payload.dpdpPending),
+      accessControlMode,
+    };
+    if (user.organizationId && user.employeeId) {
+      const channel = payload.deviceId ? 'MOBILE' : 'WEB';
+      const status = await dpdpAcknowledgements.acknowledgementStatus({ user, channel });
+      req.user.dpdpPending = !status.isCurrent;
+    }
+    if (req.user.dpdpPending) {
+      const route = `${req.baseUrl}${req.path}`;
+      const allowedRoutes = new Set([
+        'GET /api/v1/me/dpdp',
+        'POST /api/v1/me/dpdp/acknowledge',
+        'POST /api/v1/auth/change-password',
+        'GET /api/v1/auth/me',
+      ]);
+      const isAllowed = req._allowDpdpPending || allowedRoutes.has(`${req.method} ${route}`);
+      if (!isAllowed) {
+        return res.status(403).json({
+          status: 'error',
+          code: 'DPDP_ACKNOWLEDGEMENT_REQUIRED',
+          message: 'DPDP compliance acknowledgement is required before proceeding.',
+        });
+      }
+    }
     next();
   } catch (err) {
     return res.status(401).json({ status: 'error', message: 'Invalid or expired token' });

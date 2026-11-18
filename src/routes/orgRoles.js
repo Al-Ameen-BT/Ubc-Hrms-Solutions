@@ -25,4 +25,14 @@ router.post('/role-assignments', authenticate, requirePermission('roles.manage')
 router.put('/role-assignments/:id', authenticate, requirePermission('roles.manage'), handle(req => users.changeRoleAssignment(options(req))));
 router.delete('/role-assignments/:id', authenticate, requirePermission('roles.manage'), handle(req => users.changeRoleAssignment({ ...options(req), data: { status: 'INACTIVE' } })));
 router.get('/access-preview/:userId', authenticate, requirePermission('roles.manage'), handle(req => users.previewUserAccess(options(req))));
+
+const dpdpGovernance = require('../services/dpdpGovernance');
+const { requireFeaturePermission } = require('../middleware/permissions');
+const { DpdpOrganizationProfile } = require('../models');
+
+router.get('/dpdp/readiness', authenticate, requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), handle(req => dpdpGovernance.readiness(req.user.organizationId)));
+router.get('/dpdp/profile', authenticate, requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), handle(async req => DpdpOrganizationProfile.findOne({ where: { organizationId: req.user.organizationId } })));
+router.put('/dpdp/profile', authenticate, requireFeaturePermission('settings.configure', ['ORG_ADMIN']), handle(req => dpdpGovernance.updateProfile({ organizationId: req.user.organizationId, actor: req.user, data: req.body || {} })));
+router.post('/dpdp/dpo', authenticate, requireFeaturePermission('settings.configure', ['ORG_ADMIN']), handle(req => dpdpGovernance.assignDpo({ organizationId: req.user.organizationId, actor: req.user, userId: req.body?.userId, effectiveFrom: req.body?.effectiveFrom }), 201));
+
 module.exports = router;

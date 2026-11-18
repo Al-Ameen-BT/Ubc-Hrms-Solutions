@@ -14,6 +14,7 @@ const NAV = {
         { to: '/organisations', label: 'Organisations', icon: 'orgs' },
         { to: '/platform-users', label: 'Platform Users', icon: 'users' },
         { to: '/bank-rules', label: 'Bank Classes & Rules', icon: 'scales' },
+        { to: '/dpdp-documents', label: 'DPDP Documents', icon: 'rules' },
         { to: '/platform-settings', label: 'Settings', icon: 'settings' },
         { to: '/audit', label: 'Audit Log', icon: 'audit' },
       ],
@@ -49,6 +50,7 @@ const NAV = {
       items: [
         { to: '/government-orders', label: 'GO Register', icon: 'go' },
         { to: '/ksr-rules', label: 'KSR Rules', icon: 'rules' },
+        { to: '/dpdp-compliance', label: 'DPDP Compliance', icon: 'rules' },
         { to: '/org-profile', label: 'Org Profile', icon: 'orgs' },
         { to: '/settings', label: 'Settings', icon: 'settings' },
         { to: '/payroll-settings', label: 'Payroll Settings', icon: 'payroll' },
@@ -72,6 +74,7 @@ const NAV = {
         { to: '/my/expenses', label: 'Reimbursements', icon: 'payroll' },
         { to: '/my/workplace', label: 'Workplace', icon: 'employees' },
         { to: '/my/time', label: 'Check-in & out', icon: 'audit' },
+        { to: '/my/privacy', label: 'Privacy Requests', icon: 'rules' },
         { to: '/account', label: 'My Account', icon: 'users' },
       ],
     },

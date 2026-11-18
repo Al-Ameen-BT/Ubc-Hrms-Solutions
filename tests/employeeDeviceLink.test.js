@@ -29,8 +29,8 @@ before(async () => {
   await sequelize.sync();
   const org = await Organization.create({ code: 'DEVICE', name: 'Device Bank' });
   const post = await PostCadre.create({ organizationId: org.id, code: 'CLERK', name: 'Clerk' });
-  const employee = await Employee.create({ organizationId: org.id, empCode: 'D1', name: 'Device Employee', doj: '2020-01-01', postCadreId: post.id, directPay: true, currentBasicPay: 10000 });
-  const otherEmployee = await Employee.create({ organizationId: org.id, empCode: 'D2', name: 'Other Employee', doj: '2020-01-01', postCadreId: post.id, currentBasicPay: 10000 });
+  const employee = await Employee.create({ organizationId: org.id, empCode: 'D1', name: 'Device Employee', dob: '1990-01-01', doj: '2020-01-01', postCadreId: post.id, directPay: true, currentBasicPay: 10000 });
+  const otherEmployee = await Employee.create({ organizationId: org.id, empCode: 'D2', name: 'Other Employee', dob: '1990-01-01', doj: '2020-01-01', postCadreId: post.id, currentBasicPay: 10000 });
   owner = await User.create({ organizationId: org.id, employeeId: employee.id, email: 'device@self.invalid', name: 'Device Employee', role: 'EMPLOYEE', passwordHash: await hashPassword('current-secret'), mustChangePassword: false });
   other = await User.create({ organizationId: org.id, employeeId: otherEmployee.id, email: 'otherdevice@self.invalid', name: 'Other', role: 'EMPLOYEE', passwordHash: 'unused', mustChangePassword: false });
   unlinked = await User.create({ organizationId: org.id, email: 'unlinkeddevice@self.invalid', name: 'Unlinked', role: 'EMPLOYEE', passwordHash: 'unused' });

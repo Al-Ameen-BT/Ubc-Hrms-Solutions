@@ -12,6 +12,7 @@ module.exports = sequelize.define('EmployeeDeviceLink', {
   verificationCode: { type: DataTypes.STRING(6), field: 'verification_code' },
   deviceName: { type: DataTypes.STRING(80), field: 'device_name' },
   platform: { type: DataTypes.ENUM('android', 'ios') },
+  acceptedDocumentIds: { type: DataTypes.TEXT, field: 'accepted_document_ids' },
   expiresAt: { type: DataTypes.DATE, allowNull: false, field: 'expires_at' },
   deviceId: { type: DataTypes.INTEGER.UNSIGNED, field: 'device_id' },
 }, { tableName: 'employee_device_link', indexes: [{ fields: ['user_id', 'status'] }, { fields: ['expires_at'] }] });

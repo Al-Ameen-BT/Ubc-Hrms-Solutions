@@ -23,6 +23,7 @@ const { sendError, loginUrlFor } = require('../services/userAdmin');
 const payrollSettings = require('../services/payrollSettings');
 const { getPlatformSettings } = require('../services/settings');
 const orgDomains = require('../services/orgDomains');
+const { getDashboardAnalytics } = require('../services/dashboardAnalytics');
 
 const router = express.Router();
 router.use(authenticate);
@@ -30,6 +31,13 @@ router.use(authenticate);
 async function ownOrg(req) {
   return Organization.findByPk(req.user.organizationId);
 }
+
+router.get('/dashboard-analytics', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
+  try {
+    const analytics = await getDashboardAnalytics(req.user.organizationId);
+    res.json({ data: analytics });
+  } catch (err) { sendError(res, err); }
+});
 
 router.get('/settings', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
   try {

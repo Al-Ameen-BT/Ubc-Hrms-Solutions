@@ -531,4 +531,31 @@ router.post('/audit/purge-now', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
+// ---------------------------------------------------------------- DPDP Legal Documents
+const dpdpDocuments = require('../services/dpdpDocuments');
+
+router.get('/dpdp/documents', async (req, res) => {
+  try {
+    const list = await dpdpDocuments.listDocuments({ ownerType: 'PLATFORM', type: req.query.type });
+    res.json({ data: list });
+  } catch (err) { sendError(res, err); }
+});
+
+router.post('/dpdp/documents/publish', async (req, res) => {
+  try {
+    const doc = await dpdpDocuments.publishDocument({
+      ownerType: 'PLATFORM',
+      organizationId: null,
+      type: req.body.type,
+      title: req.body.title,
+      body: req.body.body,
+      version: req.body.version,
+      summary: req.body.summary,
+      effectiveAt: req.body.effectiveAt,
+      actor: req.user,
+    });
+    res.status(201).json({ data: doc });
+  } catch (err) { sendError(res, err); }
+});
+
 module.exports = router;

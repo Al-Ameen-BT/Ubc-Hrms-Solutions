@@ -33,7 +33,7 @@ async function fixture() {
 
 test('roles are protected; custom copies accept only their template ceiling and deny foreign IDs', async () => {
   const f = await fixture(), other = await fixture();
-  const list = await f.request('/roles'); assert.equal(list.status, 200); assert.equal(list.body.data.length, 9);
+  const list = await f.request('/roles'); assert.equal(list.status, 200); assert.equal(list.body.data.length, 10);
   for (const method of ['PUT', 'DELETE']) assert.equal((await f.request(`/roles/${f.role('HR_OFFICER').id}`, method, method === 'PUT' ? { name: 'Changed' } : undefined)).status, 400);
   assert.equal((await f.request('/roles', 'POST', { sourceRoleId: f.role('HR_OFFICER').id, code: 'EVIL', name: 'Evil', permissionCodes: ['payroll.prepare'] })).status, 400);
   assert.equal((await f.request('/roles', 'POST', { sourceRoleId: f.role('HR_OFFICER').id, code: 'UNKNOWN', name: 'Unknown', permissionCodes: ['invented.manage'] })).status, 400);
@@ -244,7 +244,7 @@ test('role catalogue exposes only immutable platform metadata and role lists inc
   const f = await fixture();
   const result = await f.request('/roles/catalogue');
   assert.equal(result.status, 200);
-  assert.equal(result.body.data.templates.length, 9);
+  assert.equal(result.body.data.templates.length, 10);
   assert.ok(result.body.data.templates.every(role => role.description && role.isProtected));
   assert.ok(result.body.data.permissions.every(permission => permission.allowedScopes && permission.guardrails && permission.risk));
   const list = (await f.request('/roles')).body.data;

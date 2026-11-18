@@ -27,6 +27,7 @@ const definitions = [
   ['audit', ['view'], ['ORGANISATION']],
   ['chart', ['view'], ALL_SCOPES],
   ['geofence', ['view', 'manage'], ['SELECTED_BRANCHES', 'ORGANISATION']],
+  ['dpdp', ['view', 'manage'], ['ORGANISATION']],
   ['self', ['profile', 'payslips', 'leave', 'attendance', 'policies', 'claims', 'documents', 'devices'], ['OWN']],
 ];
 
@@ -55,6 +56,7 @@ const descriptions = {
   APPROVING_AUTHORITY: 'Approve or reject financial proposals prepared by another user. Cannot record their payment.',
   DEPARTMENT_HEAD: 'View assigned department members, leave and attendance. No default final approval authority.',
   BRANCH_MANAGER: 'View branch operations and approve branch leave. Geofence controls require the separate feature to be available.',
+  DATA_PROTECTION_OFFICER: 'Manage organisation DPDP compliance readiness, employee data requests, incident records, and privacy documentation.',
   EMPLOYEE: 'Own-record self-service, linked mobile devices and the permitted organisation chart.',
 };
 const role = (code, name, allowedScopes, permissionCodes) => Object.freeze({
@@ -70,6 +72,7 @@ const ROLE_TEMPLATES = Object.freeze([
   role('APPROVING_AUTHORITY', 'Approving Authority', ['ORGANISATION'], ['payroll.view', 'payroll.approve', 'arrears.view', 'arrears.approve', 'compensation.view', 'compensation.approve', 'financialChanges.view', 'financialChanges.approve', 'expenses.view', 'expenses.approve', 'chart.view']),
   role('DEPARTMENT_HEAD', 'Department Head', ['DEPARTMENT'], ['people.view', 'attendance.view', 'leave.view', 'chart.view']),
   role('BRANCH_MANAGER', 'Branch Manager', ['SELECTED_BRANCHES'], ['people.view', 'attendance.view', 'leave.view', 'leave.approve', 'geofence.view', 'geofence.manage', 'chart.view']),
+  role('DATA_PROTECTION_OFFICER', 'Data Protection Officer', ['ORGANISATION'], ['dpdp.view', 'dpdp.manage', 'chart.view']),
   role('EMPLOYEE', 'Employee', ['OWN'], codes('self').concat(['chart.view'])),
 ]);
 

@@ -53,6 +53,10 @@ import { OrganisationStructurePage } from './features/org/OrganisationStructureP
 
 import { hasServiceAccess } from './api/organizationAccess';
 import { RolesPermissionsPage } from './features/org/RolesPermissionsPage';
+import { DpdpAcknowledgementPage } from './features/privacy/DpdpAcknowledgementPage';
+import { PublicPrivacyPage } from './features/privacy/PublicPrivacyPage';
+import { DpdpDocumentsPage } from './features/platform/DpdpDocumentsPage';
+import { DpdpCompliancePage } from './features/org/DpdpCompliancePage';
 
 function AppRoutes() {
   const { user, isAuthenticated, loading, isSuperAdmin, canPermission } = useAuth();
@@ -66,18 +70,30 @@ function AppRoutes() {
   }
 
   const mustChangePassword = user?.mustChangePassword;
+  const dpdpPending = user?.dpdpPending;
 
   return (
     <Routes>
       <Route path="/login" element={
-        isAuthenticated ? <Navigate to={mustChangePassword ? '/change-password' : '/'} replace /> : <LoginPage />
+        isAuthenticated ? (
+          mustChangePassword ? <Navigate to="/change-password" replace /> :
+          dpdpPending ? <Navigate to="/dpdp-acknowledgement" replace /> :
+          <Navigate to="/" replace />
+        ) : <LoginPage />
       } />
       <Route path="/mfa-verify" element={<MfaVerifyPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/privacy" element={<PublicPrivacyPage />} />
 
       <Route path="/change-password" element={
         isAuthenticated ? <ChangePasswordPage /> : <Navigate to="/login" replace />
+      } />
+
+      <Route path="/dpdp-acknowledgement" element={
+        isAuthenticated ? (
+          dpdpPending ? <DpdpAcknowledgementPage /> : <Navigate to="/" replace />
+        ) : <Navigate to="/login" replace />
       } />
 
       {/* Routes outside the shell (full-page) */}
@@ -86,7 +102,9 @@ function AppRoutes() {
 
       <Route path="/" element={
         isAuthenticated ? (
-          mustChangePassword ? <Navigate to="/change-password" replace /> : <AppShell />
+          mustChangePassword ? <Navigate to="/change-password" replace /> :
+          dpdpPending ? <Navigate to="/dpdp-acknowledgement" replace /> :
+          <AppShell />
         ) : <Navigate to="/login" replace />
       }>
         <Route index element={<HomeRoute />} />
@@ -131,6 +149,8 @@ function AppRoutes() {
         <Route path="financial-changes" element={<FinancialApprovalsPage />} />
         <Route path="mandatory-fields" element={<MandatoryFieldsPage />} />
         <Route path="audit" element={<AuditPage />} />
+        <Route path="dpdp-documents" element={isSuperAdmin ? <DpdpDocumentsPage /> : <Navigate to="/" replace />} />
+        <Route path="dpdp-compliance" element={<DpdpCompliancePage />} />
         <Route path="account" element={<MyAccountPage />} />
         <Route path="my/:section" element={<EmployeeServicesPage />} />
         <Route path="employee-services/:section" element={<EmployeeServicesAdminPage />} />

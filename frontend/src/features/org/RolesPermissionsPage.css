@@ -3,8 +3,10 @@
 .roles-readiness p { margin: 0; }
 .roles-blockers { padding-inline-start: var(--space-5); max-height: 16rem; overflow: auto; }
 .roles-workspace { display: grid; grid-template-columns: minmax(13rem, 0.26fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.roles-workspace-empty { grid-template-columns: minmax(0, 1fr); }
 .roles-workspace > .card { min-width: 0; }
 .roles-list { display: grid; }
+.roles-list-empty { margin: 0; padding: var(--space-5); color: var(--text-secondary); }
 .roles-list-item { appearance: none; display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4); text-align: start; background: transparent; color: var(--text-primary); border: 0; border-bottom: 1px solid var(--border); cursor: pointer; font: inherit; }
 .roles-list-item span { color: var(--text-secondary); font-size: var(--text-sm); }
 .roles-list-item:hover { background: var(--accent-soft); }

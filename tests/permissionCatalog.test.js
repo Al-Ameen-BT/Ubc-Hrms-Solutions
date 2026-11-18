@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { PERMISSIONS, ROLE_TEMPLATES, permission, template } = require('../src/services/permissionCatalog');
 
 test('catalogue has exactly nine protected immutable templates and stable unique codes', () => {
-  assert.deepEqual(ROLE_TEMPLATES.map(t => t.code).sort(), ['ORGANISATION_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'BRANCH_MANAGER', 'EMPLOYEE'].sort());
+  assert.deepEqual(ROLE_TEMPLATES.map(t => t.code).sort(), ['ORGANISATION_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'BRANCH_MANAGER', 'DATA_PROTECTION_OFFICER', 'EMPLOYEE'].sort());
   assert.equal(new Set(PERMISSIONS.map(p => p.code)).size, PERMISSIONS.length);
   assert.ok(Object.isFrozen(PERMISSIONS));
   assert.ok(Object.isFrozen(ROLE_TEMPLATES));

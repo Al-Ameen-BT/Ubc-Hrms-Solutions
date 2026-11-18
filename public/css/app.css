@@ -471,11 +471,7 @@ table.stages input { max-width: 11rem; }
 .logo-preview {
   width: 240px; height: 96px; border: 1px dashed var(--border); border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center; padding: .6rem;
-  /* chequerboard shows transparency */
-  background-color: #fff;
-  background-image: linear-gradient(45deg, #eef1f4 25%, transparent 25%), linear-gradient(-45deg, #eef1f4 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #eef1f4 75%), linear-gradient(-45deg, transparent 75%, #eef1f4 75%);
-  background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background: #f4f6f8;
 }
 .logo-preview.square { width: 96px; }
 .logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }

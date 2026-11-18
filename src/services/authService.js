@@ -51,12 +51,18 @@ function generateTempPassword() {
  * 'access' for a smooth transition (they carry the normal 12h expiry
  * anyway, so the gap closes itself).
  */
-function signToken(user) {
-  return jwt.sign(
-    { sub: user.id, role: user.role, organizationId: user.organizationId, av: user.accessVersion ?? 0, typ: 'access' },
-    getSecret(),
-    { expiresIn: JWT_EXPIRY }
-  );
+function signToken(user, options = {}) {
+  const payload = {
+    sub: user.id,
+    role: user.role,
+    organizationId: user.organizationId,
+    av: user.accessVersion ?? 0,
+    typ: 'access',
+  };
+  if (options && options.dpdpPending) {
+    payload.dpdpPending = true;
+  }
+  return jwt.sign(payload, getSecret(), { expiresIn: JWT_EXPIRY });
 }
 
 function signDeviceAccessToken(user, deviceId) {

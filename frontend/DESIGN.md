@@ -55,6 +55,8 @@
 
 ### Surface Treatment
 
+- **Solid colour rule**: UI surfaces, page backgrounds, brand panels, avatars, and controls use solid theme colours; gradients and decorative colour fields are not used.
+
 - **Glassmorphism**: Frosted glass effect with `rgba(255, 255, 255, 0.55)` backdrop, `blur(16px) saturate(160%)`
 - **Glass layers**: 
   - `--bg-glass`: rgba(255, 255, 255, 0.55) (light) / rgba(30, 41, 59, 0.5) (dark)

@@ -240,6 +240,7 @@ export const platformApi = {
 /* Org API */
 export const orgApi = {
   settings: () => api.get('/org/settings'),
+  dashboardAnalytics: () => api.get('/org/dashboard-analytics'),
   updateSettings: (data) => api.put('/org/settings', data),
   smtp: () => api.get('/org/settings/smtp'),
   updateSmtp: (data) => api.put('/org/settings/smtp', data),
@@ -316,9 +317,12 @@ export const masterDataApi = {
   serviceBook: (id) => api.get(`/employees/${id}/service-book`),
   addServiceBookEvent: (id, data) => api.post(`/employees/${id}/service-book/events`, data),
 
-  /* Bulk employee creation from a CSV (see routes/serviceBook.js). */
+  /* Bulk employee creation from CSV or Excel (see routes/serviceBook.js). */
   bulkImport: (data) => api.postRaw('/employees/bulk-import', data),
+  bulkImportPreview: (data) => api.postRaw('/employees/bulk-import/preview', data),
   bulkTemplateUrl: '/employees/bulk-template.csv',
+  bulkTemplateXlsxUrl: '/employees/bulk-template.xlsx',
+  bulkReferences: (orgId) => api.get(`/employees/bulk-references${orgId ? `?organizationId=${encodeURIComponent(orgId)}` : ''}`),
 };
 
 /* Payroll API */
@@ -346,6 +350,26 @@ export const payrollApi = {
 export const brandingApi = {
   platform: () => api.get('/public/branding'),
   org: (code) => api.get(`/public/org/${code}`),
+};
+
+/* DPDP Compliance API */
+export const dpdpApi = {
+  publicBundle: (organizationId) => api.get(`/public/dpdp${organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : ''}`),
+  adminDocuments: (type) => api.get(`/admin/dpdp/documents${type ? `?type=${encodeURIComponent(type)}` : ''}`),
+  adminPublishDocument: (data) => api.post('/admin/dpdp/documents/publish', data),
+  orgDocuments: (type) => api.get(`/org/dpdp/documents${type ? `?type=${encodeURIComponent(type)}` : ''}`),
+  orgPublishDocument: (data) => api.post('/org/dpdp/documents/publish', data),
+  myStatus: () => api.get('/me/dpdp'),
+  acknowledge: (documentIds) => api.postRaw('/me/dpdp/acknowledge', { documentIds }),
+  myRequests: () => api.get('/me/dpdp/requests'),
+  createMyRequest: (data) => api.post('/me/dpdp/requests', data),
+  orgRequests: (params) => api.get(`/org/dpdp/requests${params ? `?${new URLSearchParams(params)}` : ''}`),
+  decideOrgRequest: (id, data) => api.post(`/org/dpdp/requests/${id}/decide`, data),
+  orgIncidents: (params) => api.get(`/org/dpdp/incidents${params ? `?${new URLSearchParams(params)}` : ''}`),
+  createOrgIncident: (data) => api.post('/org/dpdp/incidents', data),
+  updateOrgIncident: (id, data) => api.put(`/org/dpdp/incidents/${id}`, data),
+  orgRetention: () => api.get('/org/dpdp/retention'),
+  updateOrgRetention: (data) => api.put('/org/dpdp/retention', data),
 };
 
 /* Formatting helpers */

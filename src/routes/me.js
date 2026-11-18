@@ -29,6 +29,58 @@ function bankDate(date = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+const dpdpAcknowledgements = require('../services/dpdpAcknowledgements');
+const { markDpdpPendingAllowed } = require('../middleware/dpdp');
+const { signToken } = require('../services/authService');
+
+router.get('/dpdp', markDpdpPendingAllowed, requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try {
+    const status = await dpdpAcknowledgements.acknowledgementStatus({ user: req.user, channel: 'WEB' });
+    res.json({ data: status });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/dpdp/acknowledge', markDpdpPendingAllowed, requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try {
+    const { documentIds } = req.body || {};
+    const employee = await ownEmployee(req);
+    await dpdpAcknowledgements.recordAcknowledgements({
+      user: req.user,
+      employee,
+      documentIds,
+      channel: 'WEB',
+    });
+    const status = await dpdpAcknowledgements.acknowledgementStatus({ user: req.user, channel: 'WEB' });
+    const fullUser = await User.findByPk(req.user.id);
+    const token = signToken(fullUser, { dpdpPending: !status.isCurrent });
+    res.json({ data: status, token });
+  } catch (err) { fail(res, err); }
+});
+
+const dpdpCases = require('../services/dpdpCases');
+
+router.get('/dpdp/requests', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try {
+    const employee = await ownEmployee(req);
+    const list = await dpdpCases.listMyRequests({ actor: req.user, employee });
+    res.json({ data: list });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/dpdp/requests', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try {
+    const employee = await ownEmployee(req);
+    const { requestType, details } = req.body || {};
+    const created = await dpdpCases.createRequest({
+      actor: req.user,
+      employee,
+      requestType,
+      details,
+    });
+    res.status(201).json({ data: created });
+  } catch (err) { fail(res, err); }
+});
+
 router.get('/context', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
   try {
     const employee = await ownEmployee(req);

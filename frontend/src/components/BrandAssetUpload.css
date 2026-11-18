@@ -1,7 +1,53 @@
+.brand-asset-field {
+  min-width: 0;
+}
+
+.brand-asset-field .form-note {
+  margin: 0;
+}
+
+.brand-asset-preview-frame {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 26rem;
+  min-height: 8.5rem;
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-4);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+}
+
+.brand-asset-preview-frame-icon {
+  width: 8.5rem;
+  aspect-ratio: 1;
+}
+
 .brand-asset-preview {
   display: block;
-  max-width: min(100%, 360px);
-  max-height: 120px;
+  width: 100%;
+  height: 6.5rem;
   object-fit: contain;
-  margin: 12px 0;
+}
+
+.brand-asset-preview-frame-icon .brand-asset-preview {
+  width: 5rem;
+  height: 5rem;
+}
+
+.brand-asset-actions {
+  align-items: center;
+  margin-top: auto;
+}
+
+.file-upload-btn-wrap.is-disabled {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.file-upload-btn-wrap:focus-within .file-upload-btn {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

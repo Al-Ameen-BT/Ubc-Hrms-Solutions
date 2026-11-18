@@ -150,6 +150,51 @@ function Claims({ api, session }: Props) {
   </Page>;
 }
 
+type DpdpRequest = { id: number; requestType: string; status: string; details: string; dpoResponse?: string; retentionReason?: string; createdAt: string; decidedAt?: string };
+
+function Privacy({ api, session }: Props) {
+  const [refresh, setRefresh] = useState(0);
+  const [requestType, setRequestType] = useState('ACCESS');
+  const [details, setDetails] = useState('');
+  const action = useAction();
+  const { data, error, loading } = useResource<DpdpRequest[]>(api, '/me/dpdp/requests', session.token, refresh);
+
+  const submit = () => action.run('dpdp-request-submit', async () => {
+    if (!details.trim()) throw new Error('Enter request details.');
+    await api.post('/me/dpdp/requests', { requestType, details: details.trim() }, session.token);
+  }, () => { setDetails(''); setRefresh(v => v + 1); }, 'Privacy request submitted to DPO.');
+
+  return <Page><ScreenHeading eyebrow="DPDP compliance" title="Privacy & data rights" description="Submit and track statutory data rights requests." /><Feedback error={error || action.error} loading={loading} notice={action.notice} />
+    <Card title="Submit a data request">
+      <View style={local.chips}>
+        {['ACCESS', 'CORRECTION', 'ERASURE', 'GRIEVANCE', 'NOMINATION'].map(t => (
+          <Pressable accessibilityRole="button" accessibilityLabel={t} key={t} onPress={() => setRequestType(t)} style={[local.chip, requestType === t && local.chipSelected]}>
+            <Text style={[local.chipText, requestType === t && local.chipTextSelected]}>{t}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Field label="Request details" value={details} onChangeText={setDetails} multiline placeholder="State what personal data records or corrections you are requesting..." />
+      <Action title="Submit request" onPress={submit} busy={action.busyKey === 'dpdp-request-submit'} disabled={action.busy} />
+    </Card>
+    <Card title="Request history">
+      {data?.length ? data.map(req => (
+        <View key={req.id} style={local.listItem}>
+          <View style={local.cardHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>{req.requestType}</Text>
+              <Text style={styles.body}>{req.details}</Text>
+            </View>
+            <StatusBadge label={req.status} tone={req.status === 'COMPLETED' ? 'success' : req.status === 'REJECTED' ? 'danger' : 'warning'} />
+          </View>
+          {req.dpoResponse && <Notice message={`DPO Response: ${req.dpoResponse}`} />}
+          {req.retentionReason && <Notice message={`Statutory ground: ${req.retentionReason}`} />}
+          <Text style={styles.muted}>Submitted {dateText(req.createdAt)}</Text>
+        </View>
+      )) : !loading && <Empty message="No privacy requests submitted yet." />}
+    </Card>
+  </Page>;
+}
+
 function Profile({ api, session, signOut }: Props & { signOut: () => void }) {
   const employee = session.context.employee;
   return <Page><ScreenHeading eyebrow="Account" title="My profile" description="Your work identity and account security." /><Card>{session.user.organization?.logoUrl && <Image source={{ uri: `${api.root}${session.user.organization.logoUrl}` }} resizeMode="contain" style={local.profileLogo} accessibilityLabel={`${session.user.organization.name} logo`} />}<Text style={styles.cardTitle}>{employee?.name || session.user.name}</Text><Text style={styles.muted}>{session.user.organization?.name || session.user.organizationName}</Text><View style={local.ledger}><DataRow label="Employee code" value={employee?.empCode || '—'} /><DataRow label="Email" value={session.user.email} /><DataRow label="Role" value={employee?.designation || 'Employee'} /><DataRow label="Department" value={employee?.department || 'Unassigned'} /><DataRow label="Branch" value={employee?.branchName || 'Unassigned'} last /></View></Card><PasswordForm api={api} session={session} onSignOut={signOut} /><Action title="Sign out of this phone" secondary onPress={signOut} /><Text style={[styles.muted, { textAlign: 'center' }]}>UCB-HRMS · Version {version}</Text></Page>;
@@ -160,6 +205,7 @@ const moreItems = [
   { section: 'Calendar', glyph: '▦', title: 'My calendar', detail: 'Holidays, leave and workdays' },
   { section: 'Workplace', glyph: '⌘', title: 'Workplace tree', detail: 'Branches, departments and roles' },
   { section: 'Claims', glyph: '₹', title: 'Reimbursement claims', detail: 'Submit expenses and track payment' },
+  { section: 'Privacy', glyph: '§', title: 'Privacy & data rights', detail: 'Submit DPDP rights requests to DPO' },
   { section: 'Profile', glyph: '○', title: 'Profile and security', detail: 'Identity, password and sign-out' },
 ];
 
@@ -171,6 +217,7 @@ export function Services({ section, api, session, navigate, signOut }: Props & {
   if (section === 'Calendar') return <Calendar api={api} session={session} navigate={navigate} />;
   if (section === 'Workplace') return <Workplace api={api} session={session} navigate={navigate} />;
   if (section === 'Claims') return <Claims api={api} session={session} navigate={navigate} />;
+  if (section === 'Privacy') return <Privacy api={api} session={session} navigate={navigate} />;
   if (section === 'Profile') return <Profile api={api} session={session} navigate={navigate} signOut={signOut} />;
   return <Page><ScreenHeading eyebrow="Employee services" title="More" description="Everything else you need from your workplace." />{moreItems.map(item => <Pressable accessibilityRole="button" accessibilityLabel={item.title} key={item.section} onPress={() => navigate(item.section)} style={({ pressed }) => [local.serviceRow, pressed && local.pressed]}><View style={local.serviceIcon}><Text style={local.serviceGlyph}>{item.glyph}</Text></View><View style={{ flex: 1 }}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.muted}>{item.detail}</Text></View><Text style={local.chevron}>›</Text></Pressable>)}</Page>;
 }

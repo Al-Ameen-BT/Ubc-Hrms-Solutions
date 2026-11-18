@@ -55,6 +55,10 @@ export const organizationAccessApi = {
   updateAssignment: (id, body) => api.put(`/org/role-assignments/${id}`, body),
   endAssignment: id => api.delete(`/org/role-assignments/${id}`),
   preview: userId => api.get(`/org/access-preview/${userId}`),
+  dpdpReadiness: () => api.get('/org/dpdp/readiness'),
+  dpdpProfile: () => api.get('/org/dpdp/profile'),
+  updateDpdpProfile: body => api.put('/org/dpdp/profile', body),
+  assignDpo: body => api.post('/org/dpdp/dpo', body),
   branches: () => api.get(`${structurePath}/branches`),
   onboardingBranches: () => api.get(`${structurePath}/branch-options`),
   onboardingPositions: (branchId, departmentId) => {
@@ -125,9 +129,10 @@ const ROUTES = {
   'org-profile': [['settings.view'], ['ORG_ADMIN']], settings: [['settings.view'], ['ORG_ADMIN']],
   'payroll-settings': [['compensation.view'], ['ORG_ADMIN']], 'catalogue-adoption': [['compensation.view'], FINANCIAL_READERS],
   'financial-changes': [['financialChanges.view'], FINANCIAL_READERS], 'mandatory-fields': [['settings.view'], ['ORG_ADMIN']],
+  'dpdp-compliance': [['dpdp.view', 'dpdp.manage', 'settings.configure'], ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']],
   audit: [['audit.view'], ['ORG_ADMIN']], 'roles-permissions': [['roles.manage'], []], users: [['users.manage'], ['ORG_ADMIN']],
 };
-const SELF = { payslips: 'self.payslips', leave: 'self.leave', calendar: 'self.leave', policies: 'self.policies', expenses: 'self.claims', workplace: 'chart.view', time: 'self.attendance' };
+const SELF = { payslips: 'self.payslips', leave: 'self.leave', calendar: 'self.leave', policies: 'self.policies', expenses: 'self.claims', workplace: 'chart.view', time: 'self.attendance', privacy: 'self.profile' };
 export const SERVICE_PERMISSIONS = {
   policy: [['hr.view'], ['ORG_ADMIN']], holidays: [['hr.view'], ['ORG_ADMIN', 'HR_ADMIN']],
   time: [['attendance.view'], ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']],
@@ -137,7 +142,7 @@ export const hasServiceAccess = (section, canPermission) => {
   const [codes, legacyRoles] = SERVICE_PERMISSIONS[section] || [[], []];
   return codes.some(code => canPermission(code, legacyRoles));
 };
-const PLATFORM = ['organisations', 'platform-users', 'platform-settings', 'bank-rules', 'audit'];
+const PLATFORM = ['organisations', 'platform-users', 'platform-settings', 'bank-rules', 'dpdp-documents', 'audit'];
 
 export function canVisitRoute(path, canPermission, isSuperAdmin = false) {
   const [root, section, extra] = path.split('/').filter(Boolean);

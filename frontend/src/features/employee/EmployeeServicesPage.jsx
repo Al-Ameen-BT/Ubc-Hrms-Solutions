@@ -13,9 +13,9 @@ import { ServiceBookPayslips } from '../employees/ServiceBookPayslips';
 import { masterDataApi } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { organizationAccessApi } from '../../api/organizationAccess';
-import './EmployeeServices.css';
+import { PrivacyRequestsPage } from './PrivacyRequestsPage';
 
-const labels = { payslips: 'My Payslips', leave: 'My Leave', policies: 'Bank Policies', calendar: 'My Calendar', workplace: 'Workplace', time: 'Check-in & Check-out', expenses: 'Reimbursement Claims' };
+const labels = { payslips: 'My Payslips', leave: 'My Leave', policies: 'Bank Policies', calendar: 'My Calendar', workplace: 'Workplace', time: 'Check-in & Check-out', expenses: 'Reimbursement Claims', privacy: 'Privacy & Data Rights' };
 const bankTime = value => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 const dateNow = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 function Notice({ error }) { return error ? <p className="auth-error" role="alert">{error}</p> : null; }
@@ -36,7 +36,7 @@ function WorkplacePhoto({ path, name }) {
 
 export function EmployeeServicesPage() {
   const { section } = useParams();
-  const Component = { payslips: Payslips, leave: Leave, policies: Policies, calendar: Calendar, workplace: Workplace, time: Time, expenses: Expenses }[section];
+  const Component = { payslips: Payslips, leave: Leave, policies: Policies, calendar: Calendar, workplace: Workplace, time: Time, expenses: Expenses, privacy: PrivacyRequestsPage }[section];
   return <div className="page"><header className="page-header"><h1>{labels[section]}</h1><p>Employee self-service · your bank account</p></header>{Component ? <Component /> : <EmptyState title="Page not found" />}</div>;
 }
 

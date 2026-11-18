@@ -4,6 +4,20 @@ This project uses [Semantic Versioning](https://semver.org/). Record user-visibl
 
 ## Unreleased
 
+## 0.3.0 — 2026-11-18
+
+### Added
+
+- Digital Personal Data Protection Act, 2023 (DPDP Act) comprehensive compliance engine and governance framework.
+- Immutable, versioned platform Terms of Service, platform Privacy Policy, and organisation Employee Privacy Notices.
+- Enforceable web login and self-service compliance gate requiring explicit acknowledgement of active legal bundles.
+- Mobile privacy onboarding with separate affirmations and age eligibility verification (18+ policy) prior to device camera linking.
+- End-to-end statutory employee rights workspace (`ACCESS`, `CORRECTION`, `ERASURE`, `GRIEVANCE`, `NOMINATION`) across web self-service and mobile app.
+- Data Protection Officer (DPO) governance dashboard, readiness blockers, breach/incident register, and response tracking.
+- Report-only data retention register with legal hold protection, preserving statutory payroll, service book, and audit trails.
+- Public, stable `/privacy` page rendering platform terms and privacy disclosures without authentication.
+- Play Store Data Safety inventory and pre-release submission checklist.
+
 ## 0.2.2 — 2026-11-11
 
 ### Fixed

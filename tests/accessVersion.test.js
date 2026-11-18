@@ -30,7 +30,7 @@ async function request(path, method = 'GET', body, token) {
 }
 async function user(role = 'PAYROLL_OFFICER') {
   const index = ++serial;
-  const employee = await Employee.create({ organizationId: org.id, postCadreId: post.id, empCode: `E${index}`, name: 'Employee', doj: '2020-01-01' });
+  const employee = await Employee.create({ organizationId: org.id, postCadreId: post.id, empCode: `E${index}`, name: 'Employee', dob: '1990-01-01', doj: '2020-01-01' });
   return User.create({ organizationId: org.id, employeeId: employee.id, role, email: `version${index}@test.invalid`, name: 'User', passwordHash: await auth.hashPassword('current-secret'), mustChangePassword: false });
 }
 async function device(owner) {

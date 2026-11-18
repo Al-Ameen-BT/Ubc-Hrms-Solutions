@@ -21,6 +21,7 @@ router.use('/admin', require('./admin'));
 router.use('/admin/bank-rule-catalogue', require('./bankRuleCatalogue'));
 
 // An Org Admin's own organisation settings.
+router.use('/org/dpdp', require('./dpdp'));
 router.use('/org/employee-policy', require('./orgEmployeePolicy'));
 router.use('/org/catalogue-adoptions', require('./orgCatalogueAdoption'));
 router.use('/org/compensation', require('./orgCompensation'));

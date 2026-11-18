@@ -16,7 +16,24 @@
  */
 
 const { DataTypes, Op } = require('sequelize');
-const { sequelize, DaRevision, ArrearsCase, LeaveApplication, Organization, OrganizationBranch, Employee, User, EmployeeTransfer, PayStage, EmployeeCompensationAssignment } = require('../models');
+const {
+  sequelize,
+  DaRevision,
+  ArrearsCase,
+  LeaveApplication,
+  Organization,
+  OrganizationBranch,
+  Employee,
+  User,
+  EmployeeTransfer,
+  PayStage,
+  EmployeeCompensationAssignment,
+  DpdpDocument,
+  DpdpAcknowledgement,
+  DpdpDataRequest,
+  DpdpIncident,
+  DpdpOrganizationProfile,
+} = require('../models');
 
 const StageNumberMigration = sequelize.define('StageNumberMigration', {
   key: { type: DataTypes.STRING(64), primaryKey: true },
@@ -277,13 +294,22 @@ const ENUM_WIDEN_STEPS = [
     ),
     allowNull: false,
   }],
+  ['organization_responsibility_assignment', 'responsibility', {
+    type: DataTypes.ENUM('BRANCH_MANAGER', 'SENIOR_MANAGER', 'GENERAL_MANAGER', 'DATA_PROTECTION_OFFICER'),
+    allowNull: false,
+  }],
 ];
 
 async function migrate() {
   const qi = sequelize.getQueryInterface();
   const added = [];
-  // New transfer storage only; existing assignment and payroll history is untouched.
+  // Sync missing tables non-destructively
   await EmployeeTransfer.sync();
+  await DpdpDocument.sync();
+  await DpdpAcknowledgement.sync();
+  await DpdpDataRequest.sync();
+  await DpdpIncident.sync();
+  await DpdpOrganizationProfile.sync();
   for (const [table, column, spec] of COLUMN_STEPS) {
     // eslint-disable-next-line no-await-in-loop
     if (await addColumnIfMissing(qi, table, column, spec)) added.push(`${table}.${column}`);

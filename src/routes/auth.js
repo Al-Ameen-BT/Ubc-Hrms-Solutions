@@ -28,6 +28,8 @@ const {
   hashPassword, verifyPassword, signToken, signMfaChallengeToken, verifyMfaChallengeToken,
   generateMfaSecret, mfaKeyUri, mfaQrCodeDataUrl, verifyMfaCode, encryptMfaSecret, decryptMfaSecret,
 } = require('../services/authService');
+const dpdpAcknowledgements = require('../services/dpdpAcknowledgements');
+const { markDpdpPendingAllowed } = require('../middleware/dpdp');
 
 const router = express.Router();
 
@@ -81,7 +83,22 @@ async function finishLogin(req, user, viaMfa) {
   await user.save();
   const loaded = await User.findByPk(user.id, withOrg);
   await audit(req, 'auth.login', { actor: actorOf(user), organizationId: user.organizationId, targetType: 'user', targetId: user.id, details: { mfa: !!viaMfa } });
-  return { token: signToken(user), user: await publicUser(loaded), mustChangePassword: user.mustChangePassword, previousLoginAt: previousLogin };
+
+  const dpdpStatus = user.organizationId && user.employeeId
+    ? await dpdpAcknowledgements.acknowledgementStatus({ user, channel: 'WEB' })
+    : { isCurrent: true };
+  const dpdpPending = !dpdpStatus.isCurrent;
+
+  return {
+    token: signToken(user, { dpdpPending }),
+    user: {
+      ...await publicUser(loaded),
+      dpdpPending,
+    },
+    dpdpPending,
+    mustChangePassword: user.mustChangePassword,
+    previousLoginAt: previousLogin,
+  };
 }
 
 const INVALID = { status: 'error', message: 'Invalid email or password' };
@@ -177,14 +194,14 @@ router.post('/mfa/verify-login', async (req, res) => {
   }
 });
 
-router.get('/me', authenticate, async (req, res) => {
+router.get('/me', markDpdpPendingAllowed, authenticate, async (req, res) => {
   const user = await User.findByPk(req.user.id, withOrg);
   if (!user) return res.status(404).json({ status: 'error', message: 'Not found' });
   const access = await require('../services/accessControl').effectiveAccess(user.id);
   res.json({ data: { ...await publicUser(user), accessControlMode: access.accessControlMode, bootstrapRestricted: !!access.bootstrapRestricted, permissionCodes: access.permissionCodes, scopeSummary: access.scopeSummary } });
 });
 
-router.post('/change-password', authenticate, async (req, res) => {
+router.post('/change-password', markDpdpPendingAllowed, authenticate, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
     if (!currentPassword || !newPassword) return res.status(400).json({ status: 'error', message: 'Current and new password are required' });

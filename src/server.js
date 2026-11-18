@@ -180,7 +180,7 @@ app.get(['/assets/platform/favicon', '/favicon.ico'], async (req, res, next) => 
     if (req.path === '/favicon.ico') {
       const org = await require('./services/orgDomains').findOrgByDomain(req.get('host'));
       if (org) {
-        const icon = await brand.find(org.id, 'FAVICON') || await brand.find(org.id, 'LOGO');
+        const icon = await brand.find(org.id, 'FAVICON');
         if (icon) return brand.send(res, icon);
       }
     }
@@ -220,10 +220,6 @@ app.get('/assets/org/:code/favicon', async (req, res, next) => {
     if (!org) return res.status(404).end();
     const favRow = await brand.find(org.id, 'FAVICON');
     if (favRow) return brand.send(res, favRow);
-
-    // Fallback to the organisation's logo if uploaded
-    const logoRow = await brand.find(org.id, 'LOGO');
-    if (logoRow) return brand.send(res, logoRow);
 
     // Default to platform round favicon
     res.set('Cache-Control', 'public, max-age=300');

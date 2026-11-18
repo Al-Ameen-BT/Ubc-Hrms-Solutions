@@ -73,6 +73,12 @@ const ExpenseReceipt = require('./expenseReceipt');
 const FinancialChangeProposal = require('./financialChangeProposal');
 const EmployeeMobileDevice = require('./employeeMobileDevice');
 const EmployeeDeviceLink = require('./employeeDeviceLink');
+const DpdpDocument = require('./dpdpDocument');
+const DpdpAcknowledgement = require('./dpdpAcknowledgement');
+const DpdpDataRequest = require('./dpdpDataRequest');
+const DpdpIncident = require('./dpdpIncident');
+const DpdpOrganizationProfile = require('./dpdpOrganizationProfile');
+const DpdpRetentionRule = require('./dpdpRetentionRule')(sequelize);
 
 // ----------------------------------------------------------------------------
 // Associations — this is the literal implementation of the required chain:
@@ -379,7 +385,38 @@ for (const [as, foreignKey] of [['Preparer', 'preparedBy'], ['Approver', 'decide
   EmployeeTransfer.belongsTo(User, { as, foreignKey, onDelete: 'RESTRICT' });
 }
 
+// DPDP Compliance Associations
+DpdpDocument.belongsTo(Organization, { foreignKey: 'organizationId' });
+Organization.hasMany(DpdpDocument, { foreignKey: 'organizationId' });
+DpdpDocument.hasMany(DpdpAcknowledgement, { foreignKey: 'documentId' });
+DpdpAcknowledgement.belongsTo(DpdpDocument, { foreignKey: 'documentId' });
+DpdpAcknowledgement.belongsTo(Organization, { foreignKey: 'organizationId' });
+DpdpAcknowledgement.belongsTo(User, { foreignKey: 'userId' });
+DpdpAcknowledgement.belongsTo(Employee, { foreignKey: 'employeeId' });
+DpdpAcknowledgement.belongsTo(EmployeeDeviceLink, { foreignKey: 'deviceLinkId' });
+
+DpdpDataRequest.belongsTo(Organization, { foreignKey: 'organizationId' });
+DpdpDataRequest.belongsTo(Employee, { foreignKey: 'employeeId' });
+DpdpDataRequest.belongsTo(User, { foreignKey: 'userId' });
+DpdpDataRequest.belongsTo(User, { as: 'DecidedByUser', foreignKey: 'decidedBy' });
+
+DpdpIncident.belongsTo(Organization, { foreignKey: 'organizationId' });
+DpdpIncident.belongsTo(User, { as: 'ReportedByUser', foreignKey: 'reportedBy' });
+DpdpIncident.belongsTo(User, { as: 'ClosedByUser', foreignKey: 'closedBy' });
+
+DpdpOrganizationProfile.belongsTo(Organization, { foreignKey: 'organizationId' });
+Organization.hasOne(DpdpOrganizationProfile, { foreignKey: 'organizationId' });
+
+DpdpRetentionRule.belongsTo(Organization, { foreignKey: 'organizationId' });
+Organization.hasMany(DpdpRetentionRule, { foreignKey: 'organizationId' });
+
 module.exports = {
+  DpdpDocument,
+  DpdpAcknowledgement,
+  DpdpDataRequest,
+  DpdpIncident,
+  DpdpOrganizationProfile,
+  DpdpRetentionRule,
   EmployeeTransfer,
   OrganizationDepartment,
   OrganizationPosition,

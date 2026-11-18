@@ -33,7 +33,7 @@ test('scope enums cannot widen department or branch responsibilities to organisa
   assert.deepEqual(models.OrganizationResponsibilityAssignment?.rawAttributes.scopeType?.values,
     ['BRANCH', 'ORGANISATION']);
   assert.deepEqual(models.OrganizationResponsibilityAssignment?.rawAttributes.responsibility?.values,
-    ['BRANCH_MANAGER', 'SENIOR_MANAGER', 'GENERAL_MANAGER']);
+    ['BRANCH_MANAGER', 'SENIOR_MANAGER', 'GENERAL_MANAGER', 'DATA_PROTECTION_OFFICER']);
   assert.deepEqual(Organization.rawAttributes.accessControlMode?.values, ['LEGACY', 'PERMISSIONS']);
   assert.equal(Organization.build().accessControlMode, 'LEGACY');
 });

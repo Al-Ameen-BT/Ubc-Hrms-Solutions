@@ -46,6 +46,8 @@ test('org admin uploads separate banner and icon; public branding uses icon as f
   assert.match(branding.body.data.logoUrl, /\/assets\/org\/BRAND\/logo\?v=/);
   assert.equal((await call('DELETE', '/org/settings/favicon', orgToken)).status, 200);
   assert.equal((await call('GET', '/org/settings', orgToken)).body.data.favicon, null);
+  const fallbackBranding = await call('GET', '/public/org/BRAND', null);
+  assert.equal(fallbackBranding.body.data.faviconUrl, '/favicon.png');
 });
 
 test('platform admin can upload separate banner and icon; organisation user cannot', async () => {

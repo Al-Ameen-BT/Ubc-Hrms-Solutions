@@ -115,15 +115,33 @@ echo "→ Rebuilding container image (hrms-backend + frontend dist)..."
 IMAGE_NAME="localhost/hrms-backend:latest"
 CONFIG_DIR="${USER_HOME}/.config/ucb-hrms"
 
-"${PODMAN_CMD[@]}" build -t "$IMAGE_NAME" .
-
-PUSH_RUNTIME_DIR="${USER_HOME}/.config/ucb-hrms"
-if [[ ! -f "$PUSH_RUNTIME_DIR/.env" ]]; then
-  echo "Runtime environment not found at $PUSH_RUNTIME_DIR/.env; cannot provision push secrets." >&2
+# Use the backend service's EnvironmentFile when configured outside the default directory.
+RUNTIME_ENV_FILE="${HRMS_ENV_FILE:-$CONFIG_DIR/.env}"
+if [[ -z "${HRMS_ENV_FILE:-}" ]]; then
+  SERVICE_ENV_FILES="$("${SYSTEMCTL_CMD[@]}" show hrms-backend.service --property=EnvironmentFiles --value 2>/dev/null || true)"
+  if [[ -n "$SERVICE_ENV_FILES" ]]; then
+    if [[ "$SERVICE_ENV_FILES" =~ ^(/[^[:space:]]+)\ \(ignore_errors=(yes|no)\)$ ]]; then
+      RUNTIME_ENV_FILE="${BASH_REMATCH[1]}"
+    else
+      echo "Cannot resolve a single backend EnvironmentFile. Set HRMS_ENV_FILE to its exact absolute path." >&2
+      exit 1
+    fi
+  fi
+fi
+if [[ "$RUNTIME_ENV_FILE" != /* || ! -f "$RUNTIME_ENV_FILE" || -L "$RUNTIME_ENV_FILE" ]]; then
+  echo "Runtime environment must be an existing, non-symlink absolute file: $RUNTIME_ENV_FILE" >&2
   exit 1
 fi
-"${PODMAN_CMD[@]}" run --rm --user 0 -v "$PUSH_RUNTIME_DIR:/runtime:Z" "$IMAGE_NAME" \
-  node src/scripts/provisionPushSecrets.js /runtime/.env
+
+"${PODMAN_CMD[@]}" build -t "$IMAGE_NAME" .
+
+echo "→ Provisioning missing push keys in $RUNTIME_ENV_FILE (existing keys retained)..."
+if ! "${PODMAN_CMD[@]}" run --rm --user 0 --network none \
+  -v "$RUNTIME_ENV_FILE:/runtime.env:z" "$IMAGE_NAME" \
+  node src/scripts/provisionPushSecrets.js /runtime.env; then
+  echo "Push key provisioning failed; services have not been restarted. Check the runtime env key pair." >&2
+  exit 1
+fi
 
 # ── 3. Update frontend assets for Nginx edge ───────────────────────────────
 echo ""

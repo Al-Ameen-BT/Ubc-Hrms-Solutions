@@ -290,4 +290,4 @@ function parseCsv(text) {
   return results;
 }
 
-module.exports = { parseCsv, toCsv, csvField };
+module.exports = { parseCsv, toCsv, csvField, normalizeHeader };

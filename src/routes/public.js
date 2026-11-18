@@ -47,7 +47,7 @@ async function orgBranding(org) {
   const logoUrl = logo ? `/assets/org/${encodeURIComponent(org.code)}/logo?v=${logo.version}` : null;
   const faviconUrl = favicon
     ? `/assets/org/${encodeURIComponent(org.code)}/favicon?v=${favicon.version}`
-    : (logoUrl || '/favicon.png');
+    : '/favicon.png';
 
   return {
     code: org.code,
@@ -82,6 +82,26 @@ router.get('/org/:code', async (req, res) => {
     if (!org) return res.status(404).json({ status: 'error', message: 'No organisation with that code.' });
     res.set('Cache-Control', 'no-cache');
     res.json({ data: await orgBranding(org) });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+const dpdpDocuments = require('../services/dpdpDocuments');
+
+router.get('/dpdp', async (req, res) => {
+  try {
+    const orgId = req.query.organizationId ? Number(req.query.organizationId) : null;
+    const bundle = await dpdpDocuments.activeBundle({ organizationId: orgId });
+
+    res.json({
+      data: {
+        asOf: bundle.asOf,
+        terms: dpdpDocuments.publicDocumentView(bundle.terms),
+        platformPrivacy: dpdpDocuments.publicDocumentView(bundle.platformPrivacy),
+        employeeNotice: dpdpDocuments.publicDocumentView(bundle.employeeNotice),
+      },
+    });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });
   }
