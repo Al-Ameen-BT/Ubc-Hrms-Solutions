@@ -32,9 +32,29 @@ async function ownOrg(req) {
   return Organization.findByPk(req.user.organizationId);
 }
 
-router.get('/dashboard-analytics', requireFeaturePermission('settings.view', ['ORG_ADMIN']), async (req, res) => {
+router.get('/dashboard-analytics', requireFeaturePermission('hr.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']), async (req, res) => {
   try {
-    const analytics = await getDashboardAnalytics(req.user.organizationId);
+    const filters = {};
+    for (const key of ['branchId', 'departmentId']) {
+      if (req.query[key] === undefined || req.query[key] === '') continue;
+      const value = Number(req.query[key]);
+      if (!Number.isInteger(value) || value <= 0) return res.status(400).json({ status: 'error', message: `Invalid ${key === 'branchId' ? 'branch' : 'department'} filter.` });
+      filters[key] = value;
+    }
+    if (req.query.date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.date) || Number.isNaN(new Date(`${req.query.date}T00:00:00Z`).getTime())) return res.status(400).json({ status: 'error', message: 'Invalid dashboard date.' });
+      filters.date = req.query.date;
+    }
+    if (req.query.employmentType) {
+      if (!['REGULAR', 'PART_TIME_CONTINGENT'].includes(req.query.employmentType)) return res.status(400).json({ status: 'error', message: 'Invalid employment type filter.' });
+      filters.employmentType = req.query.employmentType;
+    }
+    if (req.query.search) {
+      const search = String(req.query.search).trim();
+      if (search.length > 80) return res.status(400).json({ status: 'error', message: 'Employee search is too long.' });
+      filters.search = search;
+    }
+    const analytics = await getDashboardAnalytics(req.user.organizationId, filters);
     res.json({ data: analytics });
   } catch (err) { sendError(res, err); }
 });

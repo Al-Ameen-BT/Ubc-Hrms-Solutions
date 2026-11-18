@@ -240,7 +240,7 @@ export const platformApi = {
 /* Org API */
 export const orgApi = {
   settings: () => api.get('/org/settings'),
-  dashboardAnalytics: () => api.get('/org/dashboard-analytics'),
+  dashboardAnalytics: (params = {}) => api.get(`/org/dashboard-analytics?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== '' && value != null))}`),
   updateSettings: (data) => api.put('/org/settings', data),
   smtp: () => api.get('/org/settings/smtp'),
   updateSmtp: (data) => api.put('/org/settings/smtp', data),

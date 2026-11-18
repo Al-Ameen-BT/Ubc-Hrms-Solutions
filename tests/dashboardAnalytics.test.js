@@ -87,6 +87,16 @@ before(async () => {
     currentBasicPay: 22000,
   });
 
+  await Employee.create({
+    organizationId: org.id,
+    branchId: branch1.id,
+    postCadreId: post.id,
+    empCode: 'E103',
+    name: 'Carol Unmarked',
+    doj: '2026-11-01',
+    currentBasicPay: 18000,
+  });
+
   adminUser = await User.create({
     organizationId: org.id,
     email: 'admin@dashtest.invalid',
@@ -151,19 +161,19 @@ after(async () => {
 test('getDashboardAnalytics aggregates branches, attendance presence, leaves and promotions', async () => {
   const data = await getDashboardAnalytics(org.id);
 
-  assert.equal(data.totalEmployees, 2);
+  assert.equal(data.totalEmployees, 3);
   assert.equal(data.totalBranches, 2);
   assert.equal(data.attendance.presentToday, 1);
   assert.equal(data.attendance.onLeaveToday, 1);
-  assert.equal(data.attendance.absentToday, 0);
-  assert.equal(data.attendance.presenceRate, 50);
+  assert.equal(data.attendance.absentToday, 1);
+  assert.equal(data.attendance.presenceRate, 33);
 
   // Check branch matrix
   assert.equal(data.branches.length, 2);
   const b1 = data.branches.find((b) => b.code === 'MB01');
-  assert.equal(b1.totalEmployees, 1);
+  assert.equal(b1.totalEmployees, 2);
   assert.equal(b1.presentToday, 1);
-  assert.equal(b1.presenceRate, 100);
+  assert.equal(b1.presenceRate, 50);
 
   const b2 = data.branches.find((b) => b.code === 'TB02');
   assert.equal(b2.totalEmployees, 1);
@@ -183,15 +193,60 @@ test('getDashboardAnalytics aggregates branches, attendance presence, leaves and
   assert.equal(data.promotions.recentEvents[0].empCode, 'E101');
 });
 
+test('operational dashboard separates unmarked staff and never invents shift exceptions', async () => {
+  const data = await getDashboardAnalytics(org.id);
+
+  assert.equal(data.summary.attendance.present, 1);
+  assert.equal(data.summary.attendance.onLeave, 1);
+  assert.equal(data.summary.attendance.unmarked, 1);
+  assert.equal(data.summary.attendance.absent, 0);
+  assert.equal(data.summary.attendance.late, 0);
+  assert.equal(data.summary.attendance.shiftMismatch, 0);
+  assert.equal(data.summary.attendance.shiftConfigured, false);
+  assert.deepEqual(data.workspaces.attendanceExceptions.map((row) => row.employeeId), [3]);
+  assert.match(data.workspaces.attendanceExceptions[0].reason, /not marked/i);
+});
+
+test('operational dashboard filters every summary and action row by branch', async () => {
+  const data = await getDashboardAnalytics(org.id, { branchId: branch2.id });
+
+  assert.equal(data.summary.attendance.total, 1);
+  assert.equal(data.summary.attendance.onLeave, 1);
+  assert.equal(data.summary.attendance.unmarked, 0);
+  assert.ok(data.actions.every((row) => row.branchId === branch2.id));
+  assert.deepEqual(data.filterOptions.branches.map((row) => row.id), [branch1.id, branch2.id]);
+});
+
+test('payroll readiness reports missing fields without exposing sensitive values', async () => {
+  const data = await getDashboardAnalytics(org.id);
+  const serialized = JSON.stringify(data);
+
+  assert.equal(data.summary.payroll.totalEmployees, 3);
+  assert.equal(data.summary.payroll.recordsNeedingReview, 3);
+  assert.ok(data.workspaces.payrollBlockers.some((row) => row.details.includes('salary bank account')));
+  assert.doesNotMatch(serialized, /bankAccountNumber|aadhaarNumber|panNumber/i);
+});
+
 test('GET /org/dashboard-analytics returns 200 with complete analytics structure', async () => {
   const res = await request('/org/dashboard-analytics', adminToken);
   assert.equal(res.status, 200);
   assert.ok(res.body.data);
-  assert.equal(res.body.data.totalEmployees, 2);
+  assert.equal(res.body.data.totalEmployees, 3);
   assert.ok(res.body.data.branches);
   assert.ok(res.body.data.attendance);
   assert.ok(res.body.data.leaves);
   assert.ok(res.body.data.promotions);
+  assert.ok(res.body.data.summary);
+  assert.ok(res.body.data.actions);
+  assert.ok(res.body.data.alerts);
+  assert.ok(res.body.data.analytics);
+  assert.ok(res.body.data.workspaces);
+});
+
+test('GET /org/dashboard-analytics rejects invalid operational filters', async () => {
+  const res = await request('/org/dashboard-analytics?branchId=not-a-number', adminToken);
+  assert.equal(res.status, 400);
+  assert.match(res.body.message, /branch/i);
 });
 
 test('dashboard reporting derives today and year from the India bank date', () => {

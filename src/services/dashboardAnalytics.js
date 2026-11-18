@@ -10,7 +10,30 @@ const {
   LeaveType,
   EmployeeServiceHistory,
   PostCadre,
+  EmployeeTransfer,
+  PayrollRun,
 } = require('../models');
+
+function workingDates(endDate, count) {
+  const dates = [];
+  const cursor = new Date(`${endDate}T12:00:00+05:30`);
+  while (dates.length < count) {
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) dates.unshift(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return dates;
+}
+
+function daysBetween(fromDate, toDate) {
+  return Math.ceil((new Date(`${toDate}T00:00:00Z`) - new Date(`${fromDate}T00:00:00Z`)) / 86400000);
+}
+
+function addDays(date, days) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
 
 // Vibrant, contrasting color palettes for charts
 const ATTENDANCE_COLORS = {
@@ -49,8 +72,8 @@ const CADRE_PALETTE = [
  * - Leave metrics (pie chart of types, pending approvals, active leaves)
  * - Promotion and cadre distribution (pie chart of designations, recent career events)
  */
-async function getDashboardAnalytics(organizationId) {
-  const today = todayIST();
+async function getDashboardAnalytics(organizationId, filters = {}) {
+  const today = filters.date || todayIST();
 
   // 1. Fetch active branches
   const branches = await OrganizationBranch.findAll({
@@ -59,11 +82,24 @@ async function getDashboardAnalytics(organizationId) {
   });
 
   // 2. Fetch active employees with post cadre info
-  const employees = await Employee.findAll({
+  const allEmployees = await Employee.findAll({
     where: { organizationId, status: 'ACTIVE' },
     include: [{ model: PostCadre, attributes: ['id', 'code', 'name'] }],
-    attributes: ['id', 'empCode', 'name', 'branchId', 'postCadreId', 'employmentStatus', 'employmentType'],
+    attributes: [
+      'id', 'empCode', 'name', 'branchId', 'departmentId', 'department', 'postCadreId',
+      'employmentStatus', 'employmentType', 'doj', 'dateOfConfirmation',
+      'educationalQualification', 'panNumber', 'aadhaarNumber', 'bankName',
+      'bankAccountNumber', 'bankIfsc', 'currentPayScaleId', 'currentStageId', 'currentBasicPay',
+    ],
   });
+
+  const search = String(filters.search || '').trim().toLowerCase();
+  const employees = allEmployees.filter((employee) => (
+    (!filters.branchId || Number(employee.branchId) === Number(filters.branchId))
+    && (!filters.departmentId || Number(employee.departmentId) === Number(filters.departmentId))
+    && (!filters.employmentType || employee.employmentType === filters.employmentType)
+    && (!search || employee.name.toLowerCase().includes(search) || employee.empCode.toLowerCase().includes(search))
+  ));
 
   const employeeMap = new Map();
   const branchMap = new Map();
@@ -76,16 +112,18 @@ async function getDashboardAnalytics(organizationId) {
   const totalEmployeesCount = employees.length;
 
   // 3. Today's time entries (attendance presence)
-  const timeEntries = await EmployeeTimeEntry.findAll({
+  const allTimeEntries = await EmployeeTimeEntry.findAll({
     where: { organizationId, localDate: today },
     include: [{ model: Employee, attributes: ['id', 'empCode', 'name', 'branchId'] }],
     order: [['checkInAt', 'DESC']],
   });
+  const scopedEmployeeIds = new Set(employees.map((employee) => employee.id));
+  const timeEntries = allTimeEntries.filter((entry) => scopedEmployeeIds.has(entry.employeeId));
 
   const presentEmployeeIds = new Set(timeEntries.map((te) => te.employeeId));
 
   // 4. Active leaves today
-  const activeLeavesToday = await LeaveApplication.findAll({
+  const allActiveLeavesToday = await LeaveApplication.findAll({
     where: {
       status: 'APPROVED',
       fromDate: { [Op.lte]: today },
@@ -103,14 +141,21 @@ async function getDashboardAnalytics(organizationId) {
       },
     ],
   });
+  const activeLeavesToday = allActiveLeavesToday.filter((leave) => scopedEmployeeIds.has(leave.employeeId));
 
   const onLeaveEmployeeIds = new Set(activeLeavesToday.map((l) => l.employeeId));
 
-  // Count pending leave requests
-  const pendingLeavesCount = await LeaveApplication.count({
+  // Count pending leave requests and retain the employee rows for the action queue.
+  const pendingLeaves = await LeaveApplication.findAll({
     where: { status: 'PENDING' },
-    include: [{ model: Employee, where: { organizationId } }],
+    include: [
+      { model: Employee, where: { organizationId }, attributes: ['id', 'empCode', 'name', 'branchId', 'departmentId', 'department'] },
+      { model: LeaveType, attributes: ['id', 'code', 'name'] },
+    ],
+    order: [['fromDate', 'ASC'], ['id', 'ASC']],
   });
+  const scopedPendingLeaves = pendingLeaves.filter((leave) => scopedEmployeeIds.has(leave.employeeId));
+  const pendingLeavesCount = scopedPendingLeaves.length;
 
   // Count leaves grouped by type for this organization (all applications or current year)
   const currentYearStart = `${today.slice(0, 4)}-01-01`;
@@ -126,7 +171,7 @@ async function getDashboardAnalytics(organizationId) {
   });
 
   const leaveTypeCountMap = new Map();
-  yearLeaves.forEach((al) => {
+  yearLeaves.filter((leave) => scopedEmployeeIds.has(leave.employeeId)).forEach((al) => {
     const typeName = al.LeaveType?.name || 'General Leave';
     leaveTypeCountMap.set(typeName, (leaveTypeCountMap.get(typeName) || 0) + 1);
   });
@@ -293,6 +338,203 @@ async function getDashboardAnalytics(organizationId) {
     };
   });
 
+  const branchName = (employee) => employee.branchId ? branchMap.get(employee.branchId)?.name || employee.branchName || 'Branch not mapped' : 'Head Office / Unassigned';
+  const departmentName = (employee) => employee.department || 'Department not assigned';
+  const actionFor = (employee, values) => ({
+    employeeId: employee.id,
+    employeeName: employee.name,
+    empCode: employee.empCode,
+    branchId: employee.branchId || null,
+    branchName: branchName(employee),
+    departmentId: employee.departmentId || null,
+    departmentName: departmentName(employee),
+    owner: 'HR Admin',
+    status: 'OPEN',
+    ...values,
+  });
+
+  const unmarkedEmployees = employees.filter((employee) => !presentEmployeeIds.has(employee.id) && !onLeaveEmployeeIds.has(employee.id));
+  const attendanceExceptions = unmarkedEmployees.map((employee) => actionFor(employee, {
+    id: `attendance-unmarked-${employee.id}`,
+    priority: 'MEDIUM',
+    issueType: 'ATTENDANCE',
+    details: 'Attendance is not marked. No shift schedule is configured, so absence is not inferred.',
+    reason: 'Attendance not marked',
+    scheduledShift: 'Not configured',
+    lateThreshold: 'Not configured',
+    firstCheckIn: null,
+    lastCheckOut: null,
+    manager: 'Reporting manager not assigned',
+    actionLabel: 'Review',
+    destination: '/time',
+  }));
+
+  const leaveApprovals = scopedPendingLeaves.map((leave) => actionFor(leave.Employee, {
+    id: `leave-${leave.id}`,
+    priority: leave.fromDate <= today ? 'HIGH' : 'MEDIUM',
+    issueType: 'LEAVE',
+    details: `${leave.LeaveType?.name || 'Leave'} from ${leave.fromDate} to ${leave.toDate}`,
+    owner: 'Reporting manager',
+    status: 'PENDING_APPROVAL',
+    dueDate: leave.fromDate,
+    actionLabel: 'Review request',
+    destination: '/leave',
+  }));
+
+  const payrollBlockers = employees.flatMap((employee) => {
+    const missing = [];
+    if (!employee.bankName || !employee.bankAccountNumber || !employee.bankIfsc) missing.push('salary bank account');
+    if (!employee.currentPayScaleId || !employee.currentStageId || employee.currentBasicPay == null) missing.push('pay-scale assignment');
+    if (!missing.length) return [];
+    return [actionFor(employee, {
+      id: `payroll-${employee.id}`,
+      priority: 'HIGH',
+      issueType: 'PAYROLL',
+      details: `Missing ${missing.join(' and ')}`,
+      owner: 'Payroll Officer',
+      actionLabel: 'Fix record',
+      destination: `/people/${employee.id}`,
+    })];
+  });
+
+  const complianceAlerts = employees.flatMap((employee) => {
+    const missing = [];
+    if (!employee.educationalQualification) missing.push('education qualification verification');
+    if (!employee.panNumber || !employee.aadhaarNumber) missing.push('identity/KYC details');
+    const probationDue = employee.dateOfConfirmation ? null : addDays(employee.doj, 365);
+    if (probationDue && daysBetween(today, probationDue) <= 30) missing.push(probationDue < today ? 'probation confirmation overdue' : 'probation confirmation due');
+    if (!missing.length) return [];
+    return [actionFor(employee, {
+      id: `compliance-${employee.id}`,
+      priority: probationDue && probationDue < today ? 'HIGH' : 'MEDIUM',
+      issueType: 'COMPLIANCE',
+      details: missing.join(', '),
+      dueDate: probationDue && daysBetween(today, probationDue) <= 30 ? probationDue : null,
+      actionLabel: 'Review record',
+      destination: `/people/${employee.id}`,
+    })];
+  });
+
+  const onboardingRows = employees.filter((employee) => !employee.branchId || !employee.departmentId).map((employee) => actionFor(employee, {
+    id: `onboarding-${employee.id}`,
+    priority: 'MEDIUM',
+    issueType: 'ONBOARDING',
+    details: !employee.branchId ? 'Branch assignment is required' : 'Department assignment is required',
+    actionLabel: 'Complete record',
+    destination: `/people/${employee.id}`,
+  }));
+
+  const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  const actions = [...attendanceExceptions, ...leaveApprovals, ...complianceAlerts, ...payrollBlockers, ...onboardingRows]
+    .sort((left, right) => (priorityOrder[left.priority] ?? 9) - (priorityOrder[right.priority] ?? 9) || left.employeeName.localeCompare(right.employeeName));
+
+  const trendDates = workingDates(today, 7);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const monthEndValue = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0));
+  const monthEnd = monthEndValue.toISOString().slice(0, 10);
+  const [trendEntries, payrollRun, transfersThisMonth] = await Promise.all([
+    EmployeeTimeEntry.findAll({
+      where: { organizationId, localDate: { [Op.in]: trendDates }, employeeId: { [Op.in]: [...scopedEmployeeIds] } },
+      attributes: ['employeeId', 'localDate'],
+    }),
+    PayrollRun.findOne({ where: { organizationId, year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) }, order: [['id', 'DESC']] }),
+    scopedEmployeeIds.size ? EmployeeTransfer.count({
+      where: { organizationId, employeeId: { [Op.in]: [...scopedEmployeeIds] }, status: 'ACTIVATED', effectiveDate: { [Op.between]: [monthStart, monthEnd] } },
+    }) : 0,
+  ]);
+  const attendanceTrend = trendDates.map((date) => ({
+    date,
+    present: new Set(trendEntries.filter((entry) => entry.localDate === date).map((entry) => entry.employeeId)).size,
+    total: employees.length,
+  }));
+  const departmentCounts = new Map();
+  employees.forEach((employee) => departmentCounts.set(departmentName(employee), (departmentCounts.get(departmentName(employee)) || 0) + 1));
+  const leaveDistribution = Array.from(leaveTypeCountMap.entries()).map(([label, value]) => ({ label, value }));
+  const recordsNeedingReview = new Set(payrollBlockers.map((row) => row.employeeId)).size;
+  const payrollReadiness = employees.length ? Math.round(((employees.length - recordsNeedingReview) / employees.length) * 100) : 100;
+  const urgentLeaves = leaveApprovals.filter((row) => row.priority === 'HIGH').length;
+  const probationDue = complianceAlerts.filter((row) => /probation/i.test(row.details)).length;
+
+  const departmentOptions = new Map();
+  allEmployees.forEach((employee) => {
+    if (employee.departmentId) departmentOptions.set(employee.departmentId, employee.department || `Department ${employee.departmentId}`);
+  });
+
+  const summary = {
+    attendance: {
+      total: employees.length,
+      present: overallPresent,
+      percentage: overallPresenceRate,
+      onLeave: overallOnLeave,
+      unmarked: unmarkedEmployees.length,
+      absent: 0,
+      late: 0,
+      missingCheckOut: 0,
+      shiftMismatch: 0,
+      shiftConfigured: false,
+    },
+    attendanceExceptions: { total: attendanceExceptions.length, critical: 0, needsReview: attendanceExceptions.length },
+    leave: { pending: leaveApprovals.length, urgent: urgentLeaves },
+    payroll: {
+      readinessPercent: payrollReadiness,
+      totalEmployees: employees.length,
+      recordsNeedingReview,
+      deadline: monthEnd,
+      cycleStatus: payrollRun?.status || 'NOT_STARTED',
+    },
+    compliance: { alerts: complianceAlerts.length, overdue: complianceAlerts.filter((row) => row.priority === 'HIGH').length },
+  };
+
+  const alerts = [
+    { id: 'leave', label: 'Leave approvals awaiting manager decision', count: leaveApprovals.length, urgency: urgentLeaves ? 'HIGH' : 'NORMAL', dueDate: urgentLeaves ? today : null, destination: '/leave' },
+    { id: 'attendance', label: 'Attendance regularisation requests', count: attendanceExceptions.length, urgency: attendanceExceptions.length ? 'MEDIUM' : 'NORMAL', dueDate: attendanceExceptions.length ? today : null, destination: '/time' },
+    { id: 'onboarding', label: 'Employee onboarding tasks', count: onboardingRows.length, urgency: onboardingRows.length ? 'MEDIUM' : 'NORMAL', dueDate: null, destination: '/people' },
+    { id: 'probation', label: 'Probation confirmations due', count: probationDue, urgency: probationDue ? 'HIGH' : 'NORMAL', dueDate: null, destination: '/people' },
+    { id: 'documents', label: 'Compliance and document alerts', count: complianceAlerts.length, urgency: summary.compliance.overdue ? 'HIGH' : 'MEDIUM', dueDate: null, destination: '/dpdp-compliance' },
+    { id: 'payroll', label: 'Payroll data blockers', count: payrollBlockers.length, urgency: payrollBlockers.length ? 'HIGH' : 'NORMAL', dueDate: monthEnd, destination: '/payroll' },
+  ];
+
+  const filterOptions = {
+    branches: branches.map((branch) => ({ id: branch.id, code: branch.code, name: branch.name })),
+    departments: Array.from(departmentOptions, ([id, name]) => ({ id, name })),
+    employmentTypes: [...new Set(allEmployees.map((employee) => employee.employmentType))],
+    shifts: [],
+  };
+
+  const operationalAnalytics = {
+    attendanceTrend,
+    lateArrivalTrend: trendDates.map((date) => ({ date, value: 0 })),
+    shiftAnalyticsAvailable: false,
+    headcountByBranch: branchStats.filter((branch) => branch.totalEmployees > 0).map((branch) => ({ label: branch.name, value: branch.totalEmployees })),
+    headcountByDepartment: Array.from(departmentCounts, ([label, value]) => ({ label, value })),
+    leaveDistribution,
+    monthlyMovements: {
+      joiners: employees.filter((employee) => String(employee.doj).startsWith(today.slice(0, 7))).length,
+      exits: 0,
+      exitsAvailable: false,
+      transfers: transfersThisMonth,
+      probationCompletions: employees.filter((employee) => String(employee.dateOfConfirmation || '').startsWith(today.slice(0, 7))).length,
+    },
+  };
+
+  const workspaces = {
+    attendanceExceptions,
+    pendingApprovals: leaveApprovals,
+    payrollBlockers,
+    onboardingOffboarding: onboardingRows,
+    complianceAlerts,
+    branchReadiness: branchStats.map((branch) => ({
+      id: branch.id,
+      name: branch.name,
+      code: branch.code,
+      isHeadOffice: branch.isHeadOffice,
+      employees: branch.totalEmployees,
+      present: branch.presentToday,
+      onLeave: branch.onLeaveToday,
+      unmarked: branch.absentToday,
+    })),
+  };
+
   return {
     asOfDate: today,
     totalEmployees: totalEmployeesCount,
@@ -317,6 +559,12 @@ async function getDashboardAnalytics(organizationId) {
       recentEvents: promotionEvents,
       cadrePieChart,
     },
+    summary,
+    actions,
+    alerts,
+    analytics: operationalAnalytics,
+    workspaces,
+    filterOptions,
   };
 }
 
