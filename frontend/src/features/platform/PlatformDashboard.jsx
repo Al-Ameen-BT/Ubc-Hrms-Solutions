@@ -9,9 +9,9 @@ import {
   DashboardError,
   DashboardSkeleton,
   DashboardSummary,
-  DistributionBars,
+  WorkplacePieChart,
 } from '../dashboard/DashboardPrimitives';
-import { platformHealth, prioritisePlatformAttention } from '../dashboard/dashboardModel';
+import { countByLabel, platformHealth, prioritisePlatformAttention } from '../dashboard/dashboardModel';
 
 export function PlatformDashboard() {
   const navigate = useNavigate();
@@ -53,12 +53,13 @@ export function PlatformDashboard() {
       detail: summaryAvailable ? 'During the last 24 hours' : 'Platform summary unavailable', tone: summaryAvailable && Number(data?.failedLogins24h) > 0 ? 'danger' : 'neutral',
     },
   ];
-  const healthBars = [
-    { id: 'active', label: 'Healthy active', value: health.active, tone: 'success' },
-    { id: 'expiring', label: 'Expiring soon', value: health.expiring, tone: 'warning' },
-    { id: 'suspended', label: 'Suspended', value: health.suspended, tone: 'danger' },
-    { id: 'expired', label: 'Expired', value: health.expired, tone: 'danger' },
+  const healthPie = [
+    { label: 'Healthy active', value: health.active, tone: 'success' },
+    { label: 'Expiring soon', value: health.expiring, tone: 'warning' },
+    { label: 'Suspended', value: health.suspended, tone: 'danger' },
+    { label: 'Expired', value: health.expired, tone: 'danger' },
   ];
+  const bankClassPie = countByLabel(rows, 'bankClassLabel');
   const attentionItems = [
     ...attention.slice(0, 5).map((organisation) => ({
       id: `org-${organisation.id}`,
@@ -92,15 +93,14 @@ export function PlatformDashboard() {
 
       <div className="dashboard-control-grid">
         <section className="dashboard-panel" aria-labelledby="platform-health-title">
-          <div className="dashboard-panel-header"><div><h2 id="platform-health-title">Organisation health</h2><p>Current licence and operating state across all organisations.</p></div></div>
-          <div className="dashboard-panel-body">
-            {dashboardQuery.isError ? <DashboardError message="Organisation health could not be loaded." onRetry={() => dashboardQuery.refetch()} /> : <>
-              <DistributionBars items={healthBars} total={summary.total || 0} emptyMessage="No organisation health data is available." ariaLabel="Organisation health distribution" />
-              <div className="dashboard-supporting-totals" aria-label="Platform user totals">
-                <span>Bank users <strong>{data?.orgUsers || 0}</strong></span>
-                <span>Platform users <strong>{data?.platformUsers || 0}</strong></span>
-              </div>
-            </>}
+          <div className="dashboard-panel-header"><div><h2 id="platform-health-title">Platform portfolio</h2><p>Organisation health and bank-class coverage.</p></div></div>
+          <div className="dashboard-pie-grid">
+            <WorkplacePieChart title="How healthy is the organisation portfolio?" detail="Current licence and operating state." items={dashboardQuery.isError ? [] : healthPie} emptyMessage={dashboardQuery.isError ? 'Organisation health is unavailable.' : 'No organisation health data is available.'} unit="organisations" />
+            <WorkplacePieChart title="Which bank classes are represented?" detail="Current organisation catalogue classification." items={bankClassPie} emptyMessage={organisationsQuery.isLoading ? 'Bank-class distribution is loading.' : organisationsQuery.isError ? 'Bank-class distribution is unavailable.' : 'No bank-class data is available.'} unit="organisations" />
+          </div>
+          <div className="dashboard-portfolio-totals" aria-label="Platform user totals">
+            <span>Bank users <strong>{data?.orgUsers || 0}</strong></span>
+            <span>Platform users <strong>{data?.platformUsers || 0}</strong></span>
           </div>
         </section>
 

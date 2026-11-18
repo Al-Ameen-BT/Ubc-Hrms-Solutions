@@ -9,7 +9,7 @@ import {
   DashboardError,
   DashboardSkeleton,
   DashboardSummary,
-  DistributionBars,
+  WorkplacePieChart,
 } from '../dashboard/DashboardPrimitives';
 import {
   clampedPercent,
@@ -131,11 +131,12 @@ export function OrgDashboard() {
       detail: analyticsAvailable ? `${configuredBranchRows.filter((branch) => branch.isHeadOffice).length} Head Office · ${configuredBranchRows.filter((branch) => !branch.isHeadOffice).length} branches` : 'Branch analytics unavailable',
     },
   ];
-  const attendanceBars = [
-    { id: 'present', label: 'Present', value: metrics.presentToday, tone: 'success' },
-    { id: 'leave', label: 'Approved leave', value: metrics.onLeaveToday, tone: 'warning' },
-    { id: 'absent', label: 'Absent or unmarked', value: metrics.absentToday, tone: 'danger' },
+  const attendancePie = [
+    { label: 'Present', value: metrics.presentToday, tone: 'success' },
+    { label: 'Approved leave', value: metrics.onLeaveToday, tone: 'warning' },
+    { label: 'Absent or unmarked', value: metrics.absentToday, tone: 'danger' },
   ];
+  const branchStaffingPie = branches.map((branch) => ({ label: branch.name, value: branch.totalEmployees }));
   const attentionItems = [
     pendingApprovals > 0 && {
       id: 'leave-approvals', title: `${pendingApprovals} leave ${pendingApprovals === 1 ? 'request' : 'requests'} awaiting review`,
@@ -154,8 +155,6 @@ export function OrgDashboard() {
       detail: 'Complete the operational readiness checklist.', tone: 'warning', actionLabel: 'Review', onAction: () => setActiveTab('setup'),
     },
   ].filter(Boolean);
-  const branchRanking = [...configuredBranchRows].sort((left, right) => Number(right.presenceRate || 0) - Number(left.presenceRate || 0)).slice(0, 5);
-  const cadreRanking = [...(promotions.cadrePieChart || [])].sort((left, right) => Number(right.value || 0) - Number(left.value || 0)).slice(0, 5);
   const tabCounts = {
     branches: branches.length,
     clockins: filteredClockIns.length,
@@ -203,22 +202,13 @@ export function OrgDashboard() {
       <DashboardSummary items={summaryItems} />
 
       <div className="dashboard-control-grid">
-        <section className="dashboard-panel" aria-labelledby="attendance-overview-title">
-          <div className="dashboard-panel-header"><div><h2 id="attendance-overview-title">Attendance overview</h2><p>Current status for {metrics.scopeName}.</p></div></div>
-          <div className="dashboard-panel-body">
-            <div className="dashboard-panel-section">
-              <DistributionBars items={attendanceBars} total={metrics.totalEmployees} emptyMessage="No employee attendance data is available for this scope." ariaLabel={`Attendance distribution for ${metrics.scopeName}`} />
-            </div>
-            {branchRanking.length > 1 ? (
-              <div className="dashboard-panel-section">
-                <h3 className="dashboard-subheading">Branch comparison <span>by today’s presence rate</span></h3>
-                <ul className="dashboard-ranked-list">{branchRanking.map((branch) => <li key={branch.id}><span>{branch.name}</span><strong>{Number(branch.presenceRate) || 0}%</strong></li>)}</ul>
-              </div>
-            ) : null}
-            <div className="dashboard-panel-section">
-              <h3 className="dashboard-subheading">Staff cadre <span>Organisation-wide</span></h3>
-              {cadreRanking.length ? <ul className="dashboard-ranked-list">{cadreRanking.map((cadre) => <li key={cadre.label}><span>{cadre.label}</span><strong>{cadre.value}</strong></li>)}</ul> : <p className="dashboard-empty">No cadre distribution is available.</p>}
-            </div>
+        <section className="dashboard-panel" aria-labelledby="workplace-snapshot-title">
+          <div className="dashboard-panel-header"><div><h2 id="workplace-snapshot-title">Workplace snapshot</h2><p>Proportional answers to the main workforce questions.</p></div></div>
+          <div className="dashboard-pie-grid">
+            <WorkplacePieChart title="Where is everyone today?" detail={`Current attendance in ${metrics.scopeName}.`} items={attendancePie} emptyMessage="No employee attendance data is available for this scope." unit="staff" />
+            <WorkplacePieChart title="Why are people away today?" detail="Approved leave types, organisation-wide." items={leaves.pieChartData || []} emptyMessage="No approved leave is active today." unit="leave records" />
+            <WorkplacePieChart title="How is the workforce structured?" detail="Current cadre distribution, organisation-wide." items={promotions.cadrePieChart || []} emptyMessage="No cadre distribution is available." unit="staff" />
+            <WorkplacePieChart title="Where is the workforce allocated?" detail="Staff distribution across branches and unassigned groups." items={branchStaffingPie} emptyMessage="No branch staffing data is available." unit="staff" />
           </div>
         </section>
         <aside className="dashboard-panel" aria-labelledby="org-attention-title">

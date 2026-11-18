@@ -1,7 +1,11 @@
 import React from 'react';
+import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { Button } from '../../components/ui/Button';
-import { clampedPercent } from './dashboardModel';
+import { clampedPercent, preparePieItems } from './dashboardModel';
 import './Dashboard.css';
+
+const PIE_COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#0891b2'];
+const PIE_TONE_COLORS = { success: '#10b981', warning: '#f59e0b', danger: '#ef4444', info: '#2563eb' };
 
 export function DashboardSummary({ items }) {
   return (
@@ -17,27 +21,37 @@ export function DashboardSummary({ items }) {
   );
 }
 
-export function DistributionBars({ items, total, emptyMessage, ariaLabel }) {
-  if (!items.some((item) => Number(item.value) > 0) || Number(total) <= 0) {
-    return <p className="dashboard-empty">{emptyMessage}</p>;
-  }
-
+export function WorkplacePieChart({ title, detail, items, emptyMessage, unit = 'people' }) {
+  const data = preparePieItems(items);
+  const total = data.reduce((sum, item) => sum + item.value, 0);
   return (
-    <ul className="dashboard-bars" aria-label={ariaLabel}>
-      {items.map((item) => {
-        const percent = clampedPercent(item.value, total);
-        return (
-          <li key={item.id} className={`dashboard-bar dashboard-tone-${item.tone || 'neutral'}`}>
-            <div className="dashboard-bar-label">
-              <span>{item.label}</span>
-              <strong>{item.value} <small>{percent}%</small></strong>
-            </div>
-            <progress max="100" value={percent} aria-label={`${item.label}: ${item.value}, ${percent}%`} />
-            {item.detail ? <p>{item.detail}</p> : null}
-          </li>
-        );
-      })}
-    </ul>
+    <figure className="dashboard-pie">
+      <figcaption>
+        <h3>{title}</h3>
+        <p>{detail}</p>
+      </figcaption>
+      {!total ? <p className="dashboard-empty">{emptyMessage}</p> : <>
+        <div className="dashboard-pie-visual" aria-hidden="true">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" outerRadius="82%" stroke="var(--dashboard-panel)" strokeWidth={2} isAnimationActive={false}>
+                {data.map((item, index) => <Cell key={item.label} fill={PIE_TONE_COLORS[item.tone] || PIE_COLORS[index % PIE_COLORS.length]} />)}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="dashboard-pie-total"><strong>{total}</strong> {unit}</p>
+        <ul className="dashboard-pie-legend" aria-label={`${title} distribution`}>
+          {data.map((item, index) => (
+            <li key={item.label}>
+              <span className={`dashboard-pie-swatch dashboard-pie-swatch-${item.tone || index + 1}`} aria-hidden="true" />
+              <span title={item.label}>{item.label}</span>
+              <strong>{item.value} <small>{clampedPercent(item.value, total)}%</small></strong>
+            </li>
+          ))}
+        </ul>
+      </>}
+    </figure>
   );
 }
 

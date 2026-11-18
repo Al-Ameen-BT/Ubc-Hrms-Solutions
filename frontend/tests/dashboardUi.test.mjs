@@ -59,3 +59,40 @@ test('tab keyboard navigation wraps across the available views', () => {
   assert.equal(dashboardModel.nextTabIndex(2, 'End', 5), 4);
   assert.equal(dashboardModel.nextTabIndex(2, 'Enter', 5), 2);
 });
+
+test('pie data keeps the largest categories and combines the remainder', () => {
+  const rows = [
+    { label: 'A', value: 8, tone: 'success' },
+    { label: 'B', value: 7 },
+    { label: 'C', value: 6 },
+    { label: 'D', value: 5 },
+    { label: 'E', value: 4 },
+    { label: 'F', value: 3 },
+    { label: 'G', value: 2 },
+    { label: 'Empty', value: 0 },
+  ];
+  assert.deepEqual(dashboardModel.preparePieItems(rows, 6), [
+    { label: 'A', value: 8, tone: 'success' },
+    { label: 'B', value: 7 },
+    { label: 'C', value: 6 },
+    { label: 'D', value: 5 },
+    { label: 'E', value: 4 },
+    { label: 'Other', value: 5 },
+  ]);
+});
+
+test('pie data groups records by a visible label', () => {
+  assert.deepEqual(
+    dashboardModel.countByLabel([
+      { bankClassLabel: 'Class I' },
+      { bankClassLabel: 'Class II' },
+      { bankClassLabel: 'Class I' },
+      {},
+    ], 'bankClassLabel'),
+    [
+      { label: 'Class I', value: 2 },
+      { label: 'Class II', value: 1 },
+      { label: 'Unclassified', value: 1 },
+    ],
+  );
+});

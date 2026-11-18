@@ -51,3 +51,28 @@ export function nextTabIndex(currentIndex, key, total) {
   if (key === 'End') return total - 1;
   return currentIndex;
 }
+
+export function preparePieItems(items = [], maxItems = 6) {
+  const visible = items
+    .map((item) => ({
+      label: String(item.label || 'Unclassified'),
+      value: count(item.value),
+      ...(item.tone ? { tone: item.tone } : {}),
+    }))
+    .filter((item) => item.value > 0)
+    .sort((left, right) => right.value - left.value);
+  const limit = Math.max(2, Number(maxItems) || 6);
+  if (visible.length <= limit) return visible;
+  const head = visible.slice(0, limit - 1);
+  const other = visible.slice(limit - 1).reduce((total, item) => total + item.value, 0);
+  return [...head, { label: 'Other', value: other }];
+}
+
+export function countByLabel(rows = [], field, fallback = 'Unclassified') {
+  const counts = new Map();
+  rows.forEach((row) => {
+    const label = String(row?.[field] || fallback);
+    counts.set(label, (counts.get(label) || 0) + 1);
+  });
+  return [...counts].map(([label, value]) => ({ label, value }));
+}
