@@ -166,6 +166,9 @@ export function ResourceSection({
         warningMessage={`Are you sure you want to remove this ${title.toLowerCase()} record? This action cannot be undone.`}
         confirmLabel="Confirm Deletion"
         confirmVariant="danger"
+        requireVerification={true}
+        verificationText="REMOVE"
+        verificationLabel={`Type "REMOVE" to confirm removing this ${title.toLowerCase()} record:`}
         loading={remove.isPending}
         error={actionError}
       />

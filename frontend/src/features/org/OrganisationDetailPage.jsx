@@ -30,6 +30,8 @@ export function OrganisationDetailPage() {
   const [adminFormError, setAdminFormError] = useState('');
   const [resetTargetUser, setResetTargetUser] = useState(null);
   const [mfaTargetUser, setMfaTargetUser] = useState(null);
+  const [disableFeatureTarget, setDisableFeatureTarget] = useState(null);
+  const [statusTargetUser, setStatusTargetUser] = useState(null);
 
   const { data: org, isLoading } = useQuery({
     queryKey: ['organization', id],
@@ -310,7 +312,13 @@ export function OrganisationDetailPage() {
                   className="feature-toggle-btn"
                   loading={toggleFeatureMutation.isPending && toggleFeatureMutation.variables?.featureCode === feat.code}
                   disabled={toggleFeatureMutation.isPending}
-                  onClick={() => toggleFeatureMutation.mutate({ featureCode: feat.code, enabled: !feat.enabled })}
+                  onClick={() => {
+                    if (feat.enabled) {
+                      setDisableFeatureTarget(feat);
+                    } else {
+                      toggleFeatureMutation.mutate({ featureCode: feat.code, enabled: true });
+                    }
+                  }}
                 >
                   {feat.enabled ? 'Disable' : 'Enable'}
                 </Button>
@@ -360,7 +368,13 @@ export function OrganisationDetailPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => toggleStatusMutation.mutate({ userId: r.id, status: r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })}
+                    onClick={() => {
+                      if (r.status === 'ACTIVE') {
+                        setStatusTargetUser(r);
+                      } else {
+                        toggleStatusMutation.mutate({ userId: r.id, status: 'ACTIVE' });
+                      }
+                    }}
                   >
                     {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
                   </Button>
@@ -420,6 +434,57 @@ export function OrganisationDetailPage() {
       {/* Ephemeral Temporary Password Modal */}
       <TempPasswordModal credentials={credentials} onClose={() => setCredentials(null)} />
 
+      {/* Feature Disable Double Verification Modal */}
+      <ConfirmationModal
+        open={disableFeatureTarget != null}
+        onClose={() => setDisableFeatureTarget(null)}
+        onConfirm={() => {
+          const target = disableFeatureTarget;
+          setDisableFeatureTarget(null);
+          toggleFeatureMutation.mutate({ featureCode: target.code, enabled: false });
+        }}
+        title="Disable Application Feature"
+        itemName={disableFeatureTarget?.name}
+        details={{
+          'Feature Code': disableFeatureTarget?.code,
+          'Bank / Organisation': org.name,
+          'Description': disableFeatureTarget?.description,
+        }}
+        warningMessage="Disabling this feature takes effect immediately across all active tenant sessions. Navigation links will be hidden from the sidebar and matching API endpoints will be blocked."
+        confirmLabel="Confirm Disable"
+        confirmVariant="danger"
+        requireVerification={true}
+        verificationText="DISABLE"
+        verificationLabel={`Type "DISABLE" to confirm disabling ${disableFeatureTarget?.name || 'this feature'}:`}
+        loading={toggleFeatureMutation.isPending}
+      />
+
+      {/* Org Admin Deactivation Double Verification Modal */}
+      <ConfirmationModal
+        open={statusTargetUser != null}
+        onClose={() => setStatusTargetUser(null)}
+        onConfirm={() => {
+          const target = statusTargetUser;
+          setStatusTargetUser(null);
+          toggleStatusMutation.mutate({ userId: target.id, status: 'INACTIVE' });
+        }}
+        title="Deactivate Organisation Admin"
+        itemName={statusTargetUser?.name}
+        details={{
+          'Email': statusTargetUser?.email,
+          'Role': statusTargetUser?.role?.replace(/_/g, ' '),
+          'Bank / Organisation': org.name,
+        }}
+        warningMessage="Deactivating this organisation administrator immediately terminates active login sessions and prevents future access until reactivated."
+        confirmLabel="Confirm Deactivation"
+        confirmVariant="danger"
+        requireVerification={true}
+        verificationText="DEACTIVATE"
+        verificationLabel={`Type "DEACTIVATE" to confirm deactivating ${statusTargetUser?.name || 'this admin'}:`}
+        loading={toggleStatusMutation.isPending}
+      />
+
+      {/* Organisation Suspension Double Verification Modal */}
       <ConfirmationModal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
@@ -440,6 +505,9 @@ export function OrganisationDetailPage() {
         }
         confirmLabel={org.status === 'ACTIVE' ? 'Confirm Suspension' : 'Confirm Reactivation'}
         confirmVariant={org.status === 'ACTIVE' ? 'danger' : 'primary'}
+        requireVerification={org.status === 'ACTIVE'}
+        verificationText={org.code || 'SUSPEND'}
+        verificationLabel={org.status === 'ACTIVE' ? `Type organisation code "${org.code}" to confirm suspension:` : ''}
         loading={updateMutation.isPending}
         error={actionError}
       />

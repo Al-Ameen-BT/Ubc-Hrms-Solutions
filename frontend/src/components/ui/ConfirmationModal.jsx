@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
+import { Input } from './Input';
 
 export function ConfirmationModal({
   open,
@@ -14,8 +15,22 @@ export function ConfirmationModal({
   confirmVariant = 'danger',
   loading = false,
   error = '',
+  requireVerification = false,
+  verificationText = 'DISABLE',
+  verificationLabel = '',
 }) {
+  const [inputText, setInputText] = useState('');
+
+  // Reset input when modal opens/closes
+  useEffect(() => {
+    if (open) {
+      setInputText('');
+    }
+  }, [open]);
+
   if (!open) return null;
+
+  const isVerified = !requireVerification || inputText.trim().toUpperCase() === verificationText.trim().toUpperCase();
 
   return (
     <Modal
@@ -27,7 +42,12 @@ export function ConfirmationModal({
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button variant={confirmVariant} loading={loading} onClick={onConfirm}>
+          <Button
+            variant={confirmVariant}
+            loading={loading}
+            disabled={!isVerified || loading}
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </Button>
         </>
@@ -62,6 +82,20 @@ export function ConfirmationModal({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {requireVerification && (
+          <div className="confirm-verification-section">
+            <Input
+              id="confirm-verification-input"
+              label={verificationLabel || `Type "${verificationText}" to confirm:`}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={verificationText}
+              autoComplete="off"
+              mono
+            />
           </div>
         )}
       </div>

@@ -141,7 +141,22 @@ export function RolesPermissionsPage() {
       {previewQuery.data && <><p>Server-calculated access in {previewQuery.data.accessControlMode} mode. This preview explains current access; unsaved changes are not included.</p><dl className="roles-access-summary"><dt>Own record</dt><dd>{previewQuery.data.scopeSummary?.own ? 'Included' : 'Unavailable'}</dd><dt>Organisation scope</dt><dd>{previewQuery.data.scopeSummary?.organization ? 'Included' : 'Not granted'}</dd><dt>Branches</dt><dd>{scopeLabel({ scopeType: 'SELECTED_BRANCHES', branchIds: previewQuery.data.scopeSummary?.branchIds }, branches) || 'None'}</dd><dt>Departments</dt><dd>{scopeLabel({ scopeType: 'DEPARTMENT', departmentIds: previewQuery.data.scopeSummary?.departmentIds }, branches, departments) || 'None'}</dd></dl>{previewQuery.data.accessControlMode === 'PERMISSIONS' && <p><strong>Available menus:</strong> {previewMenus.map(([label]) => label).join(', ') || 'My Account only'}</p>}<p>Role sources and dates appear in the assignments above. Expired, inactive and out-of-scope assignments contribute no access.</p><div className="roles-permission-codes">{previewQuery.data.permissionCodes.length ? previewQuery.data.permissionCodes.map(code => <span key={code}>{code}</span>) : <p>No effective permissions.</p>}</div><p className="form-note">Protected denials always apply: tenant isolation, template ceilings, no self-escalation, last-admin protection and independent preparation, approval and payment. A menu permission does not override a record-level conflict.</p></>}
     </Card>}
 
-    <ConfirmationModal open={!!confirm} onClose={() => { if (!busy) { setConfirm(null); setError(''); } }} title={confirm?.title} itemName={confirm?.itemName} details={confirm?.details} warningMessage={`${IMPACT_COPY} ${confirm?.impact?.affectedUserCount ? 'End or replace active assignments before deactivating a role.' : ''}`} confirmLabel="Confirm access change" loading={busy} error={error} onConfirm={() => apply(confirm.work, 'Access change saved. Affected users must sign in again and relink their phone.')} />
+    <ConfirmationModal
+      open={!!confirm}
+      onClose={() => { if (!busy) { setConfirm(null); setError(''); } }}
+      title={confirm?.title}
+      itemName={confirm?.itemName}
+      details={confirm?.details}
+      warningMessage={`${IMPACT_COPY} ${confirm?.impact?.affectedUserCount ? 'End or replace active assignments before deactivating a role.' : ''}`}
+      confirmLabel={confirm?.title?.includes('Deactivate') ? 'Confirm Deactivation' : 'Confirm Access Change'}
+      confirmVariant={confirm?.title?.includes('Deactivate') ? 'danger' : 'primary'}
+      requireVerification={!!confirm?.title?.includes('Deactivate')}
+      verificationText="DEACTIVATE"
+      verificationLabel={`Type "DEACTIVATE" to confirm deactivating ${confirm?.itemName || 'this role'}:`}
+      loading={busy}
+      error={error}
+      onConfirm={() => apply(confirm.work, 'Access change saved. Affected users must sign in again and relink their phone.')}
+    />
     <Modal open={activationOpen} onClose={() => { if (!busy) setActivationOpen(false); }} title="Activate permission mode permanently" footer={<><Button variant="secondary" disabled={busy} onClick={() => setActivationOpen(false)}>Cancel</Button><Button variant="danger" loading={busy} disabled={activationText !== 'ACTIVATE' || !readiness?.ready || !!readinessQuery.error} onClick={activate}>Activate and sign everyone out</Button></>}>
       <p>This one-way change switches the entire bank to assignment-based permissions. You cannot return to legacy mode through this interface. All browser sessions end and linked mobile devices are revoked.</p><p>{IMPACT_COPY}</p><p>Resolve missing access through another Organisation Admin after signing in again.</p>{error && <p className="auth-error" role="alert">{error}</p>}<Input id="roles-activation-confirm" label="Type ACTIVATE to confirm" value={activationText} onChange={event => setActivationText(event.target.value)} autoComplete="off" />
     </Modal>

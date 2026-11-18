@@ -187,6 +187,9 @@ export function EmployeeBankAccountsTab({ employeeId }) {
         warningMessage="Removing this bank account will detach it from this employee record. If this account was designated for net pay credits, please ensure another account is chosen."
         confirmLabel="Confirm Deletion"
         confirmVariant="danger"
+        requireVerification={true}
+        verificationText="REMOVE"
+        verificationLabel={`Type "REMOVE" to confirm removing this bank account:`}
         loading={remove.isPending}
         error={actionError}
       />

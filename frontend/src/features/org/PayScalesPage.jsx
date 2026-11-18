@@ -232,6 +232,9 @@ export function PayScalesPage() {
         warningMessage="Suppressing this pay scale will mark it as superseded. It will no longer be available for new employee assignments or promotions. Existing employee service records and pay history remain intact."
         confirmLabel="Confirm Suppression"
         confirmVariant="danger"
+        requireVerification={true}
+        verificationText="SUPPRESS"
+        verificationLabel={`Type "SUPPRESS" to confirm suppressing ${suppressTarget?.name}:`}
         loading={suppressMutation.isPending}
         error={actionError}
       />

@@ -281,6 +281,9 @@ export function LeavePage() {
         }
         confirmLabel={statusTarget?.status === 'ACTIVE' ? 'Confirm Deactivation' : 'Confirm Activation'}
         confirmVariant={statusTarget?.status === 'ACTIVE' ? 'danger' : 'primary'}
+        requireVerification={statusTarget?.status === 'ACTIVE'}
+        verificationText="DEACTIVATE"
+        verificationLabel={statusTarget?.status === 'ACTIVE' ? `Type "DEACTIVATE" to confirm deactivating ${statusTarget?.name}:` : ''}
         loading={statusMutation.isPending}
         error={actionError}
       />

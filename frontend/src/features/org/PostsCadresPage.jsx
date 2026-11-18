@@ -179,6 +179,9 @@ export function PostsCadresPage() {
         warningMessage="Deactivating this post cadre will disable it for new employee appointments and pay fixations. Existing employee records associated with this post remain intact."
         confirmLabel="Confirm Deactivation"
         confirmVariant="danger"
+        requireVerification={true}
+        verificationText="DEACTIVATE"
+        verificationLabel={`Type "DEACTIVATE" to confirm deactivating ${deactivateTarget?.name || 'this post'}:`}
         loading={deactivateMutation.isPending}
         error={actionError}
       />

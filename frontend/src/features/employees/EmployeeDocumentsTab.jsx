@@ -146,6 +146,9 @@ export function EmployeeDocumentsTab({ employeeId }) {
         warningMessage="Removing this document will permanently delete the uploaded file from this employee's file."
         confirmLabel="Confirm Deletion"
         confirmVariant="danger"
+        requireVerification={true}
+        verificationText="DELETE"
+        verificationLabel={`Type "DELETE" to confirm deleting this document:`}
         loading={remove.isPending}
         error={actionError}
       />
