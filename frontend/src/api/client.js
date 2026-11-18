@@ -377,6 +377,13 @@ export const dpdpApi = {
   myConsents: () => api.get('/me/dpdp/consents'),
   grantConsent: (purposeCode, language = 'EN') => api.post(`/me/dpdp/consents/${encodeURIComponent(purposeCode)}/grant`, { language }),
   withdrawConsent: (purposeCode, language = 'EN') => api.post(`/me/dpdp/consents/${encodeURIComponent(purposeCode)}/withdraw`, { language }),
+  myPrivacySummary: () => api.get('/me/dpdp/summary'),
+  mySharingHistory: () => api.get('/me/dpdp/sharing'),
+  myNomination: () => api.get('/me/dpdp/nomination'),
+  submitNomination: (data) => api.post('/me/dpdp/nomination', data),
+  createAssistedRequest: (data) => api.post('/org/dpdp/requests/assisted', data),
+  verifyOrgRequest: (id, method) => api.post(`/org/dpdp/requests/${id}/verify`, { method }),
+  advanceOrgRequest: (id, data) => api.post(`/org/dpdp/requests/${id}/advance`, data),
 };
 
 /* Formatting helpers */

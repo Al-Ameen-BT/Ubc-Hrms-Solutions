@@ -114,6 +114,22 @@ router.post('/dpdp/requests', requireFeaturePermission('self.profile', SELF_SERV
   } catch (err) { fail(res, err); }
 });
 
+router.get('/dpdp/summary', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try { res.json({ data: await dpdpCases.privacySummary({ actor: req.user, employee: await ownEmployee(req) }) }); } catch (err) { fail(res, err); }
+});
+
+router.get('/dpdp/sharing', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try { res.json({ data: await dpdpCases.sharingSummary({ actor: req.user, employee: await ownEmployee(req) }) }); } catch (err) { fail(res, err); }
+});
+
+router.get('/dpdp/nomination', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try { res.json({ data: await dpdpCases.currentNomination({ actor: req.user, employee: await ownEmployee(req) }) }); } catch (err) { fail(res, err); }
+});
+
+router.post('/dpdp/nomination', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try { res.status(201).json({ data: await dpdpCases.submitNomination({ actor: req.user, employee: await ownEmployee(req), data: req.body }) }); } catch (err) { fail(res, err); }
+});
+
 router.get('/context', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
   try {
     const employee = await ownEmployee(req);

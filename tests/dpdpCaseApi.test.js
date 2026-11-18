@@ -146,3 +146,32 @@ test('DPO can register and list incidents at /org/dpdp/incidents', async () => {
   assert.equal(listIncRes.status, 200);
   assert.equal(listIncRes.body.data.length, 1);
 });
+
+test('DPO assisted intake and identity verification advance an external case', async () => {
+  const token = signToken(dpoUser);
+  const created = await request('/org/dpdp/requests/assisted', token, 'POST', {
+    principalType: 'CANDIDATE', principalReference: 'C-19', principalName: 'Candidate Nineteen',
+    requestType: 'CORRECTION', details: 'Correct candidate record',
+  });
+  assert.equal(created.status, 201);
+  assert.match(created.body.data.caseId, /^DPDP-/);
+
+  const verified = await request(`/org/dpdp/requests/${created.body.data.id}/verify`, token, 'POST', { method: 'OFFLINE_ID_AND_APPLICATION' });
+  assert.equal(verified.status, 200);
+  const advanced = await request(`/org/dpdp/requests/${created.body.data.id}/advance`, token, 'POST', { status: 'IN_REVIEW' });
+  assert.equal(advanced.status, 200);
+  assert.equal(advanced.body.data.status, 'IN_REVIEW');
+});
+
+test('employee privacy summary and nomination remain self-owned', async () => {
+  const token = signToken(empUser);
+  const summary = await request('/me/dpdp/summary', token);
+  assert.equal(summary.status, 200);
+  assert.equal(summary.body.data.employee.empCode, employee.empCode);
+
+  const nomination = await request('/me/dpdp/nomination', token, 'POST', { nomineeName: 'Trusted Nominee', relationship: 'Sibling', contact: 'nominee@example.invalid' });
+  assert.equal(nomination.status, 201);
+  const current = await request('/me/dpdp/nomination', token);
+  assert.equal(current.status, 200);
+  assert.equal(current.body.data.nomineeName, 'Trusted Nominee');
+});

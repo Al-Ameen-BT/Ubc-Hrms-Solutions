@@ -135,6 +135,18 @@ router.get(
   }
 );
 
+router.post('/requests/assisted', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.status(201).json({ data: await dpdpCases.createAssistedRequest({ actor: req.user, ...req.body }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/requests/:id/verify', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpCases.verifyRequestIdentity({ actor: req.user, requestId: req.params.id, method: req.body.method }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/requests/:id/advance', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpCases.advanceRequest({ actor: req.user, requestId: req.params.id, status: req.body.status, summary: req.body.summary }) }); } catch (err) { sendError(res, err); }
+});
+
 // POST /api/v1/org/dpdp/requests/:id/decide
 router.post(
   '/requests/:id/decide',

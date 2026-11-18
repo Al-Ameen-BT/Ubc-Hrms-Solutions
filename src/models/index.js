@@ -85,6 +85,8 @@ const DpdpSharingEvent = require('./dpdpSharingEvent');
 const DpdpControlAssessment = require('./dpdpControlAssessment');
 const DpdpConsentPurpose = require('./dpdpConsentPurpose');
 const DpdpConsentRecord = require('./dpdpConsentRecord');
+const DpdpRequestEvent = require('./dpdpRequestEvent');
+const DpdpNomination = require('./dpdpNomination');
 
 // ----------------------------------------------------------------------------
 // Associations — this is the literal implementation of the required chain:
@@ -430,6 +432,11 @@ DpdpConsentRecord.belongsTo(DpdpConsentPurpose, { foreignKey: 'purposeId' });
 DpdpConsentRecord.belongsTo(DpdpDocument, { foreignKey: 'noticeDocumentId' });
 DpdpConsentRecord.belongsTo(Employee, { foreignKey: 'employeeId' });
 DpdpConsentRecord.belongsTo(User, { foreignKey: 'userId' });
+DpdpDataRequest.hasMany(DpdpRequestEvent, { foreignKey: 'requestId' });
+DpdpRequestEvent.belongsTo(DpdpDataRequest, { foreignKey: 'requestId' });
+DpdpNomination.belongsTo(Organization, { foreignKey: 'organizationId' });
+DpdpNomination.belongsTo(Employee, { foreignKey: 'employeeId' });
+DpdpNomination.belongsTo(User, { foreignKey: 'userId' });
 
 module.exports = {
   DpdpDocument,
@@ -444,6 +451,8 @@ module.exports = {
   DpdpControlAssessment,
   DpdpConsentPurpose,
   DpdpConsentRecord,
+  DpdpRequestEvent,
+  DpdpNomination,
   EmployeeTransfer,
   OrganizationDepartment,
   OrganizationPosition,
