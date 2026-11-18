@@ -1,396 +1,119 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Button, Input, Modal, Badge } from '../../components/ui';
+import React, { useEffect, useState } from 'react';
+import { Card, Button, Input, Modal, Badge, EmptyState, Table } from '../../components/ui';
 import { organizationAccessApi } from '../../api/organizationAccess';
-import { dpdpApi, fmt, api } from '../../api/client';
+import { dpdpApi, fmt, api, orgApi } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { useToast } from '../../components/ui/Toast';
+import './DpdpCompliancePage.css';
+
+const TABS = ['Overview', 'Processing Register', 'Rights Cases', 'Notices & Consent', 'Vendors', 'Retention', 'Breaches', 'Sensitive Access', 'Security Evidence'];
+const rowsOf = value => value?.rows || (Array.isArray(value) ? value : []);
+const statusVariant = status => ({ IMPLEMENTED: 'success', CURRENT: 'success', COMPLETED: 'success', ACTIVE: 'success', APPROVED: 'success', OPEN: 'danger', CRITICAL: 'danger', FAILED: 'danger', PARTIAL: 'warning', PROPOSED: 'warning', SUBMITTED: 'warning', IN_REVIEW: 'info', IDENTITY_VERIFICATION: 'info' }[status] || 'default');
+const display = value => String(value || '—').replaceAll('_', ' ');
+
+function Metric({ label, value, detail, tone = 'default' }) { return <div className={`dpdp-metric dpdp-metric-${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>; }
+function Field({ label, children }) { return <label className="dpdp-field"><span>{label}</span>{children}</label>; }
+function ModalActions({ busy, onClose, label = 'Save' }) { return <div className="dpdp-modal-actions"><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button type="submit" loading={busy}>{label}</Button></div>; }
 
 export function DpdpCompliancePage() {
   const { user, canPermission } = useAuth();
-  const canManage = canPermission('dpdp.manage', ['ORG_ADMIN']);
-  const canView = canPermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']);
-
+  const toast = useToast();
+  const canManage = canPermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']);
+  const canAssignDpo = canPermission('settings.configure', ['ORG_ADMIN']);
+  const [activeTab, setActiveTab] = useState('Overview');
   const [loading, setLoading] = useState(true);
-  const [readiness, setReadiness] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [documents, setDocuments] = useState([]);
-  const [eligibleUsers, setEligibleUsers] = useState([]);
-  const [error, setError] = useState(null);
-
-  // DPO Assign modal
-  const [dpoModalOpen, setDpoModalOpen] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [modal, setModal] = useState('');
+  const [data, setData] = useState({});
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [dpoSubmitting, setDpoSubmitting] = useState(false);
-
-  // Publish Notice modal
-  const [noticeModalOpen, setNoticeModalOpen] = useState(false);
-  const [noticeTitle, setNoticeTitle] = useState('Employee Privacy Notice');
-  const [noticeVersion, setNoticeVersion] = useState('');
-  const [noticeBody, setNoticeBody] = useState('');
-  const [noticeSummary, setNoticeSummary] = useState('');
-  const [noticeEffectiveAt, setNoticeEffectiveAt] = useState('');
-  const [noticeSubmitting, setNoticeSubmitting] = useState(false);
-
-  const [retentionData, setRetentionData] = useState(null);
-
-  useEffect(() => {
-    loadAll();
-  }, []);
+  const [notice, setNotice] = useState({ title: 'Employee Privacy Notice', version: '', summary: '', summaryMl: '', body: '', bodyMl: '', effectiveAt: '' });
+  const [activity, setActivity] = useState({ code: '', module: 'HR', storageLocation: 'HRMS database', fieldName: '', dataCategory: 'EMPLOYEE_PROFILE', principalType: 'EMPLOYEE', purpose: '', lawfulBasis: 'EMPLOYMENT_LEGITIMATE_USE', securityClassification: 'CONFIDENTIAL', retentionCategory: 'SERVICE_BOOK' });
+  const [processor, setProcessor] = useState({ code: '', name: '', serviceCategory: '', purpose: '', dpaStatus: 'MISSING', breachContact: '' });
+  const [purpose, setPurpose] = useState({ code: '', titleEn: '', titleMl: '', descriptionEn: '', descriptionMl: '', dataCategories: '', noticeDocumentId: '' });
+  const [proposal, setProposal] = useState({ category: 'EXPENSE_RECEIPTS', cutoffAt: '' });
+  const [incident, setIncident] = useState({ title: '', severity: 'MEDIUM', awareAt: '', affectedCategories: '', affectedCount: '0', summary: '' });
+  const [control, setControl] = useState({ controlCode: '', title: '', status: 'PARTIAL', evidenceReference: '', nextReviewAt: '' });
+  const [reveal, setReveal] = useState({ employeeId: '', fieldGroup: 'IDENTITY', purpose: 'IDENTITY_VERIFICATION', justification: '' });
+  const [revealed, setRevealed] = useState(null);
 
   async function loadAll() {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError('');
     try {
-      const [rData, pData, docsRes, retRes] = await Promise.all([
-        organizationAccessApi.dpdpReadiness(),
-        organizationAccessApi.dpdpProfile(),
-        dpdpApi.orgDocuments('EMPLOYEE_NOTICE').catch(() => ({ rows: [] })),
-        dpdpApi.orgRetention().catch(() => null),
+      const settled = await Promise.all([
+        organizationAccessApi.dpdpReadiness(), organizationAccessApi.dpdpProfile(), dpdpApi.orgDashboard(),
+        dpdpApi.orgDocuments('EMPLOYEE_NOTICE'), dpdpApi.orgConsentPurposes(), dpdpApi.orgProcessingActivities(),
+        dpdpApi.orgRequests(), dpdpApi.orgProcessors(), dpdpApi.orgSharingEvents(), dpdpApi.orgRetention(),
+        dpdpApi.orgRetentionProposals(), dpdpApi.orgIncidents(), dpdpApi.orgControls(),
+        orgApi.audit({ action: 'dpdp.sensitive.view', page: 1, pageSize: 20 }).catch(() => null),
+        canAssignDpo ? api.get(`/organizations/${user?.organizationId}/users`).catch(() => ({ rows: [] })) : Promise.resolve({ rows: [] }),
       ]);
-      setReadiness(rData);
-      setProfile(pData);
-      setDocuments(docsRes.rows || []);
-      setRetentionData(retRes);
-
-      // If canManage, load eligible users for DPO
-      if (canManage) {
-        const usersRes = await api.get(`/organizations/${user?.organizationId}/users`);
-        const activeLinked = (usersRes.rows || []).filter(u => u.status === 'ACTIVE' && u.employeeId);
-        setEligibleUsers(activeLinked);
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to load DPDP compliance data.');
-    } finally {
-      setLoading(false);
-    }
+      const [readiness, profile, dashboard, documents, purposes, activities, requests, processors, sharing, retention, proposals, incidents, controls, sensitiveAudit, users] = settled;
+      setData({ readiness, profile, dashboard, documents: rowsOf(documents), purposes: rowsOf(purposes), activities: rowsOf(activities), requests: rowsOf(requests), processors: rowsOf(processors), sharing: rowsOf(sharing), retention, proposals: rowsOf(proposals), incidents: rowsOf(incidents), controls: rowsOf(controls), sensitiveAudit: sensitiveAudit?.data || [], users: rowsOf(users).filter(row => row.status === 'ACTIVE' && row.employeeId) });
+    } catch (err) { setError(err.message || 'The DPDP readiness workspace could not be loaded.'); }
+    finally { setLoading(false); }
   }
 
-  async function handleAssignDpo(e) {
-    e.preventDefault();
-    if (!selectedUserId) return;
-    if (!window.confirm('Assigning a new Data Protection Officer will update platform records and refresh active user sessions. Proceed?')) {
-      return;
-    }
-    setDpoSubmitting(true);
-    try {
-      await organizationAccessApi.assignDpo({ userId: Number(selectedUserId) });
-      setDpoModalOpen(false);
-      await loadAll();
-    } catch (err) {
-      alert(err.message || 'Failed to assign DPO.');
-    } finally {
-      setDpoSubmitting(false);
-    }
+  useEffect(() => { loadAll(); }, []);
+
+  async function act(action, success) {
+    setBusy(true); setError('');
+    try { await action(); toast.add(success, 'success'); setModal(''); await loadAll(); }
+    catch (err) { setError(err.message || 'The action could not be completed.'); }
+    finally { setBusy(false); }
   }
 
-  async function handlePublishNotice(e) {
-    e.preventDefault();
-    if (!noticeTitle.trim() || !noticeBody.trim() || !noticeVersion.trim()) {
-      alert('Title, body, and version are required.');
-      return;
-    }
-    if (!window.confirm(`Publishing Employee Notice v${noticeVersion} will require all employees to acknowledge the new notice on their next login. Continue?`)) {
-      return;
-    }
-    setNoticeSubmitting(true);
-    try {
-      await dpdpApi.orgPublishDocument({
-        type: 'EMPLOYEE_NOTICE',
-        title: noticeTitle.trim(),
-        body: noticeBody.trim(),
-        version: noticeVersion.trim(),
-        summary: noticeSummary.trim() || null,
-        effectiveAt: noticeEffectiveAt ? new Date(noticeEffectiveAt).toISOString() : new Date().toISOString(),
-      });
-      setNoticeModalOpen(false);
-      await loadAll();
-    } catch (err) {
-      alert(err.message || 'Failed to publish employee notice.');
-    } finally {
-      setNoticeSubmitting(false);
-    }
-  }
+  const openNotice = () => { setNotice({ title: 'Employee Privacy Notice', version: '', summary: '', summaryMl: '', body: '', bodyMl: '', effectiveAt: new Date().toISOString().slice(0, 16) }); setModal('notice'); };
+  const tabKey = event => { const index = TABS.indexOf(activeTab); if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length; setActiveTab(TABS[next]); document.getElementById(`dpdp-tab-${next}`)?.focus(); };
 
-  if (loading) {
-    return <div className="page p-6 text-slate-500">Loading DPDP compliance workspace…</div>;
-  }
+  if (loading) return <div className="page dpdp-loading" role="status">Loading DPDP readiness workspace…</div>;
 
-  return (
-    <div className="page space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">DPDP Act Compliance & Governance</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Data Protection Officer assignment, readiness blockers, and Employee Privacy Notices.
-          </p>
-        </div>
-        {canManage && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setDpoModalOpen(true)}>
-              {readiness?.dpo ? 'Reassign DPO' : 'Assign DPO'}
-            </Button>
-            <Button onClick={() => {
-              setNoticeVersion('');
-              setNoticeBody('');
-              setNoticeSummary('');
-              setNoticeEffectiveAt(new Date().toISOString().slice(0, 16));
-              setNoticeModalOpen(true);
-            }}>
-              Publish Employee Notice
-            </Button>
-          </div>
-        )}
-      </div>
+  return <div className="page dpdp-workspace">
+    <header className="dpdp-header"><div><h1>DPDP Readiness</h1><p>Operate the bank’s privacy register, rights cases, breach response, retention controls and evidence.</p></div><div className="dpdp-header-actions"><Button variant="secondary" onClick={loadAll}>Refresh</Button>{canAssignDpo && <Button onClick={() => setModal('dpo')}>{data.readiness?.dpo ? 'Reassign DPO' : 'Assign DPO'}</Button>}</div></header>
+    <div className="dpdp-legal-note"><strong>Readiness, not legal certification.</strong><span>This workspace records controls and evidence. The organisation and its DPO remain responsible for legal review and statutory decisions.</span></div>
+    {error && <div className="dpdp-error" role="alert">{error}</div>}
+    <div className="dpdp-tabs" role="tablist" aria-label="DPDP readiness sections" onKeyDown={tabKey}>{TABS.map((tab, index) => <button key={tab} id={`dpdp-tab-${index}`} role="tab" aria-selected={activeTab === tab} tabIndex={activeTab === tab ? 0 : -1} className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>{tab}</button>)}</div>
 
-      {error && (
-        <div className="p-4 bg-red-50 text-red-700 text-sm rounded border border-red-200">
-          {error}
-        </div>
-      )}
+    {activeTab === 'Overview' && <Overview data={data} onOpen={setActiveTab} />}
+    {activeTab === 'Processing Register' && <Register rows={data.activities} canManage={canManage} onAdd={() => setModal('activity')} />}
+    {activeTab === 'Rights Cases' && <Cases rows={data.requests} canManage={canManage} onAction={(id, action) => act(action === 'verify' ? () => dpdpApi.verifyOrgRequest(id, 'DPO_RECORD_CHECK') : () => dpdpApi.advanceOrgRequest(id, { status: 'IN_REVIEW', summary: 'DPO review started.' }), action === 'verify' ? 'Identity verification recorded.' : 'Case moved to review.')} />}
+    {activeTab === 'Notices & Consent' && <Notices documents={data.documents} purposes={data.purposes} canManage={canManage} onNotice={openNotice} onPurpose={() => setModal('purpose')} />}
+    {activeTab === 'Vendors' && <Vendors rows={data.processors} canManage={canManage} onAdd={() => setModal('processor')} />}
+    {activeTab === 'Retention' && <Retention data={data.retention} proposals={data.proposals} canManage={canManage} onAdd={() => setModal('proposal')} onDecide={(row, decision) => { if (!window.confirm(`${decision === 'APPROVED' ? 'Approve' : 'Reject'} retention proposal #${row.id}? This decision is audited.`)) return; act(() => dpdpApi.decideRetentionProposal(row.id, { decision, reason: 'DPO review completed in the readiness workspace.' }), `Proposal ${decision.toLowerCase()}.`); }} onExecute={row => { if (!window.confirm(`Execute approved proposal #${row.id}? Eligible records will be permanently deleted and certified.`)) return; act(() => dpdpApi.executeRetentionProposal(row.id), 'Approved retention proposal executed.'); }} />}
+    {activeTab === 'Breaches' && <Breaches rows={data.incidents} canManage={canManage} onAdd={() => setModal('incident')} />}
+    {activeTab === 'Sensitive Access' && <SensitiveAccess form={reveal} setForm={setReveal} result={revealed} setResult={setRevealed} busy={busy} onSubmit={async event => { event.preventDefault(); setBusy(true); setError(''); try { setRevealed(await dpdpApi.revealSensitiveEmployeeData({ ...reveal, employeeId: Number(reveal.employeeId) })); } catch (err) { setError(err.message || 'Sensitive data could not be revealed.'); } finally { setBusy(false); } }} />}
+    {activeTab === 'Security Evidence' && <Evidence controls={data.controls} audit={data.sensitiveAudit} canManage={canManage} onAdd={() => setModal('control')} />}
 
-      {/* Compliance Readiness Card */}
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold text-slate-800 mb-3">Compliance Readiness</h2>
-        <div className="flex items-center gap-3 mb-4">
-          <span className={`px-2.5 py-1 rounded text-xs font-semibold ${readiness?.isReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-            {readiness?.isReady ? 'COMPLIANT & READY' : 'ACTION REQUIRED'}
-          </span>
-          <span className="text-sm text-slate-600">
-            {readiness?.isReady
-              ? 'Organisation satisfies statutory Data Protection Officer and notice publication prerequisites.'
-              : 'Organisation has unresolved readiness blockers.'}
-          </span>
-        </div>
+    <Modal open={modal === 'dpo'} onClose={() => setModal('')} title="Assign Data Protection Officer"><form onSubmit={event => { event.preventDefault(); if (!window.confirm('Assign this employee-linked user as the Data Protection Officer and refresh affected sessions?')) return; act(() => organizationAccessApi.assignDpo({ userId: Number(selectedUserId) }), 'Data Protection Officer assigned.'); }} className="dpdp-form"><p>Select an active user linked to an employee record. Role and session changes take effect immediately.</p><Field label="Employee-linked user"><select className="input" value={selectedUserId} onChange={event => setSelectedUserId(event.target.value)} required><option value="">Select user</option>{data.users?.map(row => <option key={row.id} value={row.id}>{row.name} — {row.email}</option>)}</select></Field><ModalActions busy={busy} onClose={() => setModal('')} label="Assign DPO" /></form></Modal>
 
-        {readiness?.blockers && readiness.blockers.length > 0 && (
-          <div className="p-3 bg-amber-50 rounded border border-amber-200 text-sm text-amber-800 space-y-1">
-            <div className="font-semibold">Blockers:</div>
-            <ul className="list-disc pl-5 space-y-0.5">
-              {readiness.blockers.map((b, i) => (
-                <li key={b.code || i}>{b.message}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </Card>
+    <Modal open={modal === 'notice'} onClose={() => setModal('')} title="Publish Employee Privacy Notice" size="lg"><form onSubmit={event => { event.preventDefault(); if (!window.confirm(`Publish notice version ${notice.version}? Employees will need to acknowledge the new version.`)) return; act(() => dpdpApi.orgPublishDocument({ type: 'EMPLOYEE_NOTICE', ...notice, effectiveAt: new Date(notice.effectiveAt).toISOString() }), 'Bilingual employee notice published.'); }} className="dpdp-form dpdp-form-grid"><Field label="Title"><Input value={notice.title} onChange={event => setNotice({ ...notice, title: event.target.value })} required /></Field><Field label="Version"><Input value={notice.version} onChange={event => setNotice({ ...notice, version: event.target.value })} placeholder="1.0" required /></Field><Field label="Effective date and time"><Input type="datetime-local" value={notice.effectiveAt} onChange={event => setNotice({ ...notice, effectiveAt: event.target.value })} required /></Field><Field label="English summary"><Input value={notice.summary} onChange={event => setNotice({ ...notice, summary: event.target.value })} /></Field><Field label="Malayalam summary"><Input value={notice.summaryMl} onChange={event => setNotice({ ...notice, summaryMl: event.target.value })} /></Field><Field label="English notice"><textarea className="input" value={notice.body} onChange={event => setNotice({ ...notice, body: event.target.value })} required /></Field><Field label="Malayalam notice"><textarea className="input" value={notice.bodyMl} onChange={event => setNotice({ ...notice, bodyMl: event.target.value })} /></Field><ModalActions busy={busy} onClose={() => setModal('')} label="Publish notice" /></form></Modal>
 
-      {/* DPO Profile Card */}
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Active Data Protection Officer (DPO)</h2>
-        {profile?.dpoName ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="p-3 border rounded bg-slate-50">
-              <span className="text-slate-500 block text-xs">Officer Name</span>
-              <span className="font-semibold text-slate-900">{profile.dpoName}</span>
-            </div>
-            <div className="p-3 border rounded bg-slate-50">
-              <span className="text-slate-500 block text-xs">Official Contact Email</span>
-              <span className="font-semibold text-slate-900">{profile.dpoEmail}</span>
-            </div>
-            <div className="p-3 border rounded bg-slate-50">
-              <span className="text-slate-500 block text-xs">Designation / Role</span>
-              <span className="font-semibold text-slate-900">Data Protection Officer</span>
-            </div>
-            <div className="p-3 border rounded bg-slate-50">
-              <span className="text-slate-500 block text-xs">Postal / Office Address</span>
-              <span className="font-semibold text-slate-900">{profile.dpoAddress || 'Bank Registered Office'}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="text-sm text-slate-500">
-            No Data Protection Officer currently assigned. An active employee-linked officer must be assigned.
-          </div>
-        )}
-      </Card>
+    <Modal open={modal === 'activity'} onClose={() => setModal('')} title="Add Processing Activity" size="lg"><form onSubmit={event => { event.preventDefault(); act(() => dpdpApi.createProcessingActivity(activity), 'Processing activity added.'); }} className="dpdp-form dpdp-form-grid">{['code', 'module', 'storageLocation', 'fieldName', 'dataCategory', 'purpose', 'retentionCategory'].map(key => <Field key={key} label={display(key.replace(/([A-Z])/g, ' $1'))}><Input value={activity[key]} onChange={event => setActivity({ ...activity, [key]: event.target.value })} required={key !== 'retentionCategory'} /></Field>)}<Field label="Principal type"><select className="input" value={activity.principalType} onChange={event => setActivity({ ...activity, principalType: event.target.value })}>{['EMPLOYEE', 'CONTRACTOR', 'CANDIDATE', 'FORMER_EMPLOYEE'].map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Lawful basis"><select className="input" value={activity.lawfulBasis} onChange={event => setActivity({ ...activity, lawfulBasis: event.target.value })}>{['EMPLOYMENT_LEGITIMATE_USE', 'LEGAL_REQUIREMENT', 'CONSENT', 'OTHER_LEGITIMATE_USE'].map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Security classification"><select className="input" value={activity.securityClassification} onChange={event => setActivity({ ...activity, securityClassification: event.target.value })}>{['INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'].map(value => <option key={value}>{value}</option>)}</select></Field><ModalActions busy={busy} onClose={() => setModal('')} label="Add activity" /></form></Modal>
 
-      {/* Published Employee Notices History */}
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Employee Privacy Notices</h2>
-        {documents.length === 0 ? (
-          <div className="text-sm text-slate-500">No organisation employee privacy notices published yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b bg-slate-50 text-slate-700">
-                <tr>
-                  <th className="py-2 px-3">Title</th>
-                  <th className="py-2 px-3">Version</th>
-                  <th className="py-2 px-3">Status</th>
-                  <th className="py-2 px-3">Effective At</th>
-                  <th className="py-2 px-3">Published At</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y text-slate-600">
-                {documents.map((doc) => (
-                  <tr key={doc.id}>
-                    <td className="py-2 px-3 font-medium">{doc.title}</td>
-                    <td className="py-2 px-3 font-mono text-xs">{doc.version}</td>
-                    <td className="py-2 px-3">
-                      <span className="px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-800 font-semibold">
-                        {doc.state}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3">{fmt.dateTime(doc.effectiveAt)}</td>
-                    <td className="py-2 px-3">{fmt.dateTime(doc.publishedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+    <Modal open={modal === 'processor'} onClose={() => setModal('')} title="Add Vendor or Processor"><form onSubmit={event => { event.preventDefault(); act(() => dpdpApi.createProcessor(processor), 'Vendor register updated.'); }} className="dpdp-form">{['code', 'name', 'serviceCategory', 'purpose', 'breachContact'].map(key => <Field key={key} label={display(key.replace(/([A-Z])/g, ' $1'))}><Input value={processor[key]} onChange={event => setProcessor({ ...processor, [key]: event.target.value })} required={['code', 'name'].includes(key)} /></Field>)}<Field label="Data processing agreement status"><select className="input" value={processor.dpaStatus} onChange={event => setProcessor({ ...processor, dpaStatus: event.target.value })}>{['MISSING', 'DRAFT', 'CURRENT', 'EXPIRED'].map(value => <option key={value}>{value}</option>)}</select></Field><ModalActions busy={busy} onClose={() => setModal('')} label="Add vendor" /></form></Modal>
 
-      {/* Retention Register & Candidate Expiry Report */}
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold text-slate-800 mb-2">Data Retention Register & Legal Holds</h2>
-        <p className="text-xs text-slate-500 mb-4">
-          Statutory employee records (payroll, service book, audit logs) are permanently retained by law. Configurable retention operates report-only to protect audit integrity.
-        </p>
-        {retentionData?.candidates?.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b bg-slate-50 text-slate-700">
-                <tr>
-                  <th className="py-2 px-3">Data Category</th>
-                  <th className="py-2 px-3">Retention Period</th>
-                  <th className="py-2 px-3">Legal Hold</th>
-                  <th className="py-2 px-3">Candidate Count</th>
-                  <th className="py-2 px-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y text-slate-600">
-                {retentionData.candidates.map((cand) => (
-                  <tr key={cand.category}>
-                    <td className="py-2 px-3 font-medium">{cand.category}</td>
-                    <td className="py-2 px-3">{cand.periodMonths} months</td>
-                    <td className="py-2 px-3">
-                      {cand.legalHold ? (
-                        <span className="px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800 font-semibold">Active Hold</span>
-                      ) : (
-                        <span className="text-xs text-slate-500">None</span>
-                      )}
-                    </td>
-                    <td className="py-2 px-3 font-semibold">{cand.candidateCount}</td>
-                    <td className="py-2 px-3">
-                      <span className="px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-700 font-mono">
-                        {cand.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-sm text-slate-500">
-            No retention categories configured yet. Default statutory protections are active.
-          </div>
-        )}
-      </Card>
+    <Modal open={modal === 'purpose'} onClose={() => setModal('')} title="Add Optional Consent Purpose" size="lg"><form onSubmit={event => { event.preventDefault(); act(() => dpdpApi.createOrgConsentPurpose({ ...purpose, dataCategories: purpose.dataCategories.split(',').map(value => value.trim()).filter(Boolean), noticeDocumentId: Number(purpose.noticeDocumentId) }), 'Optional consent purpose added.'); }} className="dpdp-form dpdp-form-grid"><Field label="Purpose code"><Input value={purpose.code} onChange={event => setPurpose({ ...purpose, code: event.target.value })} required /></Field><Field label="Published notice"><select className="input" value={purpose.noticeDocumentId} onChange={event => setPurpose({ ...purpose, noticeDocumentId: event.target.value })} required><option value="">Select notice</option>{data.documents?.map(row => <option key={row.id} value={row.id}>{row.title} — {row.version}</option>)}</select></Field><Field label="English title"><Input value={purpose.titleEn} onChange={event => setPurpose({ ...purpose, titleEn: event.target.value })} required /></Field><Field label="Malayalam title"><Input value={purpose.titleMl} onChange={event => setPurpose({ ...purpose, titleMl: event.target.value })} /></Field><Field label="English description"><textarea className="input" value={purpose.descriptionEn} onChange={event => setPurpose({ ...purpose, descriptionEn: event.target.value })} required /></Field><Field label="Malayalam description"><textarea className="input" value={purpose.descriptionMl} onChange={event => setPurpose({ ...purpose, descriptionMl: event.target.value })} /></Field><Field label="Data categories (comma separated)"><Input value={purpose.dataCategories} onChange={event => setPurpose({ ...purpose, dataCategories: event.target.value })} /></Field><ModalActions busy={busy} onClose={() => setModal('')} label="Add purpose" /></form></Modal>
 
-      {/* Assign DPO Modal */}
-      {dpoModalOpen && (
-        <Modal title="Assign Data Protection Officer" onClose={() => setDpoModalOpen(false)}>
-          <form onSubmit={handleAssignDpo} className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Select an active user linked to a confirmed employee record in this bank to serve as the Data Protection Officer.
-            </p>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Select Officer</label>
-              <select
-                className="w-full border rounded p-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 bg-white"
-                value={selectedUserId}
-                onChange={(e) => setSelectedUserId(e.target.value)}
-                required
-              >
-                <option value="">-- Choose an active linked user --</option>
-                {eligibleUsers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.email}) - {u.role}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => setDpoModalOpen(false)} disabled={dpoSubmitting}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!selectedUserId || dpoSubmitting}>
-                {dpoSubmitting ? 'Assigning…' : 'Confirm Assignment'}
-              </Button>
-            </div>
-          </form>
-        </Modal>
-      )}
+    <Modal open={modal === 'proposal'} onClose={() => setModal('')} title="Propose Retention Action"><form onSubmit={event => { event.preventDefault(); act(() => dpdpApi.createRetentionProposal(proposal), 'Retention proposal created for DPO review.'); }} className="dpdp-form"><Field label="Category"><select className="input" value={proposal.category} onChange={event => setProposal({ ...proposal, category: event.target.value })}>{(data.retention?.availableCategories || ['EXPENSE_RECEIPTS']).map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Delete records older than"><Input type="date" value={proposal.cutoffAt} onChange={event => setProposal({ ...proposal, cutoffAt: event.target.value })} required /></Field><p>Creating a proposal does not delete data. A different active DPO must approve it before an allowlisted handler can execute.</p><ModalActions busy={busy} onClose={() => setModal('')} label="Create proposal" /></form></Modal>
 
-      {/* Publish Notice Modal */}
-      {noticeModalOpen && (
-        <Modal title="Publish Employee Privacy Notice" onClose={() => setNoticeModalOpen(false)}>
-          <form onSubmit={handlePublishNotice} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Notice Title</label>
-              <Input
-                type="text"
-                value={noticeTitle}
-                onChange={(e) => setNoticeTitle(e.target.value)}
-                required
-              />
-            </div>
+    <Modal open={modal === 'incident'} onClose={() => setModal('')} title="Report Personal Data Breach"><form onSubmit={event => { event.preventDefault(); act(() => dpdpApi.createOrgIncident({ ...incident, affectedCount: Number(incident.affectedCount), awareAt: new Date(incident.awareAt).toISOString() }), 'Breach record opened with a 72-hour Board deadline.'); }} className="dpdp-form"><Field label="Incident title"><Input value={incident.title} onChange={event => setIncident({ ...incident, title: event.target.value })} required /></Field><Field label="Severity"><select className="input" value={incident.severity} onChange={event => setIncident({ ...incident, severity: event.target.value })}>{['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Organisation became aware at"><Input type="datetime-local" value={incident.awareAt} onChange={event => setIncident({ ...incident, awareAt: event.target.value })} required /></Field><Field label="Affected data categories"><Input value={incident.affectedCategories} onChange={event => setIncident({ ...incident, affectedCategories: event.target.value })} /></Field><Field label="Estimated affected people"><Input type="number" min="0" value={incident.affectedCount} onChange={event => setIncident({ ...incident, affectedCount: event.target.value })} /></Field><Field label="Initial summary"><textarea className="input" value={incident.summary} onChange={event => setIncident({ ...incident, summary: event.target.value })} /></Field><ModalActions busy={busy} onClose={() => setModal('')} label="Open breach record" /></form></Modal>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Version String (e.g. 1.0, 1.1)</label>
-              <Input
-                type="text"
-                value={noticeVersion}
-                onChange={(e) => setNoticeVersion(e.target.value)}
-                placeholder="1.0"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Summary of Key Data Uses</label>
-              <Input
-                type="text"
-                value={noticeSummary}
-                onChange={(e) => setNoticeSummary(e.target.value)}
-                placeholder="Notice of HR, payroll, statutory, and attendance data processing"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Effective Date & Time</label>
-              <Input
-                type="datetime-local"
-                value={noticeEffectiveAt}
-                onChange={(e) => setNoticeEffectiveAt(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Notice Body (Plain text)</label>
-              <textarea
-                className="w-full border rounded p-2 text-sm text-slate-800 font-mono h-48 focus:ring-1 focus:ring-slate-900"
-                value={noticeBody}
-                onChange={(e) => setNoticeBody(e.target.value)}
-                placeholder="Full text of the employee privacy notice..."
-                required
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => setNoticeModalOpen(false)} disabled={noticeSubmitting}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={noticeSubmitting}>
-                {noticeSubmitting ? 'Publishing…' : 'Publish Notice'}
-              </Button>
-            </div>
-          </form>
-        </Modal>
-      )}
-    </div>
-  );
+    <Modal open={modal === 'control'} onClose={() => setModal('')} title="Record Security Control"><form onSubmit={event => { event.preventDefault(); act(() => dpdpApi.updateControl(control), 'Control evidence recorded.'); }} className="dpdp-form"><Field label="Control code"><Input value={control.controlCode} onChange={event => setControl({ ...control, controlCode: event.target.value })} required /></Field><Field label="Control title"><Input value={control.title} onChange={event => setControl({ ...control, title: event.target.value })} required /></Field><Field label="Status"><select className="input" value={control.status} onChange={event => setControl({ ...control, status: event.target.value })}>{['IMPLEMENTED', 'PARTIAL', 'NOT_IMPLEMENTED', 'NOT_APPLICABLE'].map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Evidence reference"><textarea className="input" value={control.evidenceReference} onChange={event => setControl({ ...control, evidenceReference: event.target.value })} /></Field><Field label="Next review"><Input type="date" value={control.nextReviewAt} onChange={event => setControl({ ...control, nextReviewAt: event.target.value })} /></Field><ModalActions busy={busy} onClose={() => setModal('')} label="Record control" /></form></Modal>
+  </div>;
 }
+
+function Overview({ data, onOpen }) {
+  const d = data.dashboard || {}; const readiness = data.readiness || {};
+  return <><div className="dpdp-metrics"><Metric label="Processing activities" value={`${d.processingActivities?.ready || 0}/${d.processingActivities?.total || 0}`} detail="Ready register entries" tone={d.processingActivities?.total === d.processingActivities?.ready ? 'success' : 'warning'} /><Metric label="Rights cases" value={data.requests?.filter(row => !['COMPLETED', 'REJECTED'].includes(row.status)).length || 0} detail="Open or in review" /><Metric label="Processor agreements" value={`${d.processors?.current || 0}/${d.processors?.total || 0}`} detail="Current DPAs" /><Metric label="Control gaps" value={d.controls?.gaps || 0} detail="Partial or not implemented" tone={d.controls?.gaps ? 'danger' : 'success'} /><Metric label="Breach register" value={data.incidents?.filter(row => row.status !== 'CLOSED').length || 0} detail="Open incidents" tone={data.incidents?.some(row => row.status !== 'CLOSED') ? 'danger' : 'success'} /></div><div className="dpdp-overview-grid"><Card title="Readiness blockers"><div className="dpdp-readiness"><Badge variant={readiness.isReady ? 'success' : 'warning'}>{readiness.isReady ? 'READY FOR REVIEW' : 'ACTION REQUIRED'}</Badge><p>{readiness.isReady ? 'Core DPO and notice prerequisites are recorded. Continue control review before making any compliance claim.' : 'Resolve the following prerequisites before operational review.'}</p>{readiness.blockers?.length ? <ul>{readiness.blockers.map(item => <li key={item.code}>{item.message}</li>)}</ul> : <p className="dpdp-muted">No core readiness blockers are reported.</p>}</div></Card><Card title="Accountability owner"><dl className="dpdp-details"><div><dt>Data Protection Officer</dt><dd>{data.profile?.dpoName || 'Not assigned'}</dd></div><div><dt>Official email</dt><dd>{data.profile?.dpoEmail || 'Not recorded'}</dd></div><div><dt>Published notices</dt><dd>{data.documents?.length || 0}</dd></div><div><dt>Recorded sharing events</dt><dd>{d.sharingEvents || 0}</dd></div></dl></Card></div><div className="dpdp-quick-actions">{['Processing Register', 'Rights Cases', 'Breaches', 'Retention'].map(label => <button key={label} onClick={() => onOpen(label)}>Open {label}<span aria-hidden="true">→</span></button>)}</div></>;
+}
+
+function Register({ rows, canManage, onAdd }) { const columns = [{ field: 'code', label: 'Code', mono: true }, { field: 'module', label: 'System area' }, { field: 'dataCategory', label: 'Data category' }, { field: 'principalType', label: 'Principal' }, { field: 'lawfulBasis', label: 'Basis', render: row => display(row.lawfulBasis) }, { field: 'securityClassification', label: 'Classification' }, { field: 'nextReviewAt', label: 'Next review', render: row => fmt.date(row.nextReviewAt) }, { field: 'status', label: 'Status', render: row => <Badge variant={statusVariant(row.status)}>{display(row.status)}</Badge> }]; return <Card title="Processing Register" actions={canManage && <Button size="sm" onClick={onAdd}>Add activity</Button>} noPadding><div className="dpdp-section-note">Map each field to its purpose, authority, storage, access roles, retention and security review.</div><Table columns={columns} data={rows} keyField="id" emptyMessage="No processing activities are recorded. Add the first activity to start the register." /></Card>; }
+function Cases({ rows, canManage, onAction }) { const columns = [{ field: 'caseId', label: 'Case ID', mono: true }, { field: 'principalName', label: 'Data principal', render: row => row.principalName || row.Employee?.name || 'Employee' }, { field: 'requestType', label: 'Request', render: row => display(row.requestType) }, { field: 'dueAt', label: 'Due', render: row => fmt.date(row.dueAt) }, { field: 'status', label: 'Status', render: row => <Badge variant={statusVariant(row.status)}>{display(row.status)}</Badge> }, { field: 'actions', label: 'Action', sortable: false, render: row => canManage && !['COMPLETED', 'REJECTED'].includes(row.status) ? <div className="dpdp-row-actions">{!row.identityVerifiedAt && <Button size="sm" variant="secondary" onClick={() => onAction(row.id, 'verify')}>Verify identity</Button>}{row.identityVerifiedAt && row.status !== 'IN_REVIEW' && <Button size="sm" variant="secondary" onClick={() => onAction(row.id, 'review')}>Start review</Button>}</div> : '—' }]; return <Card title="SLA-managed Rights Cases" noPadding><div className="dpdp-section-note">Identity verification is required before review. Closed cases cannot be reopened.</div><Table columns={columns} data={rows} keyField="id" emptyMessage="No data-rights cases are waiting for review." /></Card>; }
+function Notices({ documents, purposes, canManage, onNotice, onPurpose }) { return <div className="dpdp-two-column"><Card title="Published employee notices" actions={canManage && <Button size="sm" onClick={onNotice}>Publish notice</Button>} noPadding><Table columns={[{ field: 'title', label: 'Title' }, { field: 'version', label: 'Version', mono: true }, { field: 'effectiveAt', label: 'Effective', render: row => fmt.date(row.effectiveAt) }, { field: 'languages', label: 'Languages', render: row => row.bodyMl ? 'English · Malayalam' : 'English' }]} data={documents} keyField="id" emptyMessage="No employee privacy notice is published." /></Card><Card title="Optional consent purposes" actions={canManage && <Button size="sm" variant="secondary" onClick={onPurpose}>Add purpose</Button>} noPadding><Table columns={[{ field: 'code', label: 'Code', mono: true }, { field: 'titleEn', label: 'English' }, { field: 'titleMl', label: 'Malayalam', render: row => row.titleMl || 'Not provided' }, { field: 'status', label: 'Status', render: row => <Badge variant={statusVariant(row.status)}>{row.status}</Badge> }]} data={purposes} keyField="id" emptyMessage="No optional consent purpose is configured. Mandatory HR processing must not be added here." /></Card></div>; }
+function Vendors({ rows, canManage, onAdd }) { return <Card title="Vendors and Data Processors" actions={canManage && <Button size="sm" onClick={onAdd}>Add vendor</Button>} noPadding><Table columns={[{ field: 'code', label: 'Code', mono: true }, { field: 'name', label: 'Vendor' }, { field: 'serviceCategory', label: 'Service' }, { field: 'dpaStatus', label: 'Agreement', render: row => <Badge variant={statusVariant(row.dpaStatus)}>{display(row.dpaStatus)}</Badge> }, { field: 'crossBorder', label: 'Cross-border', render: row => row.crossBorder ? 'Yes — review required' : 'No' }, { field: 'nextReviewAt', label: 'Next review', render: row => fmt.date(row.nextReviewAt) }]} data={rows} keyField="id" emptyMessage="No external processors are recorded. Add vendors that handle personal data." /></Card>; }
+function Retention({ data, proposals, canManage, onAdd, onDecide, onExecute }) { return <div className="dpdp-stack"><Card title="Retention rules and legal holds" noPadding><div className="dpdp-section-note">Statutory payroll, service-book, contribution and audit categories are excluded from automated deletion.</div><Table columns={[{ field: 'category', label: 'Category' }, { field: 'periodMonths', label: 'Period', render: row => `${row.periodMonths} months` }, { field: 'legalHold', label: 'Legal hold', render: row => <Badge variant={row.legalHold ? 'warning' : 'default'}>{row.legalHold ? 'ACTIVE HOLD' : 'None'}</Badge> }, { field: 'candidateCount', label: 'Candidates', align: 'right' }, { field: 'status', label: 'Assessment', render: row => display(row.status) }]} data={data?.candidates || []} keyField="category" emptyMessage="No configurable retention rules are recorded. Statutory exclusions remain protected." /></Card><Card title="Controlled deletion proposals" actions={canManage && <Button size="sm" onClick={onAdd}>Create proposal</Button>} noPadding><Table columns={[{ field: 'id', label: 'Proposal', mono: true, render: row => `#${row.id}` }, { field: 'category', label: 'Category' }, { field: 'cutoffAt', label: 'Cutoff', render: row => fmt.date(row.cutoffAt) }, { field: 'candidateCount', label: 'Candidates', align: 'right' }, { field: 'status', label: 'Status', render: row => <Badge variant={statusVariant(row.status)}>{row.status}</Badge> }, { field: 'actions', label: 'Action', sortable: false, render: row => <div className="dpdp-row-actions">{canManage && row.status === 'PROPOSED' && <><Button size="sm" onClick={() => onDecide(row, 'APPROVED')}>Approve</Button><Button size="sm" variant="secondary" onClick={() => onDecide(row, 'REJECTED')}>Reject</Button></>}{canManage && row.status === 'APPROVED' && <Button size="sm" onClick={() => onExecute(row)}>Execute</Button>}{row.certificateDigest && <span className="mono" title={row.certificateDigest}>{row.certificateDigest.slice(0, 10)}…</span>}</div> }]} data={proposals} keyField="id" emptyMessage="No deletion proposals. Candidate reports never delete records by themselves." /></Card></div>; }
+function Breaches({ rows, canManage, onAdd }) { return <Card title="Personal Data Breach Register" actions={canManage && <Button size="sm" onClick={onAdd}>Report breach</Button>} noPadding><div className="dpdp-section-note">Detailed Board reporting is tracked from the time the organisation becomes aware of the breach. Closure requires root cause, corrective action and notification decisions.</div><Table columns={[{ field: 'id', label: 'Incident', mono: true, render: row => `#${row.id}` }, { field: 'title', label: 'Incident' }, { field: 'severity', label: 'Severity', render: row => <Badge variant={['HIGH', 'CRITICAL'].includes(row.severity) ? 'danger' : 'warning'}>{row.severity}</Badge> }, { field: 'awareAt', label: 'Aware at', render: row => fmt.dateTime(row.awareAt) }, { field: 'boardDetailedDueAt', label: 'Board detail due', render: row => fmt.dateTime(row.boardDetailedDueAt) }, { field: 'status', label: 'Status', render: row => <Badge variant={statusVariant(row.status)}>{row.status}</Badge> }]} data={rows} keyField="id" emptyMessage="No personal data breach is recorded." /></Card>; }
+function SensitiveAccess({ form, setForm, result, setResult, busy, onSubmit }) { return <div className="dpdp-sensitive-layout"><Card title="Purpose-bound sensitive reveal"><form onSubmit={onSubmit} className="dpdp-form"><p>Normal employee views stay masked. This action reveals one field group once and records the purpose, justification and outcome.</p><Field label="Employee record ID"><Input type="number" min="1" value={form.employeeId} onChange={event => setForm({ ...form, employeeId: event.target.value })} required /></Field><Field label="Field group"><select className="input" value={form.fieldGroup} onChange={event => setForm({ ...form, fieldGroup: event.target.value })}>{['IDENTITY', 'CONTACT', 'BANK', 'MEDICAL'].map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Purpose"><select className="input" value={form.purpose} onChange={event => setForm({ ...form, purpose: event.target.value })}>{['IDENTITY_VERIFICATION', 'STATUTORY_REPORTING', 'PAYROLL_VERIFICATION', 'HR_RECORD_MAINTENANCE', 'EMERGENCY_RESPONSE', 'DATA_RIGHTS_CASE', 'SECURITY_INVESTIGATION'].map(value => <option key={value}>{display(value)}</option>)}</select></Field><Field label="Justification"><textarea className="input" minLength="12" maxLength="500" value={form.justification} onChange={event => setForm({ ...form, justification: event.target.value })} placeholder="Explain why this field group is needed. Do not paste personal values." required /></Field><Button type="submit" loading={busy}>Reveal selected group</Button></form></Card><Card title="Temporary reveal result">{result ? <><dl className="dpdp-reveal-result">{Object.entries(result.values || {}).map(([key, value]) => <div key={key}><dt>{display(key.replace(/([A-Z])/g, ' $1'))}</dt><dd>{value || 'Not recorded'}</dd></div>)}</dl><Button variant="secondary" onClick={() => setResult(null)}>Hide values</Button></> : <EmptyState title="No values revealed" description="Select an employee, purpose and one field group. Revealed data is not stored in browser storage." />}</Card></div>; }
+function Evidence({ controls, audit, canManage, onAdd }) { return <div className="dpdp-stack"><Card title="Security and governance controls" actions={canManage && <Button size="sm" onClick={onAdd}>Record control</Button>} noPadding><Table columns={[{ field: 'controlCode', label: 'Control', mono: true }, { field: 'title', label: 'Control objective' }, { field: 'status', label: 'Status', render: row => <Badge variant={statusVariant(row.status)}>{display(row.status)}</Badge> }, { field: 'evidenceReference', label: 'Evidence', render: row => row.evidenceReference || 'Not linked' }, { field: 'nextReviewAt', label: 'Next review', render: row => fmt.date(row.nextReviewAt) }]} data={controls} keyField="id" emptyMessage="No control assessments are recorded. Add evidence references without uploading secrets." /></Card><Card title="Recent sensitive access evidence" noPadding><Table columns={[{ field: 'createdAt', label: 'Time', render: row => fmt.dateTime(row.createdAt) }, { field: 'actorEmail', label: 'Actor', render: row => row.actorEmail || `User #${row.actorUserId}` }, { field: 'targetId', label: 'Employee ID', mono: true }, { field: 'fieldGroup', label: 'Field group', render: row => row.details?.fieldGroup || '—' }, { field: 'purpose', label: 'Purpose', render: row => display(row.details?.purpose) }, { field: 'outcome', label: 'Outcome', render: row => <Badge variant={row.details?.outcome === 'ALLOWED' ? 'success' : 'danger'}>{row.details?.outcome || 'RECORDED'}</Badge> }]} data={audit} keyField="id" emptyMessage="No sensitive reveal events are available to this account. Full evidence remains in the organisation audit log." /></Card></div>; }
 
 export default DpdpCompliancePage;

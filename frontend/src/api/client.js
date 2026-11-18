@@ -385,6 +385,21 @@ export const dpdpApi = {
   verifyOrgRequest: (id, method) => api.post(`/org/dpdp/requests/${id}/verify`, { method }),
   advanceOrgRequest: (id, data) => api.post(`/org/dpdp/requests/${id}/advance`, data),
   revealSensitiveEmployeeData: (data) => api.post('/org/dpdp/sensitive-access', data),
+  orgDashboard: () => api.get('/org/dpdp/dashboard'),
+  orgProcessingActivities: (params) => api.get(`/org/dpdp/processing-activities${params ? `?${new URLSearchParams(params)}` : ''}`),
+  createProcessingActivity: (data) => api.post('/org/dpdp/processing-activities', data),
+  updateProcessingActivity: (id, data) => api.put(`/org/dpdp/processing-activities/${id}`, data),
+  orgProcessors: (params) => api.get(`/org/dpdp/processors${params ? `?${new URLSearchParams(params)}` : ''}`),
+  createProcessor: (data) => api.post('/org/dpdp/processors', data),
+  updateProcessor: (id, data) => api.put(`/org/dpdp/processors/${id}`, data),
+  orgSharingEvents: (params) => api.get(`/org/dpdp/sharing-events${params ? `?${new URLSearchParams(params)}` : ''}`),
+  createSharingEvent: (data) => api.post('/org/dpdp/sharing-events', data),
+  orgControls: () => api.get('/org/dpdp/controls'),
+  updateControl: (data) => api.put('/org/dpdp/controls', data),
+  orgRetentionProposals: (params) => api.get(`/org/dpdp/retention/proposals${params ? `?${new URLSearchParams(params)}` : ''}`),
+  createRetentionProposal: (data) => api.post('/org/dpdp/retention/proposals', data),
+  decideRetentionProposal: (id, data) => api.post(`/org/dpdp/retention/proposals/${id}/decide`, data),
+  executeRetentionProposal: (id) => api.post(`/org/dpdp/retention/proposals/${id}/execute`, {}),
 };
 
 /* Formatting helpers */

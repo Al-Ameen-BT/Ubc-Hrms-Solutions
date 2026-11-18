@@ -86,7 +86,7 @@ router.get(
 // POST /api/v1/org/dpdp/documents/publish
 router.post(
   '/documents/publish',
-  requireFeaturePermission('settings.configure', ['ORG_ADMIN']),
+  requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']),
   async (req, res) => {
     try {
       const doc = await dpdpDocuments.publishDocument({
@@ -250,7 +250,7 @@ const dpdpRetention = require('../services/dpdpRetention');
 // GET /api/v1/org/dpdp/retention
 router.get(
   '/retention',
-  requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']),
+  requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']),
   async (req, res) => {
     try {
       const organizationId = req.user.organizationId;
@@ -295,7 +295,7 @@ router.put(
 
 const dpdpRetentionProposals = require('../services/dpdpRetentionProposals');
 
-router.get('/retention/proposals', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+router.get('/retention/proposals', requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
   try { res.json({ data: await dpdpRetentionProposals.listProposals({ organizationId: req.user.organizationId, status: req.query.status }) }); } catch (err) { sendError(res, err); }
 });
 
