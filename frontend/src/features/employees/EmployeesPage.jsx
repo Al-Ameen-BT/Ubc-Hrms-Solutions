@@ -6,10 +6,11 @@ import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export function EmployeesPage({ embedded = false }) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { canPermission } = useAuth();
   const [search, setSearch] = useState('');
 
@@ -29,11 +30,18 @@ export function EmployeesPage({ embedded = false }) {
   const rows = useMemo(() => {
     const all = data?.rows || [];
     const q = search.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((e) =>
-      `${e.name} ${e.empCode} ${e.department || ''}`.toLowerCase().includes(q)
-    );
-  }, [data, search]);
+    const branchId = params.get('branchId');
+    const departmentId = params.get('departmentId');
+    const dojMonth = params.get('dojMonth');
+    const confirmationMonth = params.get('confirmationMonth');
+    return all.filter((e) => (
+      (!q || `${e.name} ${e.empCode} ${e.department || ''}`.toLowerCase().includes(q))
+      && (!branchId || String(e.branchId || '') === branchId)
+      && (!departmentId || (departmentId === 'unassigned' ? !e.departmentId : String(e.departmentId || '') === departmentId))
+      && (!dojMonth || String(e.doj || '').startsWith(dojMonth))
+      && (!confirmationMonth || String(e.dateOfConfirmation || '').startsWith(confirmationMonth))
+    ));
+  }, [data, search, params]);
 
   const columns = [
     { field: 'empCode', label: 'Code', mono: true },

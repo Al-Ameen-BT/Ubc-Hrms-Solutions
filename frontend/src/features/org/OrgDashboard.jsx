@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { DashboardError, DashboardSkeleton } from '../dashboard/DashboardPrimitives';
+import { WorkforceInsights } from '../dashboard/WorkforceInsights';
 import { dashboardParams, nextTabIndex, prioritiseActions } from '../dashboard/dashboardModel';
 import '../dashboard/Dashboard.css';
 
@@ -121,7 +122,7 @@ export function OrgDashboard() {
       </aside>
     </div>
 
-    <OperationalAnalytics analytics={data?.analytics || {}} />
+    <WorkforceInsights analytics={data?.analytics || {}} summary={summary} payroll={payroll} date={filters.date} asOfTime={currentTime(now)} branches={filterOptions.branches || []} branchId={filters.branchId} onBranchChange={value => updateFilter('branchId', value)} onNavigate={navigate} onOpenAttendance={() => openTab('attendance')} onOpenPayroll={() => openTab('payroll')} />
 
     <section id="dashboard-workspace" className="dashboard-panel dashboard-workspace" aria-label="HR operational work queues">
       <div className="dashboard-tabs" role="tablist" aria-label="HR work queues">{TABS.map((tab, index) => <button id={`dashboard-tab-${tab.id}`} key={tab.id} type="button" role="tab" className="dashboard-tab" aria-selected={activeTab === tab.id} aria-controls={`dashboard-panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => handleTabKeyDown(event, index)}>{tab.label}<span className="dashboard-tab-count">{tabCounts[tab.id]}</span></button>)}</div>
@@ -144,25 +145,6 @@ function FilterSelect({ label, children, ...props }) {
 function ActionsTable({ rows, onOpen, emptyMessage }) {
   if (!rows.length) return <div className="dashboard-empty-table"><strong>All clear for this scope</strong><span>{emptyMessage}</span></div>;
   return <div className="dashboard-table-scroll"><table className="table hr-actions-table"><thead><tr><th className="table-th">Priority</th><th className="table-th">Employee</th><th className="table-th">Employee ID</th><th className="table-th">Branch / Department</th><th className="table-th">Issue Type</th><th className="table-th">Details</th><th className="table-th">Owner / Reporting Manager</th><th className="table-th">Status</th><th className="table-th table-th-right">Action</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><Badge variant={row.priority === 'HIGH' ? 'danger' : 'warning'}>{row.priority === 'HIGH' ? 'Critical' : 'Needs review'}</Badge></td><td className="table-td"><strong>{row.employeeName}</strong></td><td className="table-td mono">{row.empCode}</td><td className="table-td"><strong>{row.branchName}</strong><span className="hr-cell-subtext">{row.departmentName}</span></td><td className="table-td"><Badge variant={row.issueType === 'PAYROLL' ? 'info' : row.issueType === 'COMPLIANCE' ? 'warning' : 'default'}>{row.issueType}</Badge></td><td className="table-td hr-detail-cell">{row.details}</td><td className="table-td">{row.owner}</td><td className="table-td"><Badge variant={row.status === 'PENDING_APPROVAL' ? 'info' : row.status === 'COMPLETED' ? 'success' : 'warning'}>{statusLabel[row.status] || row.status}</Badge></td><td className="table-td table-td-right"><Button variant="secondary" size="sm" onClick={() => onOpen(row)}>{row.actionLabel || 'Review'}</Button></td></tr>)}</tbody></table></div>;
-}
-
-function OperationalAnalytics({ analytics }) {
-  const trend = analytics.attendanceTrend || [];
-  const maxAttendance = Math.max(1, ...trend.map((row) => Number(row.total) || 0));
-  return <section className="dashboard-panel hr-analytics" aria-labelledby="workforce-signals-title"><div className="dashboard-panel-header"><div><h2 id="workforce-signals-title">Workforce Signals</h2><p>Compact context for today’s operational decisions.</p></div></div><div className="hr-analytics-grid">
-    <article><h3>Attendance trend</h3><p>Last 7 working days</p><div className="hr-trend-bars" aria-label="Attendance during the last seven working days">{trend.map((row) => <div key={row.date}><span className="hr-trend-bar"><i style={{ height: `${Math.round((row.present / maxAttendance) * 100)}%` }} /></span><strong>{row.present}</strong><small>{new Intl.DateTimeFormat('en-IN', { weekday: 'short' }).format(new Date(`${row.date}T12:00:00+05:30`))}</small></div>)}</div></article>
-    <RankedList title="Headcount by branch" rows={analytics.headcountByBranch || []} empty="No branches configured yet." />
-    <RankedList title="Headcount by department" rows={analytics.headcountByDepartment || []} empty="No department assignments available." />
-    <article><h3>Late arrival trend</h3><p>Last 7 working days</p><div className="hr-analytics-empty">{analytics.shiftAnalyticsAvailable ? 'No late arrivals recorded.' : 'Shift schedules and late thresholds are not configured.'}</div></article>
-    <RankedList title="Leave distribution" rows={analytics.leaveDistribution || []} empty="No leave applications in the selected period." />
-    <article><h3>Employee movements</h3><p>This month</p><div className="hr-movement-grid"><span><strong>{analytics.monthlyMovements?.joiners || 0}</strong>Joiners</span><span><strong>{analytics.monthlyMovements?.exitsAvailable ? analytics.monthlyMovements.exits : '—'}</strong>Exits</span><span><strong>{analytics.monthlyMovements?.transfers || 0}</strong>Transfers</span><span><strong>{analytics.monthlyMovements?.probationCompletions || 0}</strong>Confirmed</span></div></article>
-  </div></section>;
-}
-
-function RankedList({ title, rows, empty }) {
-  const top = [...rows].sort((left, right) => Number(right.value) - Number(left.value)).slice(0, 5);
-  const max = Math.max(1, ...top.map((row) => Number(row.value) || 0));
-  return <article><h3>{title}</h3><p>Current selected scope</p>{!top.length ? <div className="hr-analytics-empty">{empty}</div> : <ol className="hr-ranked-bars">{top.map((row) => <li key={row.label}><span>{row.label}</span><b>{row.value}</b><i><span style={{ width: `${Math.round((Number(row.value) / max) * 100)}%` }} /></i></li>)}</ol>}</article>;
 }
 
 function PanelHeading({ title, detail }) {

@@ -185,28 +185,48 @@
 .hr-alert-card b { min-width: 32px; text-align: right; font-size: var(--text-lg); font-variant-numeric: tabular-nums; }
 .hr-alert-card .btn { grid-column: 1 / -1; justify-self: start; }
 
-.hr-analytics { margin-bottom: var(--space-5); overflow: hidden; }
-.hr-analytics-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.hr-analytics-grid > article { min-width: 0; min-height: 205px; padding: var(--space-4) var(--space-5); border-right: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); }
-.hr-analytics-grid > article:nth-child(3n) { border-right: 0; }
-.hr-analytics-grid > article:nth-last-child(-n + 3) { border-bottom: 0; }
-.hr-analytics-grid h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
-.hr-analytics-grid article > p { margin: 0 0 var(--space-3); color: var(--text-secondary); font-size: var(--text-xs); }
-.hr-analytics-empty { display: grid; min-height: 110px; place-items: center; color: var(--text-secondary); font-size: var(--text-sm); text-align: center; }
-.hr-trend-bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-2); align-items: end; min-height: 130px; }
-.hr-trend-bars > div { display: grid; justify-items: center; gap: 2px; color: var(--text-secondary); font-size: var(--text-xs); }
-.hr-trend-bar { display: flex; width: 100%; max-width: 28px; height: 84px; align-items: end; overflow: hidden; border-radius: 4px 4px 2px 2px; background: var(--dashboard-panel-muted); }
-.hr-trend-bar i { width: 100%; min-height: 2px; background: var(--accent); border-radius: inherit; }
-.hr-trend-bars strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.hr-ranked-bars { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
-.hr-ranked-bars li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--space-2); font-size: var(--text-xs); }
-.hr-ranked-bars li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hr-ranked-bars b { font-variant-numeric: tabular-nums; }
-.hr-ranked-bars i { grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: 999px; background: var(--dashboard-line); }
-.hr-ranked-bars i span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
-.hr-movement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-.hr-movement-grid span { display: grid; gap: var(--space-1); padding: var(--space-3); background: var(--dashboard-panel-muted); border-radius: var(--radius); color: var(--text-secondary); font-size: var(--text-xs); }
-.hr-movement-grid strong { color: var(--text-primary); font-size: var(--text-lg); font-variant-numeric: tabular-nums; }
+.workforce-insights { margin-bottom: var(--space-5); overflow: hidden; }
+.workforce-donut-grid, .workforce-trend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workforce-chart-card { min-width: 0; padding: var(--space-4); border-right: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); background: var(--dashboard-panel); }
+.workforce-chart-card:nth-child(2n) { border-right: 0; }
+.workforce-donut-grid .workforce-chart-card:nth-last-child(-n + 2), .workforce-trend-grid .workforce-chart-card:nth-last-child(-n + 2) { border-bottom: 0; }
+.workforce-trend-grid { border-top: 1px solid var(--dashboard-line); }
+.workforce-chart-card > header { display: flex; min-height: 44px; align-items: flex-start; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.workforce-chart-card h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.workforce-chart-card header p, .workforce-chart-note, .workforce-comparison { margin: 0; color: var(--text-secondary); font-size: var(--text-xs); }
+.workforce-card-filter { display: grid; min-width: 130px; gap: 2px; color: var(--text-secondary); font-size: var(--text-xs); }
+.workforce-card-filter select { min-height: 34px; max-width: 170px; border: 1px solid var(--dashboard-line); border-radius: var(--radius); background: var(--dashboard-panel); color: var(--text-primary); font: inherit; }
+.workforce-donut-layout { display: grid; grid-template-columns: minmax(150px, 190px) minmax(0, 1fr); gap: var(--space-4); align-items: center; }
+.workforce-donut { position: relative; width: 100%; height: 170px; }
+.workforce-donut-centre { position: absolute; inset: 50% auto auto 50%; display: grid; width: 88px; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
+.workforce-donut-centre strong { overflow-wrap: anywhere; color: var(--text-primary); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
+.workforce-donut-centre span { color: var(--text-secondary); font-size: 11px; }
+.workforce-chart-segment { cursor: pointer; }
+.workforce-legend { display: grid; gap: 3px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.workforce-legend button { display: grid; width: 100%; min-height: 32px; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: 4px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.workforce-legend button:hover { background: var(--dashboard-panel-muted); }
+.workforce-legend button:focus-visible, .payroll-readiness button:focus-visible, .workforce-card-filter select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.workforce-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.workforce-legend span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); }
+.workforce-legend strong { white-space: nowrap; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.workforce-legend small { color: var(--text-secondary); font-weight: 500; }
+.workforce-card-action { display: flex; justify-content: flex-end; margin-top: var(--space-3); }
+.workforce-chart-canvas { height: 220px; }
+.workforce-chart-note { margin-top: var(--space-2); }
+.workforce-chart-empty { display: grid; min-height: 170px; place-items: center; align-content: center; gap: var(--space-2); padding: var(--space-4); color: var(--text-secondary); text-align: center; }
+.workforce-chart-empty strong { color: var(--text-primary); }
+.workforce-tooltip { display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border: 1px solid var(--dashboard-line); border-radius: var(--radius); background: var(--dashboard-panel); color: var(--text-primary); box-shadow: var(--shadow-sm); font-size: var(--text-xs); }
+.workforce-tooltip span { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.payroll-readiness { display: grid; gap: var(--space-2); }
+.payroll-readiness-summary { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.payroll-readiness-summary strong { font-size: var(--text-lg); color: var(--accent-strong); font-variant-numeric: tabular-nums; }
+.payroll-readiness-summary span { color: var(--text-secondary); font-size: var(--text-xs); }
+.payroll-readiness button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px var(--space-2); padding: 5px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.payroll-readiness button > span, .payroll-readiness button > b { font-size: var(--text-xs); }
+.payroll-readiness button > b { font-variant-numeric: tabular-nums; }
+.payroll-readiness button > i { grid-column: 1 / -1; height: 7px; overflow: hidden; border-radius: 999px; background: var(--dashboard-line); }
+.payroll-readiness button > i span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.workforce-comparison { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--dashboard-line); text-align: right; }
 .hr-exception-table { min-width: 1120px !important; }
 .hr-row-actions { display: flex; justify-content: flex-end; gap: var(--space-1); }
 .dashboard-empty-table { display: grid; justify-items: center; gap: var(--space-2); }
@@ -233,11 +253,6 @@
   .hr-kpi { border-right: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); }
   .hr-kpi:nth-child(2n) { border-right: 0; }
   .hr-kpi:last-child { border-bottom: 0; }
-  .hr-analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hr-analytics-grid > article:nth-child(3n) { border-right: 1px solid var(--dashboard-line); }
-  .hr-analytics-grid > article:nth-child(2n) { border-right: 0; }
-  .hr-analytics-grid > article:nth-last-child(-n + 3) { border-bottom: 1px solid var(--dashboard-line); }
-  .hr-analytics-grid > article:nth-last-child(-n + 2) { border-bottom: 0; }
 }
 
 @media (max-width: 900px) {
@@ -249,6 +264,7 @@
   .hr-dashboard-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hr-dashboard-search { grid-column: 1 / -1; }
   .hr-command-grid { grid-template-columns: 1fr; }
+  .workforce-donut-layout { grid-template-columns: 145px minmax(0, 1fr); }
 }
 
 @media (max-width: 560px) {
@@ -270,12 +286,16 @@
   .hr-dashboard-now { display: grid; }
   .hr-dashboard-utilities { flex-wrap: wrap; }
   .hr-dashboard-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hr-kpi-grid, .hr-analytics-grid { grid-template-columns: 1fr; }
+  .hr-kpi-grid, .workforce-donut-grid, .workforce-trend-grid { grid-template-columns: 1fr; }
   .hr-dashboard-search { grid-column: 1 / -1; }
   .hr-kpi { min-height: 156px; border-right: 0; border-bottom: 1px solid var(--dashboard-line); }
   .hr-kpi:nth-child(2n) { border-right: 0; }
-  .hr-analytics-grid > article, .hr-analytics-grid > article:nth-child(3n), .hr-analytics-grid > article:nth-child(2n), .hr-analytics-grid > article:nth-last-child(-n + 3) { border-right: 0; border-bottom: 1px solid var(--dashboard-line); }
-  .hr-analytics-grid > article:last-child { border-bottom: 0; }
+  .workforce-chart-card, .workforce-chart-card:nth-child(2n), .workforce-donut-grid .workforce-chart-card:nth-last-child(-n + 2), .workforce-trend-grid .workforce-chart-card:nth-last-child(-n + 2) { border-right: 0; border-bottom: 1px solid var(--dashboard-line); }
+  .workforce-donut-grid .workforce-chart-card:last-child, .workforce-trend-grid .workforce-chart-card:last-child { border-bottom: 0; }
+  .workforce-chart-card > header { min-height: 0; }
+  .workforce-donut-layout { grid-template-columns: 120px minmax(0, 1fr); gap: var(--space-3); }
+  .workforce-donut { height: 145px; }
+  .workforce-donut-centre { width: 70px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
