@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 const dashboardModel = await import('../src/features/dashboard/dashboardModel.js').catch(() => ({}));
 
@@ -95,4 +96,46 @@ test('pie data groups records by a visible label', () => {
       { label: 'Unclassified', value: 1 },
     ],
   );
+});
+
+test('operational dashboard filters omit empty values and retain valid scope', () => {
+  assert.deepEqual(dashboardModel.dashboardParams({
+    date: '2026-11-18',
+    branchId: '',
+    departmentId: 4,
+    employmentType: 'REGULAR',
+    search: '  EMP-1042  ',
+    shiftId: '',
+  }), {
+    date: '2026-11-18',
+    departmentId: 4,
+    employmentType: 'REGULAR',
+    search: 'EMP-1042',
+  });
+});
+
+test('today actions are ordered by priority and then employee name', () => {
+  assert.deepEqual(dashboardModel.prioritiseActions([
+    { id: 1, priority: 'MEDIUM', employeeName: 'Zara' },
+    { id: 2, priority: 'HIGH', employeeName: 'Bina' },
+    { id: 3, priority: 'HIGH', employeeName: 'Anu' },
+  ]).map((row) => row.id), [3, 2, 1]);
+});
+
+test('organisation overview exposes the operational HR command-centre landmarks', () => {
+  const source = fs.readFileSync(new URL('../src/features/org/OrgDashboard.jsx', import.meta.url), 'utf8');
+  const appSource = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  for (const label of [
+    "Today’s HR Actions",
+    'Approvals & Alerts',
+    'Attendance Exceptions',
+    'Pending Approvals',
+    'Payroll Blockers',
+    'Onboarding & Offboarding',
+    'Compliance Alerts',
+    'Branch Readiness',
+  ]) assert.match(source, new RegExp(label.replace('&', '\\&')));
+  assert.doesNotMatch(source, /WorkplacePieChart/);
+  assert.doesNotMatch(source, /Absent or unmarked/i);
+  assert.match(appSource, /canPermission\('hr\.view'/);
 });

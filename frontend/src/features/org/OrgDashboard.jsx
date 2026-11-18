@@ -1,293 +1,182 @@
-import React, { useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { orgApi } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import {
-  AttentionList,
-  DashboardError,
-  DashboardSkeleton,
-  DashboardSummary,
-  WorkplacePieChart,
-} from '../dashboard/DashboardPrimitives';
-import {
-  clampedPercent,
-  configuredBranches,
-  licenceAttention,
-  nextTabIndex,
-} from '../dashboard/dashboardModel';
+import { DashboardError, DashboardSkeleton } from '../dashboard/DashboardPrimitives';
+import { dashboardParams, nextTabIndex, prioritiseActions } from '../dashboard/dashboardModel';
+import '../dashboard/Dashboard.css';
 
 const TABS = [
-  { id: 'branches', label: 'Branches' },
-  { id: 'clockins', label: 'Today’s check-ins' },
-  { id: 'leaves', label: 'Staff on leave' },
-  { id: 'promotions', label: 'Career changes' },
-  { id: 'setup', label: 'Setup readiness' },
+  { id: 'attendance', label: 'Attendance Exceptions', dataKey: 'attendanceExceptions' },
+  { id: 'approvals', label: 'Pending Approvals', dataKey: 'pendingApprovals' },
+  { id: 'payroll', label: 'Payroll Blockers', dataKey: 'payrollBlockers' },
+  { id: 'onboarding', label: 'Onboarding & Offboarding', dataKey: 'onboardingOffboarding' },
+  { id: 'compliance', label: 'Compliance Alerts', dataKey: 'complianceAlerts' },
+  { id: 'branches', label: 'Branch Readiness', dataKey: 'branchReadiness' },
 ];
+
+const statusLabel = { OPEN: 'Needs review', PENDING_APPROVAL: 'Pending approval', COMPLETED: 'Completed' };
+
+function indiaDate() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function displayDate(value) {
+  if (!value) return 'Not scheduled';
+  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(`${value}T12:00:00+05:30`));
+}
+
+function currentTime(value) {
+  return new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(value);
+}
+
+function destinationFor(row) {
+  if (row.destination?.startsWith('/people/')) return row.destination.replace('/people/', '/employees/');
+  return row.destination || '/people';
+}
 
 export function OrgDashboard() {
   const navigate = useNavigate();
-  const [selectedBranchId, setSelectedBranchId] = useState('ALL');
-  const [activeTab, setActiveTab] = useState('branches');
+  const { user } = useAuth();
+  const [filters, setFilters] = useState({ date: indiaDate(), branchId: '', departmentId: '', employmentType: '', shiftId: '', search: '' });
+  const deferredSearch = useDeferredValue(filters.search);
+  const [activeTab, setActiveTab] = useState('attendance');
+  const [now, setNow] = useState(new Date());
+  const params = dashboardParams({ ...filters, search: deferredSearch, shiftId: '' });
 
-  const settingsQuery = useQuery({ queryKey: ['org-settings'], queryFn: orgApi.settings });
-  const analyticsQuery = useQuery({
-    queryKey: ['org-dashboard-analytics'],
-    queryFn: orgApi.dashboardAnalytics,
-    refetchInterval: 30000,
-  });
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const settings = settingsQuery.data;
-  const analytics = analyticsQuery.data;
-  const license = settings?.license || {};
-  const usage = settings?.usage || {};
-  const branches = analytics?.branches || [];
-  const configuredBranchRows = configuredBranches(branches);
-  const attendance = analytics?.attendance || {};
-  const leaves = analytics?.leaves || {};
-  const promotions = analytics?.promotions || {};
-  const settingsAvailable = Boolean(settings);
-  const analyticsAvailable = Boolean(analytics);
-
-  const currentBranch = useMemo(() => {
-    if (selectedBranchId === 'ALL') return null;
-    return branches.find((branch) => String(branch.id) === String(selectedBranchId)) || null;
-  }, [branches, selectedBranchId]);
-
-  const metrics = useMemo(() => {
-    if (currentBranch) {
-      const total = Number(currentBranch.totalEmployees) || 0;
-      const present = Number(currentBranch.presentToday) || 0;
-      return {
-        totalEmployees: total,
-        presentToday: present,
-        onLeaveToday: Number(currentBranch.onLeaveToday) || 0,
-        absentToday: Number(currentBranch.absentToday) || 0,
-        presenceRate: clampedPercent(present, total),
-        scopeName: currentBranch.name,
-      };
-    }
-    const total = Number(attendance.totalEmployees ?? usage.employees) || 0;
-    if (!analyticsAvailable) {
-      return {
-        totalEmployees: total,
-        presentToday: 0,
-        onLeaveToday: 0,
-        absentToday: 0,
-        presenceRate: 0,
-        scopeName: 'All branches',
-        attendanceAvailable: false,
-      };
-    }
-    const present = Number(attendance.presentToday) || 0;
-    const onLeave = Number(attendance.onLeaveToday) || 0;
-    const absent = attendance.absentToday == null
-      ? Math.max(0, total - present - onLeave)
-      : Number(attendance.absentToday) || 0;
-    return {
-      totalEmployees: total,
-      presentToday: present,
-      onLeaveToday: onLeave,
-      absentToday: absent,
-      presenceRate: clampedPercent(present, total),
-      scopeName: 'All branches',
-      attendanceAvailable: true,
-    };
-  }, [analyticsAvailable, attendance, currentBranch, usage.employees]);
-
-  const filteredClockIns = useMemo(() => filterByBranch(attendance.recentCheckIns, currentBranch), [attendance.recentCheckIns, currentBranch]);
-  const filteredLeaves = useMemo(() => filterByBranch(leaves.activeLeavesList, currentBranch), [leaves.activeLeavesList, currentBranch]);
-  const filteredPromotions = useMemo(() => filterByBranch(promotions.recentEvents, currentBranch), [promotions.recentEvents, currentBranch]);
-  const setupItems = [
-    { done: settingsAvailable ? Boolean(settings?.organization?.name) : null, label: 'Organisation profile and details configured' },
-    { done: settingsAvailable ? Boolean(settings?.smtp?.enabled) : null, label: 'Email notification service configured' },
-    { done: settingsAvailable ? Number(usage.users) > 0 : null, label: 'System administrative users created' },
-    { done: settingsAvailable ? Number(usage.employees) > 0 : null, label: 'Employee records onboarded' },
-    { done: analyticsAvailable ? configuredBranchRows.length > 0 : null, label: 'Branch hierarchy configured' },
-  ];
-  const incompleteSetup = setupItems.filter((item) => item.done === false).length;
-  const pendingApprovals = Number(leaves.pendingApprovalsCount) || 0;
-  const licenceStatus = licenceAttention(license);
-
-  const summaryItems = [
-    {
-      id: 'present', label: 'Present today', value: metrics.attendanceAvailable === false ? `— / ${metrics.totalEmployees}` : `${metrics.presentToday} / ${metrics.totalEmployees}`,
-      detail: metrics.attendanceAvailable === false ? 'Attendance analytics unavailable' : `${metrics.presenceRate}% attendance in ${metrics.scopeName}`,
-      tone: metrics.attendanceAvailable === false ? 'neutral' : metrics.presenceRate >= 85 ? 'success' : metrics.presenceRate >= 65 ? 'warning' : 'danger',
-    },
-    {
-      id: 'leave', label: 'On approved leave', value: metrics.attendanceAvailable === false ? '—' : metrics.onLeaveToday,
-      detail: metrics.attendanceAvailable === false ? 'Attendance analytics unavailable' : currentBranch ? `Current status in ${currentBranch.name}` : 'Current organisation status',
-      tone: metrics.attendanceAvailable !== false && metrics.onLeaveToday ? 'warning' : 'neutral',
-    },
-    {
-      id: 'exceptions', label: 'Attendance exceptions', value: metrics.attendanceAvailable === false ? '—' : metrics.absentToday,
-      detail: metrics.attendanceAvailable === false ? 'Attendance analytics unavailable' : 'Absent or not yet marked',
-      tone: metrics.attendanceAvailable === false ? 'neutral' : metrics.absentToday ? 'danger' : 'success',
-    },
-    {
-      id: 'branches', label: 'Active branch units', value: analyticsAvailable ? configuredBranchRows.length : '—',
-      detail: analyticsAvailable ? `${configuredBranchRows.filter((branch) => branch.isHeadOffice).length} Head Office · ${configuredBranchRows.filter((branch) => !branch.isHeadOffice).length} branches` : 'Branch analytics unavailable',
-    },
-  ];
-  const attendancePie = [
-    { label: 'Present', value: metrics.presentToday, tone: 'success' },
-    { label: 'Approved leave', value: metrics.onLeaveToday, tone: 'warning' },
-    { label: 'Absent or unmarked', value: metrics.absentToday, tone: 'danger' },
-  ];
-  const branchStaffingPie = branches.map((branch) => ({ label: branch.name, value: branch.totalEmployees }));
-  const attentionItems = [
-    pendingApprovals > 0 && {
-      id: 'leave-approvals', title: `${pendingApprovals} leave ${pendingApprovals === 1 ? 'request' : 'requests'} awaiting review`,
-      detail: 'Organisation-wide approval queue.', tone: 'warning', actionLabel: 'Review', onAction: () => navigate('/leave'),
-    },
-    analyticsAvailable && metrics.absentToday > 0 && {
-      id: 'attendance', title: `${metrics.absentToday} attendance ${metrics.absentToday === 1 ? 'exception' : 'exceptions'}`,
-      detail: `Absent or unmarked in ${metrics.scopeName}.`, tone: 'danger', actionLabel: 'Open people', onAction: () => navigate('/people'),
-    },
-    settingsAvailable && licenceStatus.warning && {
-      id: 'licence', title: licenceStatus.title,
-      detail: 'Review the licence status to avoid interrupted access.', tone: 'danger', actionLabel: 'Settings', onAction: () => navigate('/settings'),
-    },
-    incompleteSetup > 0 && {
-      id: 'setup', title: `${incompleteSetup} setup ${incompleteSetup === 1 ? 'item' : 'items'} incomplete`,
-      detail: 'Complete the operational readiness checklist.', tone: 'warning', actionLabel: 'Review', onAction: () => setActiveTab('setup'),
-    },
-  ].filter(Boolean);
-  const tabCounts = {
-    branches: branches.length,
-    clockins: filteredClockIns.length,
-    leaves: filteredLeaves.length,
-    promotions: filteredPromotions.length,
-    setup: incompleteSetup,
+  const dashboardQuery = useQuery({ queryKey: ['org-dashboard-analytics', params], queryFn: () => orgApi.dashboardAnalytics(params), refetchInterval: 30000 });
+  const data = dashboardQuery.data;
+  const summary = data?.summary || {};
+  const attendance = summary.attendance || {};
+  const payroll = summary.payroll || {};
+  const workspaces = data?.workspaces || {};
+  const filterOptions = data?.filterOptions || {};
+  const actions = prioritiseActions(data?.actions || []).slice(0, 10);
+  const tabCounts = Object.fromEntries(TABS.map((tab) => [tab.id, workspaces[tab.dataKey]?.length || 0]));
+  const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const openTab = (tab) => {
+    setActiveTab(tab);
+    requestAnimationFrame(() => document.getElementById('dashboard-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
-
   const handleTabKeyDown = (event, index) => {
     const nextIndex = nextTabIndex(index, event.key, TABS.length);
     if (nextIndex === index) return;
     event.preventDefault();
-    const tabList = event.currentTarget.parentElement;
     setActiveTab(TABS[nextIndex].id);
-    requestAnimationFrame(() => tabList?.querySelectorAll('[role="tab"]')[nextIndex]?.focus());
+    requestAnimationFrame(() => event.currentTarget.parentElement?.querySelectorAll('[role="tab"]')[nextIndex]?.focus());
   };
 
-  if (analyticsQuery.isLoading && !analytics) return <DashboardSkeleton />;
+  if (dashboardQuery.isLoading && !data) return <DashboardSkeleton />;
 
-  return (
-    <div className="page dashboard-page">
-      <header className="dashboard-header">
-        <div className="dashboard-header-copy">
-          <h1>{settings?.organization?.name || 'Organisation'} Overview</h1>
-          <p>Current attendance, operational exceptions, and branch activity in one control room.</p>
-        </div>
-        <div className="dashboard-toolbar">
-          <div className="dashboard-scope">
-            <label htmlFor="dash-branch-select">Reporting scope</label>
-            <select id="dash-branch-select" className="input" value={selectedBranchId} onChange={(event) => setSelectedBranchId(event.target.value)}>
-              <option value="ALL">All organisation staff</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.code} — {branch.name} ({branch.totalEmployees} staff)</option>)}
-            </select>
-          </div>
-          <div className="dashboard-actions">
-            <Button variant="secondary" onClick={() => navigate('/people')}>People</Button>
-            <Button variant="secondary" onClick={() => navigate('/organisation-structure')}>Structure</Button>
-            <Button onClick={() => navigate('/payroll')}>Payroll</Button>
-          </div>
-        </div>
-      </header>
+  const kpis = [
+    { id: 'present', label: 'Present Today', value: `${attendance.present || 0} / ${attendance.total || 0}`, meta: `${attendance.percentage || 0}% attendance`, detail: `${attendance.late || 0} late · ${attendance.unmarked || 0} unmarked · ${attendance.onLeave || 0} on leave`, tone: attendance.percentage >= 85 ? 'success' : attendance.percentage >= 65 ? 'warning' : 'danger', action: () => navigate('/employee-services/time') },
+    { id: 'exceptions', label: 'Attendance Exceptions', value: summary.attendanceExceptions?.total || 0, meta: summary.attendanceExceptions?.critical ? `${summary.attendanceExceptions.critical} critical` : 'Needs review', detail: `${attendance.unmarked || 0} not checked-in · ${attendance.late || 0} late · ${attendance.missingCheckOut || 0} missing check-out · ${attendance.shiftMismatch || 0} shift mismatch`, tone: summary.attendanceExceptions?.total ? 'danger' : 'success', action: () => openTab('attendance') },
+    { id: 'leave', label: 'Leave Pending Approval', value: summary.leave?.pending || 0, meta: `${summary.leave?.urgent || 0} urgent`, detail: 'Manager decision queue', tone: summary.leave?.urgent ? 'danger' : summary.leave?.pending ? 'warning' : 'success', action: () => openTab('approvals') },
+    { id: 'payroll', label: 'Payroll Readiness', value: `${payroll.readinessPercent ?? 100}%`, meta: `${payroll.recordsNeedingReview || 0} employee records need review`, detail: `${String(payroll.cycleStatus || 'NOT_STARTED').replace(/_/g, ' ')} · deadline ${displayDate(payroll.deadline)}`, tone: payroll.readinessPercent >= 90 ? 'success' : payroll.readinessPercent >= 70 ? 'warning' : 'danger', action: () => openTab('payroll') },
+    { id: 'compliance', label: 'Compliance / Document Alerts', value: summary.compliance?.alerts || 0, meta: `${summary.compliance?.overdue || 0} overdue`, detail: 'Identity, qualification and probation checks', tone: summary.compliance?.overdue ? 'danger' : summary.compliance?.alerts ? 'warning' : 'success', action: () => openTab('compliance') },
+  ];
 
-      {settingsQuery.isError ? <DashboardError message="Organisation settings could not be loaded. Available analytics remain visible." onRetry={() => settingsQuery.refetch()} /> : null}
-      {analyticsQuery.isError ? <DashboardError message="Operational analytics could not be loaded." onRetry={() => analyticsQuery.refetch()} /> : null}
-      <DashboardSummary items={summaryItems} />
-
-      <div className="dashboard-control-grid">
-        <section className="dashboard-panel" aria-labelledby="workplace-snapshot-title">
-          <div className="dashboard-panel-header"><div><h2 id="workplace-snapshot-title">Workplace snapshot</h2><p>Proportional answers to the main workforce questions.</p></div></div>
-          <div className="dashboard-pie-grid">
-            <WorkplacePieChart title="Where is everyone today?" detail={`Current attendance in ${metrics.scopeName}.`} items={attendancePie} emptyMessage="No employee attendance data is available for this scope." unit="staff" />
-            <WorkplacePieChart title="Why are people away today?" detail="Approved leave types, organisation-wide." items={leaves.pieChartData || []} emptyMessage="No approved leave is active today." unit="leave records" />
-            <WorkplacePieChart title="How is the workforce structured?" detail="Current cadre distribution, organisation-wide." items={promotions.cadrePieChart || []} emptyMessage="No cadre distribution is available." unit="staff" />
-            <WorkplacePieChart title="Where is the workforce allocated?" detail="Staff distribution across branches and unassigned groups." items={branchStaffingPie} emptyMessage="No branch staffing data is available." unit="staff" />
-          </div>
-        </section>
-        <aside className="dashboard-panel" aria-labelledby="org-attention-title">
-          <div className="dashboard-panel-header"><div><h2 id="org-attention-title">Needs attention</h2><p>Items that may need an administrator’s action.</p></div></div>
-          <div className="dashboard-panel-body"><AttentionList items={attentionItems} emptyTitle="No immediate action required" emptyDetail="Attendance, leave, licence, and setup checks are clear." /></div>
-        </aside>
+  return <div className="page dashboard-page hr-dashboard">
+    <header className="hr-dashboard-header">
+      <div><h1>HR Operations</h1><p>Resolve today’s people, attendance, leave, payroll and compliance work.</p></div>
+      <div className="hr-dashboard-now" aria-label={`Today ${displayDate(indiaDate())}, current time ${currentTime(now)}`}><strong>Today: {displayDate(indiaDate())}</strong><span>Current time: {currentTime(now)}</span></div>
+      <div className="hr-dashboard-utilities">
+        <Button variant="secondary" size="sm" aria-label="View approvals and alerts" onClick={() => document.getElementById('dashboard-alerts')?.scrollIntoView({ behavior: 'smooth' })}><span className="hr-bell" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4.5 8a5.5 5.5 0 0 1 11 0v3.3l1.5 2.2H3l1.5-2.2V8ZM8 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></span>Alerts</Button>
+        <Button variant="secondary" size="sm" onClick={() => navigate('/account')}>{user?.name || 'My profile'}</Button>
       </div>
+    </header>
 
-      <section className="dashboard-panel dashboard-workspace" aria-label="Operational workspace">
-        <div className="dashboard-tabs" role="tablist" aria-label="Organisation dashboard views">
-          {TABS.map((tab, index) => (
-            <button id={`dashboard-tab-${tab.id}`} key={tab.id} type="button" role="tab" className="dashboard-tab" aria-selected={activeTab === tab.id} aria-controls={`dashboard-panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => handleTabKeyDown(event, index)}>
-              {tab.label}<span className="dashboard-tab-count">{tabCounts[tab.id]}</span>
-            </button>
-          ))}
-        </div>
-        <div id={`dashboard-panel-${activeTab}`} className="dashboard-tab-panel" role="tabpanel" aria-labelledby={`dashboard-tab-${activeTab}`}>
-          {activeTab === 'branches' ? <BranchesPanel branches={branches} selectedBranchId={selectedBranchId} onSelect={setSelectedBranchId} /> : null}
-          {activeTab === 'clockins' ? <CheckInsPanel rows={filteredClockIns} scopeName={metrics.scopeName} /> : null}
-          {activeTab === 'leaves' ? <LeavesPanel rows={filteredLeaves} scopeName={metrics.scopeName} /> : null}
-          {activeTab === 'promotions' ? <CareerPanel rows={filteredPromotions} scopeName={metrics.scopeName} /> : null}
-          {activeTab === 'setup' ? <SetupPanel items={setupItems} /> : null}
-        </div>
+    <section className="hr-dashboard-filters" aria-label="Dashboard filters">
+      <FilterSelect label="Organisation" value="ALL" disabled><option value="ALL">All Staff</option></FilterSelect>
+      <label><span>Date</span><input className="input" type="date" value={filters.date} onChange={(event) => updateFilter('date', event.target.value)} /></label>
+      <FilterSelect label="Branch" value={filters.branchId} onChange={(event) => updateFilter('branchId', event.target.value)}><option value="">All branches</option>{(filterOptions.branches || []).map((row) => <option key={row.id} value={row.id}>{row.code} — {row.name}</option>)}</FilterSelect>
+      <FilterSelect label="Department" value={filters.departmentId} onChange={(event) => updateFilter('departmentId', event.target.value)}><option value="">All departments</option>{(filterOptions.departments || []).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</FilterSelect>
+      <FilterSelect label="Employment type" value={filters.employmentType} onChange={(event) => updateFilter('employmentType', event.target.value)}><option value="">All types</option>{(filterOptions.employmentTypes || []).map((value) => <option key={value} value={value}>{value.replace(/_/g, ' ')}</option>)}</FilterSelect>
+      <FilterSelect label="Shift" value="" disabled title="Shift scheduling is not configured"><option value="">Not configured</option></FilterSelect>
+      <label className="hr-dashboard-search"><span>Search employee</span><input className="input" type="search" value={filters.search} placeholder="Name or employee ID" onChange={(event) => updateFilter('search', event.target.value)} /></label>
+    </section>
+
+    {dashboardQuery.isError ? <DashboardError message="The HR operations dashboard could not be loaded. Check your connection and try again." onRetry={() => dashboardQuery.refetch()} /> : null}
+
+    <section className="hr-kpi-grid" aria-label="Today’s HR metrics">{kpis.map((item) => <button key={item.id} type="button" className={`hr-kpi hr-tone-${item.tone}`} onClick={item.action}><span className="hr-kpi-label">{item.label}</span><span className="hr-kpi-value">{item.value}</span><span className="hr-kpi-meta">{item.meta}</span><span className="hr-kpi-detail">{item.detail}</span><span className="hr-kpi-drill">View details <span aria-hidden="true">→</span></span></button>)}</section>
+
+    <div className="hr-command-grid">
+      <section className="dashboard-panel hr-actions-panel" aria-labelledby="today-actions-title">
+        <div className="dashboard-panel-header"><div><h2 id="today-actions-title">Today’s HR Actions</h2><p>Prioritised employee records requiring attention in the selected scope.</p></div><Badge variant={actions.some((row) => row.priority === 'HIGH') ? 'danger' : 'default'}>{actions.length} open</Badge></div>
+        <ActionsTable rows={actions} onOpen={(row) => navigate(destinationFor(row))} emptyMessage="No HR actions need attention for the selected filters." />
       </section>
+      <aside id="dashboard-alerts" className="dashboard-panel hr-alerts-panel" aria-labelledby="approvals-alerts-title">
+        <div className="dashboard-panel-header"><div><h2 id="approvals-alerts-title">Approvals & Alerts</h2><p>Queues requiring an HR or manager decision.</p></div></div>
+        <div className="hr-alert-list">{(data?.alerts || []).map((alert) => <article key={alert.id} className="hr-alert-card"><div><strong>{alert.label}</strong><span>{alert.urgency === 'NORMAL' ? 'Routine' : `${alert.urgency.toLowerCase()} urgency`}{alert.dueDate ? ` · Due ${displayDate(alert.dueDate)}` : ''}</span></div><b>{alert.count}</b><Button variant="ghost" size="sm" onClick={() => navigate(alert.destination)}>View all</Button></article>)}</div>
+      </aside>
     </div>
-  );
+
+    <OperationalAnalytics analytics={data?.analytics || {}} />
+
+    <section id="dashboard-workspace" className="dashboard-panel dashboard-workspace" aria-label="HR operational work queues">
+      <div className="dashboard-tabs" role="tablist" aria-label="HR work queues">{TABS.map((tab, index) => <button id={`dashboard-tab-${tab.id}`} key={tab.id} type="button" role="tab" className="dashboard-tab" aria-selected={activeTab === tab.id} aria-controls={`dashboard-panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => handleTabKeyDown(event, index)}>{tab.label}<span className="dashboard-tab-count">{tabCounts[tab.id]}</span></button>)}</div>
+      <div id={`dashboard-panel-${activeTab}`} className="dashboard-tab-panel" role="tabpanel" aria-labelledby={`dashboard-tab-${activeTab}`}>
+        {activeTab === 'attendance' ? <AttendanceExceptions rows={workspaces.attendanceExceptions || []} onOpen={(row) => navigate(destinationFor(row))} /> : null}
+        {activeTab === 'approvals' ? <QueuePanel title="Pending approvals" detail="Leave requests awaiting the assigned manager or approving authority." rows={workspaces.pendingApprovals || []} onOpen={(row) => navigate(destinationFor(row))} empty="No leave requests are awaiting approval." /> : null}
+        {activeTab === 'payroll' ? <QueuePanel title="Payroll blockers" detail="Employee master-data issues that can prevent a complete payroll run." rows={workspaces.payrollBlockers || []} onOpen={(row) => navigate(destinationFor(row))} empty="No employee payroll records need review." /> : null}
+        {activeTab === 'onboarding' ? <QueuePanel title="Onboarding & offboarding" detail="Incomplete employee placement tasks and current lifecycle actions." rows={workspaces.onboardingOffboarding || []} onOpen={(row) => navigate(destinationFor(row))} empty="No onboarding or offboarding actions are pending." /> : null}
+        {activeTab === 'compliance' ? <QueuePanel title="Compliance alerts" detail="Identity, qualification, probation and policy records requiring review." rows={workspaces.complianceAlerts || []} onOpen={(row) => navigate(destinationFor(row))} empty="No employee compliance alerts are active." /> : null}
+        {activeTab === 'branches' ? <BranchReadiness rows={workspaces.branchReadiness || []} onAdd={() => navigate('/organisation-structure')} /> : null}
+      </div>
+    </section>
+  </div>;
 }
 
-function filterByBranch(rows = [], currentBranch) {
-  if (!currentBranch) return rows || [];
-  return (rows || []).filter((row) => row.branchName === currentBranch.name);
+function FilterSelect({ label, children, ...props }) {
+  return <label><span>{label}</span><select className="input" {...props}>{children}</select></label>;
 }
 
-function PanelHeading({ title, detail, action }) {
-  return <div className="dashboard-tab-heading"><div><h2>{title}</h2><p>{detail}</p></div>{action}</div>;
+function ActionsTable({ rows, onOpen, emptyMessage }) {
+  if (!rows.length) return <div className="dashboard-empty-table"><strong>All clear for this scope</strong><span>{emptyMessage}</span></div>;
+  return <div className="dashboard-table-scroll"><table className="table hr-actions-table"><thead><tr><th className="table-th">Priority</th><th className="table-th">Employee</th><th className="table-th">Employee ID</th><th className="table-th">Branch / Department</th><th className="table-th">Issue Type</th><th className="table-th">Details</th><th className="table-th">Owner / Reporting Manager</th><th className="table-th">Status</th><th className="table-th table-th-right">Action</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><Badge variant={row.priority === 'HIGH' ? 'danger' : 'warning'}>{row.priority === 'HIGH' ? 'Critical' : 'Needs review'}</Badge></td><td className="table-td"><strong>{row.employeeName}</strong></td><td className="table-td mono">{row.empCode}</td><td className="table-td"><strong>{row.branchName}</strong><span className="hr-cell-subtext">{row.departmentName}</span></td><td className="table-td"><Badge variant={row.issueType === 'PAYROLL' ? 'info' : row.issueType === 'COMPLIANCE' ? 'warning' : 'default'}>{row.issueType}</Badge></td><td className="table-td hr-detail-cell">{row.details}</td><td className="table-td">{row.owner}</td><td className="table-td"><Badge variant={row.status === 'PENDING_APPROVAL' ? 'info' : row.status === 'COMPLETED' ? 'success' : 'warning'}>{statusLabel[row.status] || row.status}</Badge></td><td className="table-td table-td-right"><Button variant="secondary" size="sm" onClick={() => onOpen(row)}>{row.actionLabel || 'Review'}</Button></td></tr>)}</tbody></table></div>;
 }
 
-function BranchesPanel({ branches, selectedBranchId, onSelect }) {
-  return (
-    <>
-      <PanelHeading title="Branch operations" detail="Today’s staffing and attendance by operating unit." action={selectedBranchId !== 'ALL' ? <Button variant="secondary" size="sm" onClick={() => onSelect('ALL')}>Show all branches</Button> : null} />
-      {!branches.length ? <p className="dashboard-empty-table">No active branches found. Add branches under Organisation Structure.</p> : (
-        <div className="dashboard-table-scroll"><table className="table"><thead><tr>
-          <th className="table-th">Branch</th><th className="table-th">Unit type</th><th className="table-th table-th-right">Staff</th><th className="table-th table-th-right">Present</th><th className="table-th table-th-right">On leave</th><th className="table-th table-th-right">Exceptions</th><th className="table-th">Presence</th><th className="table-th table-th-right">Action</th>
-        </tr></thead><tbody>{branches.map((branch) => {
-          const selected = String(branch.id) === String(selectedBranchId);
-          const rate = Number(branch.presenceRate) || 0;
-          const progressClass = rate >= 85 ? 'dashboard-progress-success' : rate >= 65 ? 'dashboard-progress-warning' : 'dashboard-progress-danger';
-          return <tr key={branch.id} className={`table-row ${selected ? 'dashboard-table-row-selected' : ''}`}>
-            <td className="table-td"><div className="dashboard-table-name"><strong>{branch.name}</strong><span className="mono dashboard-code">{branch.code}</span></div></td>
-            <td className="table-td"><Badge variant={branch.isHeadOffice ? 'info' : 'default'}>{branch.unitType === 'HEAD_OFFICE' || branch.isHeadOffice ? 'Head Office' : 'Branch'}</Badge></td>
-            <td className="table-td table-td-right dashboard-number">{branch.totalEmployees}</td><td className="table-td table-td-right dashboard-number dashboard-number-success">{branch.presentToday}</td><td className="table-td table-td-right dashboard-number dashboard-number-warning">{branch.onLeaveToday}</td><td className="table-td table-td-right dashboard-number dashboard-number-danger">{branch.absentToday}</td>
-            <td className="table-td"><div className="dashboard-progress-cell"><progress className={`dashboard-table-progress ${progressClass}`} max="100" value={rate} aria-label={`${branch.name} presence ${rate}%`} /><span>{rate}%</span></div></td>
-            <td className="table-td table-td-right"><Button variant={selected ? 'primary' : 'ghost'} size="sm" onClick={() => onSelect(selected ? 'ALL' : String(branch.id))}>{selected ? 'Viewing' : 'Inspect'}</Button></td>
-          </tr>;
-        })}</tbody></table></div>
-      )}
-    </>
-  );
+function OperationalAnalytics({ analytics }) {
+  const trend = analytics.attendanceTrend || [];
+  const maxAttendance = Math.max(1, ...trend.map((row) => Number(row.total) || 0));
+  return <section className="dashboard-panel hr-analytics" aria-labelledby="workforce-signals-title"><div className="dashboard-panel-header"><div><h2 id="workforce-signals-title">Workforce Signals</h2><p>Compact context for today’s operational decisions.</p></div></div><div className="hr-analytics-grid">
+    <article><h3>Attendance trend</h3><p>Last 7 working days</p><div className="hr-trend-bars" aria-label="Attendance during the last seven working days">{trend.map((row) => <div key={row.date}><span className="hr-trend-bar"><i style={{ height: `${Math.round((row.present / maxAttendance) * 100)}%` }} /></span><strong>{row.present}</strong><small>{new Intl.DateTimeFormat('en-IN', { weekday: 'short' }).format(new Date(`${row.date}T12:00:00+05:30`))}</small></div>)}</div></article>
+    <RankedList title="Headcount by branch" rows={analytics.headcountByBranch || []} empty="No branches configured yet." />
+    <RankedList title="Headcount by department" rows={analytics.headcountByDepartment || []} empty="No department assignments available." />
+    <article><h3>Late arrival trend</h3><p>Last 7 working days</p><div className="hr-analytics-empty">{analytics.shiftAnalyticsAvailable ? 'No late arrivals recorded.' : 'Shift schedules and late thresholds are not configured.'}</div></article>
+    <RankedList title="Leave distribution" rows={analytics.leaveDistribution || []} empty="No leave applications in the selected period." />
+    <article><h3>Employee movements</h3><p>This month</p><div className="hr-movement-grid"><span><strong>{analytics.monthlyMovements?.joiners || 0}</strong>Joiners</span><span><strong>{analytics.monthlyMovements?.exitsAvailable ? analytics.monthlyMovements.exits : '—'}</strong>Exits</span><span><strong>{analytics.monthlyMovements?.transfers || 0}</strong>Transfers</span><span><strong>{analytics.monthlyMovements?.probationCompletions || 0}</strong>Confirmed</span></div></article>
+  </div></section>;
 }
 
-function CheckInsPanel({ rows, scopeName }) {
-  return <><PanelHeading title="Recent check-ins today" detail={`Recent server activity for ${scopeName}; this is not a complete attendance history.`} />
-    {!rows.length ? <p className="dashboard-empty-table">No check-in events have been recorded for this scope today.</p> : <div className="dashboard-table-scroll"><table className="table"><thead><tr><th className="table-th">Employee</th><th className="table-th">Branch</th><th className="table-th">Check-in</th><th className="table-th">Check-out</th><th className="table-th">Status</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><strong>{row.name}</strong> <span className="mono dashboard-code">({row.empCode})</span></td><td className="table-td">{row.branchName}</td><td className="table-td mono dashboard-number-success">{row.checkInTime}</td><td className="table-td mono">{row.checkOutTime || '—'}</td><td className="table-td"><Badge variant={row.checkOutTime ? 'default' : 'success'}>{row.checkOutTime ? 'Clocked out' : 'Present'}</Badge></td></tr>)}</tbody></table></div>}
-  </>;
+function RankedList({ title, rows, empty }) {
+  const top = [...rows].sort((left, right) => Number(right.value) - Number(left.value)).slice(0, 5);
+  const max = Math.max(1, ...top.map((row) => Number(row.value) || 0));
+  return <article><h3>{title}</h3><p>Current selected scope</p>{!top.length ? <div className="hr-analytics-empty">{empty}</div> : <ol className="hr-ranked-bars">{top.map((row) => <li key={row.label}><span>{row.label}</span><b>{row.value}</b><i><span style={{ width: `${Math.round((Number(row.value) / max) * 100)}%` }} /></i></li>)}</ol>}</article>;
 }
 
-function LeavesPanel({ rows, scopeName }) {
-  return <><PanelHeading title="Staff on approved leave" detail={`Current approved leave for ${scopeName}.`} />
-    {!rows.length ? <p className="dashboard-empty-table">No staff members are on approved leave in this scope today.</p> : <div className="dashboard-table-scroll"><table className="table"><thead><tr><th className="table-th">Employee</th><th className="table-th">Branch</th><th className="table-th">Leave type</th><th className="table-th">Duration</th><th className="table-th">Period</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><strong>{row.name}</strong> <span className="mono dashboard-code">({row.empCode})</span></td><td className="table-td">{row.branchName}</td><td className="table-td"><Badge variant="warning">{row.leaveType}</Badge></td><td className="table-td mono">{row.days} days</td><td className="table-td mono">{row.fromDate} to {row.toDate}</td></tr>)}</tbody></table></div>}
-  </>;
+function PanelHeading({ title, detail }) {
+  return <div className="dashboard-tab-heading"><div><h2>{title}</h2><p>{detail}</p></div></div>;
 }
 
-function CareerPanel({ rows, scopeName }) {
-  return <><PanelHeading title="Recent career changes" detail={`Recent server activity for ${scopeName}; this is not a complete service history.`} />
-    {!rows.length ? <p className="dashboard-empty-table">No recent promotions or cadre changes are available for this scope.</p> : <div className="dashboard-table-scroll"><table className="table"><thead><tr><th className="table-th">Date</th><th className="table-th">Employee</th><th className="table-th">Branch</th><th className="table-th">Event</th><th className="table-th">Current cadre</th><th className="table-th">Order reference / notes</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td mono">{row.eventDate}</td><td className="table-td"><strong>{row.name}</strong> <span className="mono dashboard-code">({row.empCode})</span></td><td className="table-td">{row.branchName}</td><td className="table-td"><Badge variant="info">{row.eventType}</Badge></td><td className="table-td">{row.cadre}</td><td className="table-td">{row.orderRef ? <span className="mono">[{row.orderRef}] </span> : null}{row.remarks}</td></tr>)}</tbody></table></div>}
-  </>;
+function QueuePanel({ title, detail, rows, onOpen, empty }) {
+  return <><PanelHeading title={title} detail={detail} /><ActionsTable rows={rows} onOpen={onOpen} emptyMessage={empty} /></>;
 }
 
-function SetupPanel({ items }) {
-  return <><PanelHeading title="Setup readiness" detail="Core configuration needed for normal organisation operations." /><div className="dashboard-checklist">{items.map((item) => <div key={item.label} className="dashboard-checklist-item" data-complete={item.done === true}><span className="dashboard-checklist-mark">{item.done == null ? 'Unavailable' : item.done ? 'Complete' : 'Pending'}</span><span>{item.label}</span></div>)}</div></>;
+function AttendanceExceptions({ rows, onOpen }) {
+  return <><PanelHeading title="Attendance exceptions" detail="Shift context is shown before any employee is classified as late or absent." />{!rows.length ? <div className="dashboard-empty-table"><strong>No attendance exceptions</strong><span>All attendance records in this scope are marked.</span></div> : <div className="dashboard-table-scroll"><table className="table hr-exception-table"><thead><tr><th className="table-th">Employee</th><th className="table-th">Scheduled shift</th><th className="table-th">First check-in / last check-out</th><th className="table-th">Status</th><th className="table-th">Exception reason</th><th className="table-th">Manager</th><th className="table-th table-th-right">Actions</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><strong>{row.employeeName}</strong><span className="hr-cell-subtext mono">{row.empCode}</span></td><td className="table-td">{row.scheduledShift}<span className="hr-cell-subtext">Late threshold: {row.lateThreshold}</span></td><td className="table-td mono">{row.firstCheckIn || '—'} / {row.lastCheckOut || '—'}</td><td className="table-td"><Badge variant="warning">Unmarked</Badge></td><td className="table-td">{row.reason}</td><td className="table-td">{row.manager}</td><td className="table-td table-td-right"><div className="hr-row-actions"><Button size="sm" variant="secondary" onClick={() => onOpen(row)}>Correct</Button><Button size="sm" variant="ghost" onClick={() => onOpen(row)}>Approve</Button><Button size="sm" variant="ghost" onClick={() => onOpen(row)}>Escalate</Button></div></td></tr>)}</tbody></table></div>}</>;
+}
+
+function BranchReadiness({ rows, onAdd }) {
+  return <><PanelHeading title="Branch readiness" detail="Today’s staffing state across configured operating units." />{!rows.length ? <div className="dashboard-empty-table"><strong>No branches configured yet</strong><span>Add a branch before assigning branch-level staff and attendance.</span><Button size="sm" onClick={onAdd}>Add a branch</Button></div> : <div className="dashboard-table-scroll"><table className="table"><thead><tr><th className="table-th">Branch</th><th className="table-th">Unit</th><th className="table-th table-th-right">Employees</th><th className="table-th table-th-right">Present</th><th className="table-th table-th-right">On leave</th><th className="table-th table-th-right">Unmarked</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><strong>{row.name}</strong><span className="hr-cell-subtext mono">{row.code}</span></td><td className="table-td"><Badge variant={row.isHeadOffice ? 'info' : 'default'}>{row.isHeadOffice ? 'Head Office' : 'Branch'}</Badge></td><td className="table-td table-td-right">{row.employees}</td><td className="table-td table-td-right dashboard-number-success">{row.present}</td><td className="table-td table-td-right dashboard-number-warning">{row.onLeave}</td><td className="table-td table-td-right dashboard-number-danger">{row.unmarked}</td></tr>)}</tbody></table></div>}</>;
 }

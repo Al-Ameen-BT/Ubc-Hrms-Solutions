@@ -76,3 +76,16 @@ export function countByLabel(rows = [], field, fallback = 'Unclassified') {
   });
   return [...counts].map(([label, value]) => ({ label, value }));
 }
+
+export function dashboardParams(filters = {}) {
+  return Object.fromEntries(Object.entries(filters).flatMap(([key, value]) => {
+    const normalized = typeof value === 'string' ? value.trim() : value;
+    return normalized === '' || normalized == null ? [] : [[key, normalized]];
+  }));
+}
+
+export function prioritiseActions(rows = []) {
+  const order = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  return [...rows].sort((left, right) => (order[left.priority] ?? 9) - (order[right.priority] ?? 9)
+    || String(left.employeeName || '').localeCompare(String(right.employeeName || '')));
+}

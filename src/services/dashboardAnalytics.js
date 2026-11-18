@@ -366,7 +366,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
     lastCheckOut: null,
     manager: 'Reporting manager not assigned',
     actionLabel: 'Review',
-    destination: '/time',
+    destination: '/employee-services/time',
   }));
 
   const leaveApprovals = scopedPendingLeaves.map((leave) => actionFor(leave.Employee, {
@@ -393,7 +393,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
       details: `Missing ${missing.join(' and ')}`,
       owner: 'Payroll Officer',
       actionLabel: 'Fix record',
-      destination: `/people/${employee.id}`,
+      destination: `/employees/${employee.id}`,
     })];
   });
 
@@ -411,7 +411,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
       details: missing.join(', '),
       dueDate: probationDue && daysBetween(today, probationDue) <= 30 ? probationDue : null,
       actionLabel: 'Review record',
-      destination: `/people/${employee.id}`,
+      destination: `/employees/${employee.id}`,
     })];
   });
 
@@ -421,7 +421,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
     issueType: 'ONBOARDING',
     details: !employee.branchId ? 'Branch assignment is required' : 'Department assignment is required',
     actionLabel: 'Complete record',
-    destination: `/people/${employee.id}`,
+    destination: `/employees/${employee.id}`,
   }));
 
   const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
@@ -487,7 +487,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
 
   const alerts = [
     { id: 'leave', label: 'Leave approvals awaiting manager decision', count: leaveApprovals.length, urgency: urgentLeaves ? 'HIGH' : 'NORMAL', dueDate: urgentLeaves ? today : null, destination: '/leave' },
-    { id: 'attendance', label: 'Attendance regularisation requests', count: attendanceExceptions.length, urgency: attendanceExceptions.length ? 'MEDIUM' : 'NORMAL', dueDate: attendanceExceptions.length ? today : null, destination: '/time' },
+    { id: 'attendance', label: 'Attendance regularisation requests', count: attendanceExceptions.length, urgency: attendanceExceptions.length ? 'MEDIUM' : 'NORMAL', dueDate: attendanceExceptions.length ? today : null, destination: '/employee-services/time' },
     { id: 'onboarding', label: 'Employee onboarding tasks', count: onboardingRows.length, urgency: onboardingRows.length ? 'MEDIUM' : 'NORMAL', dueDate: null, destination: '/people' },
     { id: 'probation', label: 'Probation confirmations due', count: probationDue, urgency: probationDue ? 'HIGH' : 'NORMAL', dueDate: null, destination: '/people' },
     { id: 'documents', label: 'Compliance and document alerts', count: complianceAlerts.length, urgency: summary.compliance.overdue ? 'HIGH' : 'MEDIUM', dueDate: null, destination: '/dpdp-compliance' },

@@ -165,7 +165,7 @@ function AppRoutes() {
 function HomeRoute() {
   const { isSuperAdmin, canPermission } = useAuth();
   if (isSuperAdmin) return <PlatformDashboard />;
-  if (canPermission('settings.view', ['ORG_ADMIN'])) return <OrgDashboard />;
+  if (canPermission('hr.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'])) return <OrgDashboard />;
   if (canPermission('self.profile')) return <EmployeePortalPage />;
   return <div className="page"><h1>Your workspace</h1><p>Use the navigation to open the functions granted by your current assignments.</p></div>;
 }
