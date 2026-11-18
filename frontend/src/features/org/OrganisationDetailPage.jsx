@@ -10,6 +10,8 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Table } from '../../components/ui/Table';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { Modal } from '../../components/ui/Modal';
+import { TempPasswordModal } from '../../components/TempPasswordModal';
 
 const BANK_CLASSES = ['SPECIAL_GRADE', 'CLASS_I', 'CLASS_II', 'CLASS_III', 'CLASS_IV', 'CLASS_V'];
 const PLANS = ['TRIAL', 'STANDARD', 'PROFESSIONAL', 'ENTERPRISE', 'CUSTOM'];
@@ -22,6 +24,12 @@ export function OrganisationDetailPage() {
   const [form, setForm] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [credentials, setCredentials] = useState(null);
+  const [createAdminOpen, setCreateAdminOpen] = useState(false);
+  const [adminForm, setAdminForm] = useState({ name: '', email: '' });
+  const [adminFormError, setAdminFormError] = useState('');
+  const [resetTargetUser, setResetTargetUser] = useState(null);
+  const [mfaTargetUser, setMfaTargetUser] = useState(null);
 
   const { data: org, isLoading } = useQuery({
     queryKey: ['organization', id],
@@ -31,6 +39,12 @@ export function OrganisationDetailPage() {
   const { data: users } = useQuery({
     queryKey: ['organization-users', id],
     queryFn: () => usersApi.list(id),
+    enabled: !!id,
+  });
+
+  const { data: featuresData, refetch: refetchFeatures } = useQuery({
+    queryKey: ['organization-features', id],
+    queryFn: () => platformApi.organizationFeatures(id),
     enabled: !!id,
   });
 
@@ -87,12 +101,76 @@ export function OrganisationDetailPage() {
     onError: (err) => toast.add(err.message || 'Verification failed.', 'error'),
   });
 
+  const toggleFeatureMutation = useMutation({
+    mutationFn: ({ featureCode, enabled }) => platformApi.updateOrganizationFeature(id, featureCode, { enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-features', id] });
+      toast.add('Feature updated.', 'success');
+    },
+    onError: (err) => toast.add(err.message || 'Feature update failed.', 'error'),
+  });
+
+  const createAdminMutation = useMutation({
+    mutationFn: (payload) => platformApi.createOrgAdmin(id, payload),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['organization-users', id] });
+      toast.add('Organisation admin created.', 'success');
+      setCreateAdminOpen(false);
+      setAdminForm({ name: '', email: '' });
+      setCredentials({
+        mode: 'create',
+        user: res.data,
+        tempPassword: res.tempPassword,
+        emailStatus: res.email,
+        loginUrl: res.loginUrl,
+      });
+    },
+    onError: (err) => setAdminFormError(err.message || 'Could not create admin.'),
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: (targetUser) => platformApi.resetOrgUserPassword(id, targetUser.id),
+    onSuccess: (res, targetUser) => {
+      queryClient.invalidateQueries({ queryKey: ['organization-users', id] });
+      setResetTargetUser(null);
+      setCredentials({
+        mode: 'reset',
+        user: res.data || targetUser,
+        tempPassword: res.tempPassword,
+        emailStatus: res.email,
+        loginUrl: res.loginUrl,
+      });
+      toast.add('Temporary password issued.', 'success');
+    },
+    onError: (err) => toast.add(err.message || 'Password reset failed.', 'error'),
+  });
+
+  const resetMfaMutation = useMutation({
+    mutationFn: (targetUser) => platformApi.resetOrgUserMfa(id, targetUser.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-users', id] });
+      setMfaTargetUser(null);
+      toast.add('MFA cleared for this user.', 'success');
+    },
+    onError: (err) => toast.add(err.message || 'MFA reset failed.', 'error'),
+  });
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: ({ userId, status }) => platformApi.updateOrgUserStatus(id, userId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-users', id] });
+      toast.add('User status updated.', 'success');
+    },
+    onError: (err) => toast.add(err.message || 'Status update failed.', 'error'),
+  });
+
   if (isLoading || !form) return <div className="page"><p>Loading…</p></div>;
 
   const license = org?.license || {};
   const usage = org?.usage || {};
   const signInUrl = org.loginUrl || `${window.location.origin}/o/${org.code}`;
   const admins = (users?.rows || []).filter((u) => u.role === 'ORG_ADMIN');
+  const features = featuresData?.rows || [];
   const unresolvedAdminLinks = admins.filter(account => !account.employeeId);
   const domainSaved = !!org.customDomain && form.customDomain === org.customDomain;
 
@@ -205,18 +283,150 @@ export function OrganisationDetailPage() {
         </div>
       </Card>
 
-      <Card title="Organisation Admins" noPadding>
+      {/* ── Feature Management Card ── */}
+      <Card title="Module &amp; Feature Access" headerActions={<Badge variant="info">{features.filter(f => f.enabled).length} / {features.length} Enabled</Badge>}>
+        <p className="form-note" style={{ marginBottom: 'var(--space-3)' }}>
+          Enable or disable application modules for this bank. Changes take effect across web and mobile sessions immediately.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-3)' }}>
+          {features.map((feat) => (
+            <div
+              key={feat.code}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                padding: 'var(--space-3)',
+                borderRadius: 'var(--radius)',
+                border: '1px solid var(--dashboard-line)',
+                background: feat.enabled ? 'var(--dashboard-panel)' : 'var(--dashboard-panel-muted)',
+                opacity: feat.enabled ? 1 : 0.75,
+              }}
+            >
+              <div style={{ minWidth: 0, paddingRight: 'var(--space-2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '2px' }}>
+                  <strong style={{ fontSize: 'var(--text-sm)' }}>{feat.name}</strong>
+                  <Badge variant={feat.enabled ? 'success' : 'default'} size="sm">
+                    {feat.enabled ? 'Enabled' : 'Disabled'}
+                  </Badge>
+                </div>
+                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>
+                  {feat.description}
+                </p>
+              </div>
+              <button
+                type="button"
+                className={`btn btn-sm ${feat.enabled ? 'btn-danger' : 'btn-primary'}`}
+                style={{ flexShrink: 0, minWidth: '76px' }}
+                disabled={toggleFeatureMutation.isPending}
+                onClick={() => toggleFeatureMutation.mutate({ featureCode: feat.code, enabled: !feat.enabled })}
+              >
+                {feat.enabled ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* ── Organisation Admins Card with Actions ── */}
+      <Card
+        title="Organisation Admins"
+        headerActions={
+          <Button size="sm" onClick={() => { setAdminFormError(''); setCreateAdminOpen(true); }}>
+            Add Org Admin
+          </Button>
+        }
+        noPadding
+      >
         <Table
           columns={[
             { field: 'name', label: 'Name' },
             { field: 'email', label: 'Email', mono: true },
             { field: 'status', label: 'Status', render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'default'}>{r.status}</Badge> },
+            { field: 'lastLoginAt', label: 'Last Sign-in', render: (r) => r.lastLoginAt ? fmt.dateTime(r.lastLoginAt) : 'Never' },
+            {
+              field: 'actions',
+              label: 'Actions',
+              render: (r) => (
+                <div style={{ display: 'flex', gap: 'var(--space-1)', justifyContent: 'flex-end' }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={resetPasswordMutation.isPending && resetTargetUser?.id === r.id}
+                    onClick={() => { setResetTargetUser(r); resetPasswordMutation.mutate(r); }}
+                  >
+                    Reset Password
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={resetMfaMutation.isPending && mfaTargetUser?.id === r.id}
+                    onClick={() => { setMfaTargetUser(r); resetMfaMutation.mutate(r); }}
+                  >
+                    Reset MFA
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => toggleStatusMutation.mutate({ userId: r.id, status: r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })}
+                  >
+                    {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
+              ),
+            },
           ]}
           data={admins}
           keyField="id"
           emptyMessage="No Organisation Admins yet."
         />
       </Card>
+
+      {/* Create Org Admin Modal */}
+      <Modal
+        open={createAdminOpen}
+        onClose={() => setCreateAdminOpen(false)}
+        title={`Add Admin for ${org.name}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCreateAdminOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!adminForm.name.trim() || !adminForm.email.trim()) {
+                  setAdminFormError('Name and email are required.');
+                  return;
+                }
+                createAdminMutation.mutate(adminForm);
+              }}
+              loading={createAdminMutation.isPending}
+            >
+              Create Admin
+            </Button>
+          </>
+        }
+      >
+        <div>
+          {adminFormError && <div className="auth-error" role="alert">{adminFormError}</div>}
+          <Input
+            id="oa-name"
+            label="Full Name"
+            value={adminForm.name}
+            onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+            required
+          />
+          <Input
+            id="oa-email"
+            label="Email Address"
+            type="email"
+            value={adminForm.email}
+            onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+            required
+          />
+        </div>
+      </Modal>
+
+      {/* Ephemeral Temporary Password Modal */}
+      <TempPasswordModal credentials={credentials} onClose={() => setCredentials(null)} />
 
       <ConfirmationModal
         open={confirmOpen}

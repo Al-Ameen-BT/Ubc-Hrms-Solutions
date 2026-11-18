@@ -140,11 +140,11 @@ test('organisation overview exposes the operational HR command-centre landmarks'
   assert.match(appSource, /canPermission\('hr\.view'/);
 });
 
-test('workforce insights expose compact drill-down charts after the action table', () => {
+test('workforce insights expose compact drill-down charts with top 3 hero donuts directly above the action table', () => {
   const dashboard = fs.readFileSync(new URL('../src/features/org/OrgDashboard.jsx', import.meta.url), 'utf8');
   const insights = fs.readFileSync(new URL('../src/features/dashboard/WorkforceInsights.jsx', import.meta.url), 'utf8');
   const employees = fs.readFileSync(new URL('../src/features/employees/EmployeesPage.jsx', import.meta.url), 'utf8');
-  assert.ok(dashboard.indexOf('Today’s HR Actions') < dashboard.indexOf('<WorkforceInsights'));
+  assert.ok(dashboard.indexOf('<WorkforceInsights') < dashboard.indexOf('Today’s HR Actions'));
   for (const label of ['Workforce Insights', 'Attendance Status Today', 'Attendance Exceptions', 'Workforce by Branch', 'Workforce by Department', 'Leave Distribution', 'Employee Lifecycle', 'Seven-Day Attendance Trend', 'Late Arrival Trend', 'Leave Trend by Type', 'Payroll Readiness']) assert.match(insights, new RegExp(label));
   assert.match(insights, /PieChart/);
   assert.match(insights, /LineChart/);

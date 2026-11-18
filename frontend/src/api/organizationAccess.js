@@ -142,15 +142,58 @@ export const hasServiceAccess = (section, canPermission) => {
   const [codes, legacyRoles] = SERVICE_PERMISSIONS[section] || [[], []];
   return codes.some(code => canPermission(code, legacyRoles));
 };
+const ROUTE_FEATURES = {
+  payroll: 'payroll',
+  'payroll-settings': 'payroll',
+  leave: 'leave',
+  expenses: 'expenses',
+  arrears: 'arrears',
+  'arrears-cases': 'arrears',
+  'da-revisions': 'arrears',
+  allowances: 'compensation',
+  'pay-scales': 'compensation',
+  'pay-revisions': 'pay_revisions',
+  'government-orders': 'government_orders',
+  'ksr-rules': 'government_orders',
+  'dpdp-compliance': 'dpdp_compliance',
+  'financial-changes': 'financial_approvals',
+  audit: 'audit',
+};
+
+const SELF_FEATURES = {
+  payslips: 'payroll',
+  leave: 'leave',
+  calendar: 'leave',
+  expenses: 'expenses',
+  time: 'attendance',
+  privacy: 'dpdp_compliance',
+};
+
 const PLATFORM = ['organisations', 'platform-users', 'platform-settings', 'bank-rules', 'dpdp-documents', 'audit'];
 
-export function canVisitRoute(path, canPermission, isSuperAdmin = false) {
+export function canVisitRoute(path, canPermission, isSuperAdmin = false, isFeatureEnabled = () => true) {
   const [root, section, extra] = path.split('/').filter(Boolean);
   if (!root || root === 'account') return true;
   if (isSuperAdmin) return PLATFORM.includes(root);
-  if (root === 'my') return !!SELF[section] && canPermission(SELF[section]);
-  if (root === 'employee-services') return section ? hasServiceAccess(section, canPermission) : Object.keys(SERVICE_PERMISSIONS).some(key => hasServiceAccess(key, canPermission));
-  if (root === 'employees' && (section === 'new' || section === 'import')) return canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']);
+
+  // Check feature enablement
+  const requiredFeature = ROUTE_FEATURES[root];
+  if (requiredFeature && !isFeatureEnabled(requiredFeature)) return false;
+
+  if (root === 'my') {
+    const selfFeature = SELF_FEATURES[section];
+    if (selfFeature && !isFeatureEnabled(selfFeature)) return false;
+    return !!SELF[section] && canPermission(SELF[section]);
+  }
+  if (root === 'employee-services') {
+    if (section === 'time' && !isFeatureEnabled('attendance')) return false;
+    if (section === 'expenses' && !isFeatureEnabled('expenses')) return false;
+    return section ? hasServiceAccess(section, canPermission) : Object.keys(SERVICE_PERMISSIONS).some(key => hasServiceAccess(key, canPermission));
+  }
+  if (root === 'employees' && (section === 'new' || section === 'import')) {
+    if (section === 'import' && !isFeatureEnabled('bulk_import')) return false;
+    return canPermission('people.create', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']);
+  }
   if (root === 'employees' && extra === 'compensation') return canPermission('compensation.view', FINANCIAL_READERS);
   if (root === 'payroll' && section === 'new') return canPermission('payroll.prepare', PROCESSORS);
   const [codes, legacyRoles] = ROUTES[root] || [[], []];

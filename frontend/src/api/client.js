@@ -208,6 +208,11 @@ export const platformApi = {
   updateOrganization: (id, data) => api.put(`/admin/organizations/${id}`, data),
   orgAdminUsers: (orgId) => api.get(`/admin/organizations/${orgId}/admin-users`),
   createOrgAdmin: (orgId, data) => api.postRaw(`/admin/organizations/${orgId}/admin-users`, data),
+  organizationFeatures: (orgId) => api.get(`/admin/organizations/${orgId}/features`),
+  updateOrganizationFeature: (orgId, featureCode, data) => api.put(`/admin/organizations/${orgId}/features/${featureCode}`, data),
+  resetOrgUserPassword: (orgId, userId, data = {}) => api.postRaw(`/organizations/${orgId}/users/${userId}/reset-password`, data),
+  resetOrgUserMfa: (orgId, userId) => api.post(`/organizations/${orgId}/users/${userId}/reset-mfa`),
+  updateOrgUserStatus: (orgId, userId, status) => api.put(`/organizations/${orgId}/users/${userId}`, { status }),
   uploadOrgLogo: (orgId, formData) => {
     return fetch(`${BASE}/admin/organizations/${orgId}/logo`, {
       method: 'POST',

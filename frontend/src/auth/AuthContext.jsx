@@ -135,6 +135,13 @@ export function AuthProvider({ children }) {
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const isOrgAdmin = canPermission('users.manage', ['ORG_ADMIN']);
 
+  const enabledFeatures = user?.enabledFeatures || [];
+  const isFeatureEnabled = useCallback((featureCode) => {
+    if (isSuperAdmin) return true;
+    if (!user?.organizationId) return true;
+    return enabledFeatures.includes(featureCode);
+  }, [isSuperAdmin, user?.organizationId, enabledFeatures]);
+
   const value = {
     user,
     branding,
@@ -151,6 +158,8 @@ export function AuthProvider({ children }) {
     scopeSummary,
     isSuperAdmin,
     isOrgAdmin,
+    enabledFeatures,
+    isFeatureEnabled,
     isAuthenticated: !!user,
   };
 

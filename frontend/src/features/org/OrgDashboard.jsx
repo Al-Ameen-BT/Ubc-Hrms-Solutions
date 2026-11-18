@@ -111,6 +111,9 @@ export function OrgDashboard() {
 
     <section className="hr-kpi-grid" aria-label="Today’s HR metrics">{kpis.map((item) => <button key={item.id} type="button" className={`hr-kpi hr-tone-${item.tone}`} onClick={item.action}><span className="hr-kpi-label">{item.label}</span><span className="hr-kpi-value">{item.value}</span><span className="hr-kpi-meta">{item.meta}</span><span className="hr-kpi-detail">{item.detail}</span><span className="hr-kpi-drill">View details <span aria-hidden="true">→</span></span></button>)}</section>
 
+    {/* Top 3 Hero Donut Charts and Workforce Insights placed directly above Today's HR Actions */}
+    <WorkforceInsights analytics={data?.analytics || {}} summary={summary} payroll={payroll} date={filters.date} asOfTime={currentTime(now)} branches={filterOptions.branches || []} branchId={filters.branchId} onBranchChange={value => updateFilter('branchId', value)} onNavigate={navigate} onOpenAttendance={() => openTab('attendance')} onOpenPayroll={() => openTab('payroll')} />
+
     <div className="hr-command-grid">
       <section className="dashboard-panel hr-actions-panel" aria-labelledby="today-actions-title">
         <div className="dashboard-panel-header"><div><h2 id="today-actions-title">Today’s HR Actions</h2><p>Prioritised employee records requiring attention in the selected scope.</p></div><Badge variant={actions.some((row) => row.priority === 'HIGH') ? 'danger' : 'default'}>{actions.length} open</Badge></div>
@@ -121,8 +124,6 @@ export function OrgDashboard() {
         <div className="hr-alert-list">{(data?.alerts || []).map((alert) => <article key={alert.id} className="hr-alert-card"><div><strong>{alert.label}</strong><span>{alert.urgency === 'NORMAL' ? 'Routine' : `${alert.urgency.toLowerCase()} urgency`}{alert.dueDate ? ` · Due ${displayDate(alert.dueDate)}` : ''}</span></div><b>{alert.count}</b><Button variant="ghost" size="sm" onClick={() => navigate(alert.destination)}>View all</Button></article>)}</div>
       </aside>
     </div>
-
-    <WorkforceInsights analytics={data?.analytics || {}} summary={summary} payroll={payroll} date={filters.date} asOfTime={currentTime(now)} branches={filterOptions.branches || []} branchId={filters.branchId} onBranchChange={value => updateFilter('branchId', value)} onNavigate={navigate} onOpenAttendance={() => openTab('attendance')} onOpenPayroll={() => openTab('payroll')} />
 
     <section id="dashboard-workspace" className="dashboard-panel dashboard-workspace" aria-label="HR operational work queues">
       <div className="dashboard-tabs" role="tablist" aria-label="HR work queues">{TABS.map((tab, index) => <button id={`dashboard-tab-${tab.id}`} key={tab.id} type="button" role="tab" className="dashboard-tab" aria-selected={activeTab === tab.id} aria-controls={`dashboard-panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => handleTabKeyDown(event, index)}>{tab.label}<span className="dashboard-tab-count">{tabCounts[tab.id]}</span></button>)}</div>

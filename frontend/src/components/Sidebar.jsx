@@ -112,7 +112,7 @@ function NavIcon({ name }) {
 const TOP_LIMIT = 3;
 
 export function Sidebar({ collapsed }) {
-  const { isSuperAdmin, canPermission, permissionCodes } = useAuth();
+  const { isSuperAdmin, canPermission, permissionCodes, isFeatureEnabled } = useAuth();
   const location = useLocation();
   const operational = permissionCodes.some(code => !code.startsWith('self.') && code !== 'chart.view');
   const groups = isSuperAdmin ? NAV.platform : operational ? [...NAV.org, ...NAV.employee.map(group => ({ ...group, label: 'My workspace', items: group.items.filter(item => item.to !== '/') }))] : NAV.employee;
@@ -131,7 +131,7 @@ export function Sidebar({ collapsed }) {
     <nav className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Main navigation">
       <div className="sidebar-nav">
         {groups.map((group) => {
-          const authorizedItems = group.items.filter((item) => canVisitRoute(item.to, canPermission, isSuperAdmin));
+          const authorizedItems = group.items.filter((item) => canVisitRoute(item.to, canPermission, isSuperAdmin, isFeatureEnabled));
           if (!authorizedItems.length) return null;
           const hasMore = authorizedItems.length > TOP_LIMIT;
 

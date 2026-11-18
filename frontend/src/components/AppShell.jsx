@@ -9,12 +9,12 @@ import { SectionLabel } from './SectionLabel';
 import { CommandPalette } from './CommandPalette';
 
 export function AppShell() {
-  const { canPermission, isSuperAdmin } = useAuth();
+  const { canPermission, isSuperAdmin, isFeatureEnabled } = useAuth();
   const location = useLocation();
   const { theme, toggle } = useTheme();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const authorized = canVisitRoute(location.pathname, canPermission, isSuperAdmin);
+  const authorized = canVisitRoute(location.pathname, canPermission, isSuperAdmin, isFeatureEnabled);
 
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
