@@ -216,6 +216,28 @@ test('operational dashboard separates unmarked staff and never invents shift exc
   assert.equal(data.summary.attendance.shiftConfigured, false);
   assert.deepEqual(data.workspaces.attendanceExceptions.map((row) => row.employeeId), [emp3.id]);
   assert.match(data.workspaces.attendanceExceptions[0].reason, /not marked/i);
+  assert.ok(data.analytics.attendanceTrend.every((row) => Number.isInteger(row.presentPercent) && row.latePercent === 0 && row.absentPercent === 0));
+  assert.equal(data.analytics.attendanceStatus.find((row) => row.key === 'unmarked').value, 1);
+  assert.equal(data.analytics.attendanceStatus.find((row) => row.key === 'absent').value, 0);
+  assert.equal(data.analytics.attendanceExceptions.find((row) => row.key === 'noCheckIn').value, 1);
+});
+
+test('workforce insights return drill-down identifiers, approved leave trends and payroll stages', async () => {
+  const leaveType = await LeaveType.findOne({ where: { organizationId: org.id, code: 'CL' } });
+  const pending = await LeaveApplication.create({ employeeId: emp3.id, leaveTypeId: leaveType.id, fromDate: '2026-11-18', toDate: '2026-11-18', days: 1, status: 'PENDING' });
+  try {
+    const data = await getDashboardAnalytics(org.id, { date: '2026-11-18' });
+    assert.ok(data.analytics.headcountByBranch.every((row) => Number.isInteger(row.id)));
+    assert.ok(data.analytics.headcountByDepartment.every((row) => Object.hasOwn(row, 'id')));
+    assert.deepEqual(data.analytics.leaveDistribution.map((row) => [row.label, row.value]), [['Casual Leave', 1]]);
+    assert.ok(data.analytics.leaveTrendByType.categories.includes('Casual Leave'));
+    assert.equal(data.analytics.leaveTrendByType.rows.find((row) => row.month === '2026-11')['Casual Leave'], 1);
+    assert.equal(data.analytics.payrollReadiness.total, 3);
+    assert.deepEqual(Object.keys(data.analytics.payrollReadiness.stages), ['attendanceVerified', 'leaveApproved', 'bankDetailsVerified', 'statutoryDataVerified', 'payrollReviewPending']);
+    assert.ok(data.analytics.monthlyMovements.previousMonth);
+  } finally {
+    await pending.destroy();
+  }
 });
 
 test('operational dashboard filters every summary and action row by branch', async () => {
@@ -307,6 +329,6 @@ test('GET /org/dashboard-analytics rejects invalid operational filters', async (
 test('dashboard reporting derives today and year from the India bank date', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../src/services/dashboardAnalytics.js'), 'utf8');
   assert.match(source, /todayIST\(\)/);
-  assert.match(source, /currentYearStart\s*=\s*`\$\{today\.slice\(0, 4\)\}-01-01`/);
+  assert.match(source, /leaveTrendMonths\s*=.*monthKey\(today/);
   assert.doesNotMatch(source, /new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
 });

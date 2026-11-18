@@ -37,6 +37,11 @@ function addDays(date, days) {
   return value.toISOString().slice(0, 10);
 }
 
+function monthKey(date, offset = 0) {
+  const value = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + offset, 1));
+  return value.toISOString().slice(0, 7);
+}
+
 // Vibrant, contrasting color palettes for charts
 const ATTENDANCE_COLORS = {
   present: '#10B981',   // Emerald Green
@@ -163,12 +168,12 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
   const scopedPendingLeaves = pendingLeaves.filter((leave) => scopedEmployeeIds.has(leave.employeeId));
   const pendingLeavesCount = scopedPendingLeaves.length;
 
-  // Count leaves grouped by type for this organization (all applications or current year)
-  const currentYearStart = `${today.slice(0, 4)}-01-01`;
+  // Approved leave only: pending requests stay in the approval queue.
+  const leaveTrendMonths = Array.from({ length: 6 }, (_, index) => monthKey(today, index - 5));
   const yearLeaves = await LeaveApplication.findAll({
     where: {
-      fromDate: { [Op.gte]: currentYearStart },
-      status: { [Op.in]: ['APPROVED', 'PENDING'] },
+      fromDate: { [Op.gte]: `${leaveTrendMonths[0]}-01` },
+      status: 'APPROVED',
     },
     include: [
       { model: Employee, where: { organizationId }, attributes: ['id'] },
@@ -177,7 +182,7 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
   });
 
   const leaveTypeCountMap = new Map();
-  yearLeaves.filter((leave) => scopedEmployeeIds.has(leave.employeeId)).forEach((al) => {
+  activeLeavesToday.forEach((al) => {
     const typeName = al.LeaveType?.name || 'General Leave';
     leaveTypeCountMap.set(typeName, (leaveTypeCountMap.get(typeName) || 0) + 1);
   });
@@ -449,24 +454,43 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
   const monthStart = `${today.slice(0, 7)}-01`;
   const monthEndValue = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0));
   const monthEnd = monthEndValue.toISOString().slice(0, 10);
-  const [trendEntries, payrollRun, transfersThisMonth] = await Promise.all([
+  const previousMonth = monthKey(today, -1);
+  const [trendEntries, payrollRun, movementTransfers] = await Promise.all([
     EmployeeTimeEntry.findAll({
       where: { organizationId, localDate: { [Op.in]: trendDates }, employeeId: { [Op.in]: [...scopedEmployeeIds] } },
       attributes: ['employeeId', 'localDate'],
     }),
     PayrollRun.findOne({ where: { organizationId, year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) }, order: [['id', 'DESC']] }),
-    scopedEmployeeIds.size ? EmployeeTransfer.count({
-      where: { organizationId, employeeId: { [Op.in]: [...scopedEmployeeIds] }, status: 'ACTIVATED', effectiveDate: { [Op.between]: [monthStart, monthEnd] } },
-    }) : 0,
+    scopedEmployeeIds.size ? EmployeeTransfer.findAll({
+      where: { organizationId, employeeId: { [Op.in]: [...scopedEmployeeIds] }, status: 'ACTIVATED', effectiveDate: { [Op.between]: [`${previousMonth}-01`, monthEnd] } },
+      attributes: ['effectiveDate'],
+    }) : [],
   ]);
-  const attendanceTrend = trendDates.map((date) => ({
-    date,
-    present: new Set(trendEntries.filter((entry) => entry.localDate === date).map((entry) => entry.employeeId)).size,
-    total: employees.length,
-  }));
+  const approvedTrendLeaves = yearLeaves.filter((leave) => scopedEmployeeIds.has(leave.employeeId));
+  const attendanceTrend = trendDates.map((date) => {
+    const present = new Set(trendEntries.filter((entry) => entry.localDate === date).map((entry) => entry.employeeId)).size;
+    const onLeave = new Set(approvedTrendLeaves.filter((leave) => leave.fromDate <= date && leave.toDate >= date).map((leave) => leave.employeeId)).size;
+    return { date, present, total: employees.length, presentPercent: employees.length ? Math.round((present / employees.length) * 100) : 0, latePercent: 0, absentPercent: 0, unmarked: Math.max(0, employees.length - present - onLeave) };
+  });
   const departmentCounts = new Map();
-  employees.forEach((employee) => departmentCounts.set(departmentName(employee), (departmentCounts.get(departmentName(employee)) || 0) + 1));
+  employees.forEach((employee) => {
+    const id = employee.departmentId || null;
+    const key = id || 'unassigned';
+    const current = departmentCounts.get(key) || { id, label: departmentName(employee), value: 0 };
+    current.value += 1;
+    departmentCounts.set(key, current);
+  });
   const leaveDistribution = Array.from(leaveTypeCountMap.entries()).map(([label, value]) => ({ label, value }));
+  const leaveTrendCategories = [...new Set(approvedTrendLeaves.map((leave) => leave.LeaveType?.name || 'General Leave'))];
+  const leaveTrendByType = {
+    categories: leaveTrendCategories,
+    rows: leaveTrendMonths.map((month) => {
+      const row = { month };
+      leaveTrendCategories.forEach((category) => { row[category] = 0; });
+      approvedTrendLeaves.filter((leave) => String(leave.fromDate).startsWith(month)).forEach((leave) => { row[leave.LeaveType?.name || 'General Leave'] += 1; });
+      return row;
+    }),
+  };
   const recordsNeedingReview = new Set(payrollBlockers.map((row) => row.employeeId)).size;
   const payrollReadiness = employees.length ? Math.round(((employees.length - recordsNeedingReview) / employees.length) * 100) : 100;
   const urgentLeaves = leaveApprovals.filter((row) => row.priority === 'HIGH').length;
@@ -520,17 +544,47 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
 
   const operationalAnalytics = {
     attendanceTrend,
+    attendanceStatus: [
+      { key: 'present', label: 'Present', value: summary.attendance.present },
+      { key: 'late', label: 'Late', value: summary.attendance.late },
+      { key: 'onLeave', label: 'On Leave', value: summary.attendance.onLeave },
+      { key: 'unmarked', label: 'Unmarked', value: summary.attendance.unmarked },
+      { key: 'absent', label: 'Absent', value: summary.attendance.absent },
+    ],
+    attendanceExceptions: [
+      { key: 'lateArrival', label: 'Late arrival', value: summary.attendance.late },
+      { key: 'missingCheckOut', label: 'Missing check-out', value: summary.attendance.missingCheckOut },
+      { key: 'noCheckIn', label: 'No check-in', value: summary.attendance.unmarked },
+      { key: 'shiftMismatch', label: 'Shift mismatch', value: summary.attendance.shiftMismatch },
+    ],
     lateArrivalTrend: trendDates.map((date) => ({ date, value: 0 })),
     shiftAnalyticsAvailable: false,
-    headcountByBranch: branchStats.filter((branch) => branch.totalEmployees > 0).map((branch) => ({ label: branch.name, value: branch.totalEmployees })),
-    headcountByDepartment: Array.from(departmentCounts, ([label, value]) => ({ label, value })),
+    headcountByBranch: branchStats.filter((branch) => branch.totalEmployees > 0 && branch.id).map((branch) => ({ id: branch.id, label: branch.name, value: branch.totalEmployees })),
+    headcountByDepartment: Array.from(departmentCounts.values()),
     leaveDistribution,
+    leaveTrendByType,
+    payrollReadiness: {
+      total: employees.length,
+      stages: {
+        attendanceVerified: Math.max(0, employees.length - unmarkedEmployees.length),
+        leaveApproved: Math.max(0, employees.length - new Set(scopedPendingLeaves.map((leave) => leave.employeeId)).size),
+        bankDetailsVerified: employees.filter((employee) => employee.bankName && employee.bankAccountNumber && employee.bankIfsc).length,
+        statutoryDataVerified: employees.filter((employee) => employee.educationalQualification && employee.panNumber && employee.aadhaarNumber).length,
+        payrollReviewPending: recordsNeedingReview,
+      },
+    },
     monthlyMovements: {
       joiners: employees.filter((employee) => String(employee.doj).startsWith(today.slice(0, 7))).length,
       exits: 0,
       exitsAvailable: false,
-      transfers: transfersThisMonth,
+      transfers: movementTransfers.filter((row) => String(row.effectiveDate).startsWith(today.slice(0, 7))).length,
       probationCompletions: employees.filter((employee) => String(employee.dateOfConfirmation || '').startsWith(today.slice(0, 7))).length,
+      previousMonth: {
+        month: previousMonth,
+        joiners: employees.filter((employee) => String(employee.doj).startsWith(previousMonth)).length,
+        transfers: movementTransfers.filter((row) => String(row.effectiveDate).startsWith(previousMonth)).length,
+        probationCompletions: employees.filter((employee) => String(employee.dateOfConfirmation || '').startsWith(previousMonth)).length,
+      },
     },
   };
 
