@@ -150,21 +150,64 @@ function Claims({ api, session }: Props) {
   </Page>;
 }
 
-type DpdpRequest = { id: number; requestType: string; status: string; details: string; dpoResponse?: string; retentionReason?: string; createdAt: string; decidedAt?: string };
+type DpdpRequest = { id: number; caseId?: string; requestType: string; status: string; details: string; dpoResponse?: string; retentionReason?: string; createdAt: string; dueAt?: string };
+type PrivacySummary = { employee: { empCode: string; name: string }; processingActivities: { code: string; module: string; dataCategory: string; purpose: string; lawfulBasis: string; retentionCategory: string }[] };
+type PrivacyDocument = { id: number; title: string; version: number; effectiveAt: string; summary?: string; body?: string; summaryMl?: string; bodyMl?: string };
+type PrivacyNotices = { terms?: PrivacyDocument; platformPrivacy?: PrivacyDocument; employeeNotice?: PrivacyDocument };
+type ConsentChoice = { id: number; code: string; titleEn: string; titleMl?: string; descriptionEn: string; descriptionMl?: string; decision?: 'GRANTED' | 'WITHDRAWN' | null };
+type SharingEvent = { id: number; recipientName?: string; processorId?: number; dataCategories: string[]; purpose: string; lawfulAuthority: string; sharedAt: string };
+type Nomination = { nomineeName: string; relationship: string; contact: string; verificationStatus: string };
+type DpoProfile = { dpoName?: string; dpoEmail?: string; dpoPhone?: string; dpoAddress?: string; grievanceProcedure?: string };
+const readable = (value?: string | null) => value ? value.replaceAll('_', ' ') : '—';
+const privacyLanguages = [{ language: 'EN' as const, label: 'English' }, { language: 'ML' as const, label: 'Malayalam' }];
 
 function Privacy({ api, session }: Props) {
   const [refresh, setRefresh] = useState(0);
+  const [language, setLanguage] = useState<'EN' | 'ML'>('EN');
   const [requestType, setRequestType] = useState('ACCESS');
   const [details, setDetails] = useState('');
+  const [nomineeName, setNomineeName] = useState('');
+  const [relationship, setRelationship] = useState('');
+  const [contact, setContact] = useState('');
   const action = useAction();
-  const { data, error, loading } = useResource<DpdpRequest[]>(api, '/me/dpdp/requests', session.token, refresh);
+  const summary = useResource<PrivacySummary>(api, '/me/dpdp/summary', session.token, refresh);
+  const notices = useResource<PrivacyNotices>(api, '/me/dpdp/notices', session.token, refresh);
+  const consents = useResource<ConsentChoice[]>(api, '/me/dpdp/consents', session.token, refresh);
+  const sharing = useResource<SharingEvent[]>(api, '/me/dpdp/sharing', session.token, refresh);
+  const requests = useResource<DpdpRequest[]>(api, '/me/dpdp/requests', session.token, refresh);
+  const nomination = useResource<Nomination | null>(api, '/me/dpdp/nomination', session.token, refresh);
+  const profile = useResource<DpoProfile | null>(api, '/me/dpdp/profile', session.token, refresh);
+  const resources = [summary, notices, consents, sharing, requests, nomination, profile];
+  const error = resources.map(item => item.error).find(Boolean);
+  const loading = resources.some(item => item.loading);
 
   const submit = () => action.run('dpdp-request-submit', async () => {
     if (!details.trim()) throw new Error('Enter request details.');
     await api.post('/me/dpdp/requests', { requestType, details: details.trim() }, session.token);
   }, () => { setDetails(''); setRefresh(v => v + 1); }, 'Privacy request submitted to DPO.');
 
-  return <Page><ScreenHeading eyebrow="DPDP compliance" title="Privacy & data rights" description="Submit and track statutory data rights requests." /><Feedback error={error || action.error} loading={loading} notice={action.notice} />
+  const chooseConsent = (row: ConsentChoice, decision: 'grant' | 'withdraw') => action.run(`consent-${row.code}`, () => api.post(`/me/dpdp/consents/${encodeURIComponent(row.code)}/${decision}`, { language, channel: 'MOBILE' }, session.token), () => setRefresh(value => value + 1), decision === 'grant' ? 'Optional consent granted.' : 'Optional consent withdrawn.');
+  const submitNomination = () => action.run('dpdp-nomination-submit', async () => {
+    if (!nomineeName.trim() || !relationship.trim() || !contact.trim()) throw new Error('Enter nominee name, relationship and contact.');
+    await api.post('/me/dpdp/nomination', { nomineeName: nomineeName.trim(), relationship: relationship.trim(), contact: contact.trim() }, session.token);
+  }, () => { setNomineeName(''); setRelationship(''); setContact(''); setRefresh(value => value + 1); }, 'Nomination submitted for verification.');
+
+  const documents = [notices.data?.terms, notices.data?.platformPrivacy, notices.data?.employeeNotice].filter((row): row is PrivacyDocument => !!row);
+
+  return <Page><ScreenHeading eyebrow="DPDP compliance" title="Privacy & data rights" description="Understand your work data, manage optional choices and contact your Data Protection Officer." /><Feedback error={error || action.error} loading={loading} notice={action.notice} />
+    <Card title="Your data">
+      <Text style={styles.muted}>Active processing recorded for your employee profile.</Text>
+      {summary.data?.processingActivities.length ? summary.data.processingActivities.map(row => <View key={row.code} style={local.listItem}><Text style={styles.cardTitle}>{row.module}</Text><Text style={styles.body}>{row.purpose}</Text><Text style={styles.muted}>{readable(row.dataCategory)} · {readable(row.lawfulBasis)} · {readable(row.retentionCategory)}</Text></View>) : !loading && <Empty message="No employee processing activities are published yet." />}
+    </Card>
+    <Card title="Notices & optional choices">
+      <View accessibilityRole="radiogroup" style={local.chips}>{privacyLanguages.map(option => <Pressable key={option.language} accessibilityRole="radio" accessibilityState={{ selected: language === option.language }} onPress={() => setLanguage(option.language)} style={[local.chip, language === option.language && local.chipSelected]}><Text style={[local.chipText, language === option.language && local.chipTextSelected]}>{option.label}</Text></Pressable>)}</View>
+      {documents.map(document => <View key={document.id} style={local.listItem}><Text style={styles.cardTitle}>{document.title}</Text><Text style={styles.muted}>Version {document.version} · effective {dateText(document.effectiveAt)}</Text><Text style={styles.body}>{language === 'ML' ? document.summaryMl || document.bodyMl || 'Malayalam translation is not available for this version.' : document.summary || document.body || 'No summary published.'}</Text></View>)}
+      <Notice message="Optional choices do not affect payroll, attendance, statutory records or required employment processing." />
+      {consents.data?.length ? consents.data.map(row => <View key={row.id} style={local.listItem}><View style={local.cardHeader}><View style={{ flex: 1 }}><Text style={styles.cardTitle}>{language === 'ML' ? row.titleMl || row.titleEn : row.titleEn}</Text><Text style={styles.body}>{language === 'ML' ? row.descriptionMl || row.descriptionEn : row.descriptionEn}</Text></View><StatusBadge {...statusMeta(row.decision || 'NO CHOICE')} /></View><View style={local.actionGrid}><View style={{ flex: 1 }}><Action title="Grant" disabled={action.busy || row.decision === 'GRANTED'} busy={action.busyKey === `consent-${row.code}`} onPress={() => chooseConsent(row, 'grant')} /></View><View style={{ flex: 1 }}><Action title="Withdraw" secondary disabled={action.busy || row.decision !== 'GRANTED'} onPress={() => chooseConsent(row, 'withdraw')} /></View></View></View>) : !loading && <Empty message="Your bank has not requested any optional consent choices." />}
+    </Card>
+    <Card title="Sharing history">
+      {sharing.data?.length ? sharing.data.map(row => <View key={row.id} style={local.listItem}><Text style={styles.cardTitle}>{row.recipientName || `Processor #${row.processorId}`}</Text><Text style={styles.body}>{row.purpose}</Text><Text style={styles.muted}>{readable(row.dataCategories?.join(', '))} · {row.lawfulAuthority} · {dateText(row.sharedAt)}</Text></View>) : !loading && <Empty message="No sharing event is recorded against your employee profile." />}
+    </Card>
     <Card title="Submit a data request">
       <View style={local.chips}>
         {['ACCESS', 'CORRECTION', 'ERASURE', 'GRIEVANCE', 'NOMINATION'].map(t => (
@@ -177,7 +220,7 @@ function Privacy({ api, session }: Props) {
       <Action title="Submit request" onPress={submit} busy={action.busyKey === 'dpdp-request-submit'} disabled={action.busy} />
     </Card>
     <Card title="Request history">
-      {data?.length ? data.map(req => (
+      {requests.data?.length ? requests.data.map(req => (
         <View key={req.id} style={local.listItem}>
           <View style={local.cardHeader}>
             <View style={{ flex: 1 }}>
@@ -188,10 +231,16 @@ function Privacy({ api, session }: Props) {
           </View>
           {req.dpoResponse && <Notice message={`DPO Response: ${req.dpoResponse}`} />}
           {req.retentionReason && <Notice message={`Statutory ground: ${req.retentionReason}`} />}
-          <Text style={styles.muted}>Submitted {dateText(req.createdAt)}</Text>
+          <Text style={styles.muted}>{req.caseId || `Request #${req.id}`} · submitted {dateText(req.createdAt)} · target {dateText(req.dueAt)}</Text>
         </View>
       )) : !loading && <Empty message="No privacy requests submitted yet." />}
     </Card>
+    <Card title="Nominate a representative">
+      {nomination.data && <View style={local.listItem}><View style={local.cardHeader}><Text style={styles.cardTitle}>{nomination.data.nomineeName}</Text><StatusBadge {...statusMeta(nomination.data.verificationStatus)} /></View><Text style={styles.muted}>{nomination.data.relationship} · {nomination.data.contact}</Text></View>}
+      <Field label="Nominee name" value={nomineeName} onChangeText={setNomineeName} /><Field label="Relationship" value={relationship} onChangeText={setRelationship} /><Field label="Contact" value={contact} onChangeText={setContact} />
+      <Action title="Submit nomination" onPress={submitNomination} busy={action.busyKey === 'dpdp-nomination-submit'} disabled={action.busy} />
+    </Card>
+    <Card title="Data Protection Officer"><DataRow label="Name" value={profile.data?.dpoName || 'Not published'} /><DataRow label="Email" value={profile.data?.dpoEmail || 'Not published'} /><DataRow label="Phone" value={profile.data?.dpoPhone || 'Not published'} /><Text style={styles.muted}>{profile.data?.grievanceProcedure || 'Submit a grievance request from this privacy centre.'}</Text></Card>
   </Page>;
 }
 

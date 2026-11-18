@@ -5,7 +5,7 @@ const { requireFeaturePermission } = require('../middleware/permissions');
 
 const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { sequelize, User, Employee, PayrollRun, PayrollRunLine, LeaveType, LeaveApplication, Organization, EmployeePolicy, EmployeePolicyAcknowledgement, OrganizationHoliday, EmployeeTimeEntry, ExpenseClaim, ExpenseReceipt } = require('../models');
+const { sequelize, User, Employee, PayrollRun, PayrollRunLine, LeaveType, LeaveApplication, Organization, EmployeePolicy, EmployeePolicyAcknowledgement, OrganizationHoliday, EmployeeTimeEntry, ExpenseClaim, ExpenseReceipt, DpdpOrganizationProfile } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const leave = require('../services/leave');
@@ -68,6 +68,13 @@ router.get('/dpdp/notices', requireFeaturePermission('self.profile', SELF_SERVIC
   } catch (err) { fail(res, err); }
 });
 
+router.get('/dpdp/profile', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try {
+    const profile = await DpdpOrganizationProfile.findOne({ where: { organizationId: req.user.organizationId }, attributes: ['dpoName', 'dpoEmail', 'dpoPhone', 'dpoAddress', 'grievanceProcedure'] });
+    res.json({ data: profile });
+  } catch (err) { fail(res, err); }
+});
+
 router.get('/dpdp/consents', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
   try { res.json({ data: await dpdpConsent.currentChoices({ actor: req.user, employee: await ownEmployee(req) }) }); } catch (err) { fail(res, err); }
 });
@@ -80,7 +87,7 @@ async function changeConsent(req, res, decision) {
       employee: await ownEmployee(req),
       purposeCode: req.params.purposeCode,
       decision,
-      channel: 'WEB',
+      channel: req.body?.channel || 'WEB',
       language: req.body?.language || 'EN',
       ipReference: hash(req.ip),
       deviceReference: hash(req.get('user-agent')),

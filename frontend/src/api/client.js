@@ -374,6 +374,7 @@ export const dpdpApi = {
   createOrgConsentPurpose: (data) => api.post('/org/dpdp/consent-purposes', data),
   updateOrgConsentPurpose: (id, data) => api.put(`/org/dpdp/consent-purposes/${id}`, data),
   myNotices: () => api.get('/me/dpdp/notices'),
+  myDpdpProfile: () => api.get('/me/dpdp/profile'),
   myConsents: () => api.get('/me/dpdp/consents'),
   grantConsent: (purposeCode, language = 'EN') => api.post(`/me/dpdp/consents/${encodeURIComponent(purposeCode)}/grant`, { language }),
   withdrawConsent: (purposeCode, language = 'EN') => api.post(`/me/dpdp/consents/${encodeURIComponent(purposeCode)}/withdraw`, { language }),
