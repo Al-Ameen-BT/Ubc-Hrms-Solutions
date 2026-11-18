@@ -285,44 +285,36 @@ export function OrganisationDetailPage() {
 
       {/* ── Feature Management Card ── */}
       <Card title="Module &amp; Feature Access" headerActions={<Badge variant="info">{features.filter(f => f.enabled).length} / {features.length} Enabled</Badge>}>
-        <p className="form-note" style={{ marginBottom: 'var(--space-3)' }}>
+        <p className="form-note" style={{ marginBottom: 'var(--space-4)' }}>
           Enable or disable application modules for this bank. Changes take effect across web and mobile sessions immediately.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-3)' }}>
+        <div className="feature-toggle-grid">
           {features.map((feat) => (
             <div
               key={feat.code}
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                padding: 'var(--space-3)',
-                borderRadius: 'var(--radius)',
-                border: '1px solid var(--dashboard-line)',
-                background: feat.enabled ? 'var(--dashboard-panel)' : 'var(--dashboard-panel-muted)',
-                opacity: feat.enabled ? 1 : 0.75,
-              }}
+              className={`feature-toggle-card ${feat.enabled ? 'enabled' : 'disabled'}`}
             >
-              <div style={{ minWidth: 0, paddingRight: 'var(--space-2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '2px' }}>
-                  <strong style={{ fontSize: 'var(--text-sm)' }}>{feat.name}</strong>
-                  <Badge variant={feat.enabled ? 'success' : 'default'} size="sm">
-                    {feat.enabled ? 'Enabled' : 'Disabled'}
-                  </Badge>
-                </div>
-                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>
-                  {feat.description}
-                </p>
+              <div className="feature-toggle-card-header">
+                <h4 className="feature-toggle-title">{feat.name}</h4>
+                <Badge variant={feat.enabled ? 'success' : 'default'} size="sm">
+                  {feat.enabled ? 'Enabled' : 'Disabled'}
+                </Badge>
               </div>
-              <button
-                type="button"
-                className={`btn btn-sm ${feat.enabled ? 'btn-danger' : 'btn-primary'}`}
-                style={{ flexShrink: 0, minWidth: '76px' }}
-                disabled={toggleFeatureMutation.isPending}
-                onClick={() => toggleFeatureMutation.mutate({ featureCode: feat.code, enabled: !feat.enabled })}
-              >
-                {feat.enabled ? 'Disable' : 'Enable'}
-              </button>
+              <p className="feature-toggle-desc">
+                {feat.description}
+              </p>
+              <div className="feature-toggle-card-footer">
+                <Button
+                  size="sm"
+                  variant={feat.enabled ? 'danger' : 'primary'}
+                  className="feature-toggle-btn"
+                  loading={toggleFeatureMutation.isPending && toggleFeatureMutation.variables?.featureCode === feat.code}
+                  disabled={toggleFeatureMutation.isPending}
+                  onClick={() => toggleFeatureMutation.mutate({ featureCode: feat.code, enabled: !feat.enabled })}
+                >
+                  {feat.enabled ? 'Disable' : 'Enable'}
+                </Button>
+              </div>
             </div>
           ))}
         </div>
