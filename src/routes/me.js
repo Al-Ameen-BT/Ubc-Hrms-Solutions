@@ -58,6 +58,39 @@ router.post('/dpdp/acknowledge', markDpdpPendingAllowed, requireFeaturePermissio
 });
 
 const dpdpCases = require('../services/dpdpCases');
+const dpdpDocuments = require('../services/dpdpDocuments');
+const dpdpConsent = require('../services/dpdpConsent');
+
+router.get('/dpdp/notices', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try {
+    const bundle = await dpdpDocuments.activeBundle({ organizationId: req.user.organizationId });
+    res.json({ data: { asOf: bundle.asOf, terms: dpdpDocuments.publicDocumentView(bundle.terms), platformPrivacy: dpdpDocuments.publicDocumentView(bundle.platformPrivacy), employeeNotice: dpdpDocuments.publicDocumentView(bundle.employeeNotice) } });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/dpdp/consents', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
+  try { res.json({ data: await dpdpConsent.currentChoices({ actor: req.user, employee: await ownEmployee(req) }) }); } catch (err) { fail(res, err); }
+});
+
+async function changeConsent(req, res, decision) {
+  try {
+    const hash = (value) => value ? crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32) : null;
+    const row = await dpdpConsent.recordChoice({
+      actor: req.user,
+      employee: await ownEmployee(req),
+      purposeCode: req.params.purposeCode,
+      decision,
+      channel: 'WEB',
+      language: req.body?.language || 'EN',
+      ipReference: hash(req.ip),
+      deviceReference: hash(req.get('user-agent')),
+    });
+    res.status(201).json({ data: row });
+  } catch (err) { fail(res, err); }
+}
+
+router.post('/dpdp/consents/:purposeCode/grant', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), (req, res) => changeConsent(req, res, 'GRANTED'));
+router.post('/dpdp/consents/:purposeCode/withdraw', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), (req, res) => changeConsent(req, res, 'WITHDRAWN'));
 
 router.get('/dpdp/requests', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
   try {

@@ -89,6 +89,8 @@ router.post(
         body: req.body.body,
         version: req.body.version,
         summary: req.body.summary,
+        bodyMl: req.body.bodyMl,
+        summaryMl: req.body.summaryMl,
         effectiveAt: req.body.effectiveAt,
         actor: req.user,
       });
@@ -98,6 +100,20 @@ router.post(
     }
   }
 );
+
+const dpdpConsent = require('../services/dpdpConsent');
+
+router.get('/consent-purposes', requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpConsent.listPurposes({ organizationId: req.user.organizationId, status: req.query.status }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/consent-purposes', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.status(201).json({ data: await dpdpConsent.upsertPurpose({ actor: req.user, data: req.body }) }); } catch (err) { sendError(res, err); }
+});
+
+router.put('/consent-purposes/:id', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpConsent.upsertPurpose({ actor: req.user, id: Number(req.params.id), data: req.body }) }); } catch (err) { sendError(res, err); }
+});
 
 const dpdpCases = require('../services/dpdpCases');
 

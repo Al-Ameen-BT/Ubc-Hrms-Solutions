@@ -67,6 +67,7 @@ async function authenticate(req, res, next) {
       const route = `${req.baseUrl}${req.path}`;
       const allowedRoutes = new Set([
         'GET /api/v1/me/dpdp',
+        'GET /api/v1/me/dpdp/notices',
         'POST /api/v1/me/dpdp/acknowledge',
         'POST /api/v1/auth/change-password',
         'GET /api/v1/auth/me',

@@ -36,6 +36,16 @@ const DpdpDocument = sequelize.define('DpdpDocument', {
     type: DataTypes.STRING(500),
     allowNull: true,
   },
+  bodyMl: {
+    type: DataTypes.TEXT('medium'),
+    allowNull: true,
+    field: 'body_ml',
+  },
+  summaryMl: {
+    type: DataTypes.STRING(500),
+    allowNull: true,
+    field: 'summary_ml',
+  },
   state: {
     type: DataTypes.ENUM('DRAFT', 'PUBLISHED', 'SUPERSEDED'),
     allowNull: false,

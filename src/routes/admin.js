@@ -551,6 +551,8 @@ router.post('/dpdp/documents/publish', async (req, res) => {
       body: req.body.body,
       version: req.body.version,
       summary: req.body.summary,
+      bodyMl: req.body.bodyMl,
+      summaryMl: req.body.summaryMl,
       effectiveAt: req.body.effectiveAt,
       actor: req.user,
     });
