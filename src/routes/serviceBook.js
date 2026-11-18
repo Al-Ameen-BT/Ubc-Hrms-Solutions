@@ -46,6 +46,7 @@ const { IncrementPolicy, PayFixationPolicy } = require('../models');
 const loans = require('../services/loans');
 const orgFields = require('../services/orgFields');
 const { parseCsv, toCsv } = require('../services/csv');
+const { maskEmployeeSensitive } = require('../services/dpdpSensitiveAccess');
 
 // ---------------------------------------------------------------------
 // Bulk employee creation via CSV. Registered BEFORE the generic crudRouter
@@ -368,6 +369,7 @@ function validatePeopleFields(req, org, employee) {
   orgFields.validateEmployeeMandatoryFields(policy, employee);
 }
 const employeeCrud = crudRouter(Employee, {
+    serialize: maskEmployeeSensitive,
     fields: [
       'organizationId', 'empCode', 'name', 'dob', 'doj', 'doa', 'postCadreId', 'grade', 'category',
       'currentPayScaleId', 'currentStageId', 'currentBasicPay', 'incrementPolicyId', 'payFixationPolicyId',
@@ -528,7 +530,7 @@ router.get('/:id/service-book', authenticate, requireFeaturePermission(['hr.view
 
     res.json({
       data: {
-        employee,
+        employee: maskEmployeeSensitive(employee),
         timeline: timelineWithDocs,
         timelineCount: timeline.length,
         payslips,

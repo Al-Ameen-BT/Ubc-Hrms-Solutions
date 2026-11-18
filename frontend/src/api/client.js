@@ -384,6 +384,7 @@ export const dpdpApi = {
   createAssistedRequest: (data) => api.post('/org/dpdp/requests/assisted', data),
   verifyOrgRequest: (id, method) => api.post(`/org/dpdp/requests/${id}/verify`, { method }),
   advanceOrgRequest: (id, data) => api.post(`/org/dpdp/requests/${id}/advance`, data),
+  revealSensitiveEmployeeData: (data) => api.post('/org/dpdp/sensitive-access', data),
 };
 
 /* Formatting helpers */

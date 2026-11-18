@@ -57,6 +57,14 @@ router.put('/controls', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'D
   try { res.json({ data: await dpdpRegistry.upsertControlAssessment({ actor: req.user, data: req.body }) }); } catch (err) { sendError(res, err); }
 });
 
+router.post('/sensitive-access', async (req, res) => {
+  try {
+    const access = await require('../services/accessControl').effectiveAccess(req.user.id);
+    const data = await require('../services/dpdpSensitiveAccess').reveal({ actor: req.user, access, ...req.body });
+    res.json({ data });
+  } catch (err) { sendError(res, err); }
+});
+
 // GET /api/v1/org/dpdp/documents
 router.get(
   '/documents',

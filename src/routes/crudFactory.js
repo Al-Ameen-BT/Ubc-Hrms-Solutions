@@ -77,6 +77,7 @@ function crudRouter(model, options) {
   const softDeleteValue = options.softDeleteValue || 'INACTIVE';
   const orgFilterField = options.orgFilterField === undefined ? 'organizationId' : options.orgFilterField;
   const superAdminOnly = !!options.superAdminOnly;
+  const serialize = options.serialize || (row => row);
 
   const readRoles = ['SUPER_ADMIN', ...(options.readRoles || DEFAULT_READ)];
   const writeRoles = ['SUPER_ADMIN', ...(options.writeRoles || DEFAULT_WRITE)];
@@ -118,7 +119,7 @@ function crudRouter(model, options) {
         }
       }
       const rows = await model.findAll({ where: req.access ? { ...where, ...scopedWhere(req.access, readPermission, model.name) } : where, order: [['id', 'ASC']] });
-      res.json({ data: rows });
+      res.json({ data: rows.map(serialize) });
     } catch (err) {
       res.status(500).json({ status: 'error', message: err.message });
     }
@@ -132,7 +133,7 @@ function crudRouter(model, options) {
       if (isTenantScoped() && req.user.role !== 'SUPER_ADMIN' && String(row[orgFilterField]) !== String(req.user.organizationId)) {
         return res.status(404).json({ status: 'error', message: 'Not found' });
       }
-      res.json({ data: row });
+      res.json({ data: serialize(row) });
     } catch (err) {
       res.status(500).json({ status: 'error', message: err.message });
     }
@@ -150,7 +151,7 @@ function crudRouter(model, options) {
       const row = employee && req.access?.accessControlMode === 'PERMISSIONS'
         ? await require('../services/organizationStructure').onboardEmployee({ organizationId: req.user.organizationId, actor: req.user, data: payload, organizationAssignment: req.body.organizationAssignment })
         : await model.create(payload);
-      res.status(201).json({ data: row });
+      res.status(201).json({ data: serialize(row) });
     } catch (err) {
       res.status(errStatus(err, 400)).json({ status: 'error', code: err.code, message: friendly(err) });
     }
@@ -171,7 +172,7 @@ function crudRouter(model, options) {
       await checkRefs(options.refs, payload, row[orgFilterField]);
       if (options.beforeUpdate) await options.beforeUpdate(req, row, payload);
       await row.update(payload);
-      res.json({ data: row });
+      res.json({ data: serialize(row) });
     } catch (err) {
       res.status(errStatus(err, 400)).json({ status: 'error', code: err.code, message: friendly(err) });
     }
@@ -189,7 +190,7 @@ function crudRouter(model, options) {
         return res.status(400).json({ status: 'error', message: `Model has no ${softDeleteField} field to soft-delete with` });
       }
       await row.update({ [softDeleteField]: softDeleteValue });
-      res.json({ data: row, message: `Deactivated (${softDeleteField} = ${softDeleteValue}). Row was not hard-deleted.` });
+      res.json({ data: serialize(row), message: `Deactivated (${softDeleteField} = ${softDeleteValue}). Row was not hard-deleted.` });
     } catch (err) {
       res.status(400).json({ status: 'error', message: err.message });
     }

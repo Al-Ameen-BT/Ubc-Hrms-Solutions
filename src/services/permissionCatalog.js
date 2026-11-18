@@ -28,6 +28,7 @@ const definitions = [
   ['chart', ['view'], ALL_SCOPES],
   ['geofence', ['view', 'manage'], ['SELECTED_BRANCHES', 'ORGANISATION']],
   ['dpdp', ['view', 'manage'], ['ORGANISATION']],
+  ['dpdp.sensitive', ['view'], ['ORGANISATION']],
   ['self', ['profile', 'payslips', 'leave', 'attendance', 'policies', 'claims', 'documents', 'devices'], ['OWN']],
 ];
 
@@ -64,7 +65,7 @@ const role = (code, name, allowedScopes, permissionCodes) => Object.freeze({
 });
 const HR = ['people.view', 'people.create', 'people.edit', 'people.export', 'hr.view', 'hr.manage', 'leave.view', 'leave.manage', 'leave.approve', 'attendance.view', 'attendance.manage', 'documents.view', 'documents.manage', 'chart.view'];
 const ROLE_TEMPLATES = Object.freeze([
-  role('ORGANISATION_ADMIN', 'Organisation Admin', ['ORGANISATION'], codes('structure', 'branches', 'departments', 'positions', 'assignments', 'transfers', 'people', 'hr', 'leave', 'attendance', 'documents', 'settings', 'roles', 'users', 'audit', 'chart', 'geofence').concat(['payroll.view', 'arrears.view', 'compensation.view', 'financialChanges.view', 'expenses.view', 'payments.view'])),
+  role('ORGANISATION_ADMIN', 'Organisation Admin', ['ORGANISATION'], codes('structure', 'branches', 'departments', 'positions', 'assignments', 'transfers', 'people', 'hr', 'leave', 'attendance', 'documents', 'settings', 'roles', 'users', 'audit', 'chart', 'geofence').concat(['payroll.view', 'arrears.view', 'compensation.view', 'financialChanges.view', 'expenses.view', 'payments.view', 'dpdp.sensitive.view'])),
   role('HR_ADMIN', 'HR Admin', ['ORGANISATION'], [...HR, 'departments.view', 'departments.manage', 'structure.view']),
   role('HR_OFFICER', 'HR Officer', ['SELECTED_BRANCHES'], HR),
   role('ACCOUNTS_OFFICER', 'Accounts Officer', ['ORGANISATION'], codes('payments').concat(['chart.view'])),
@@ -72,7 +73,7 @@ const ROLE_TEMPLATES = Object.freeze([
   role('APPROVING_AUTHORITY', 'Approving Authority', ['ORGANISATION'], ['payroll.view', 'payroll.approve', 'arrears.view', 'arrears.approve', 'compensation.view', 'compensation.approve', 'financialChanges.view', 'financialChanges.approve', 'expenses.view', 'expenses.approve', 'chart.view']),
   role('DEPARTMENT_HEAD', 'Department Head', ['DEPARTMENT'], ['people.view', 'attendance.view', 'leave.view', 'chart.view']),
   role('BRANCH_MANAGER', 'Branch Manager', ['SELECTED_BRANCHES'], ['people.view', 'attendance.view', 'leave.view', 'leave.approve', 'geofence.view', 'geofence.manage', 'chart.view']),
-  role('DATA_PROTECTION_OFFICER', 'Data Protection Officer', ['ORGANISATION'], ['dpdp.view', 'dpdp.manage', 'chart.view']),
+  role('DATA_PROTECTION_OFFICER', 'Data Protection Officer', ['ORGANISATION'], ['dpdp.view', 'dpdp.manage', 'dpdp.sensitive.view', 'chart.view']),
   role('EMPLOYEE', 'Employee', ['OWN'], codes('self').concat(['chart.view'])),
 ]);
 
