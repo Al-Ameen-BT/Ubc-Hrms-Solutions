@@ -20,6 +20,8 @@ const {
   LeaveType,
   LeaveApplication,
   EmployeeServiceHistory,
+  EmployeeAttendance,
+  EmployeeOrganizationAssignment,
 } = require('../src/models');
 const { signToken } = require('../src/services/authService');
 const { getDashboardAnalytics } = require('../src/services/dashboardAnalytics');
@@ -33,6 +35,9 @@ let branch2;
 let post;
 let adminUser;
 let adminToken;
+let emp1;
+let emp2;
+let emp3;
 
 const request = async (path, token) => {
   const response = await fetch(`${base}${path}`, {
@@ -67,7 +72,7 @@ before(async () => {
   });
   post = await PostCadre.create({ organizationId: org.id, code: 'OFFICER', name: 'Branch Officer' });
 
-  const emp1 = await Employee.create({
+  emp1 = await Employee.create({
     organizationId: org.id,
     branchId: branch1.id,
     postCadreId: post.id,
@@ -77,7 +82,7 @@ before(async () => {
     currentBasicPay: 35000,
   });
 
-  const emp2 = await Employee.create({
+  emp2 = await Employee.create({
     organizationId: org.id,
     branchId: branch2.id,
     postCadreId: post.id,
@@ -87,7 +92,7 @@ before(async () => {
     currentBasicPay: 22000,
   });
 
-  await Employee.create({
+  emp3 = await Employee.create({
     organizationId: org.id,
     branchId: branch1.id,
     postCadreId: post.id,
@@ -96,6 +101,12 @@ before(async () => {
     doj: '2026-11-01',
     currentBasicPay: 18000,
   });
+
+  await EmployeeOrganizationAssignment.bulkCreate([
+    { organizationId: org.id, employeeId: emp1.id, branchId: branch1.id, effectiveFrom: '2020-01-01' },
+    { organizationId: org.id, employeeId: emp2.id, branchId: branch2.id, effectiveFrom: '2020-01-01' },
+    { organizationId: org.id, employeeId: emp3.id, branchId: branch1.id, effectiveFrom: '2020-01-01' },
+  ]);
 
   adminUser = await User.create({
     organizationId: org.id,
@@ -203,7 +214,7 @@ test('operational dashboard separates unmarked staff and never invents shift exc
   assert.equal(data.summary.attendance.late, 0);
   assert.equal(data.summary.attendance.shiftMismatch, 0);
   assert.equal(data.summary.attendance.shiftConfigured, false);
-  assert.deepEqual(data.workspaces.attendanceExceptions.map((row) => row.employeeId), [3]);
+  assert.deepEqual(data.workspaces.attendanceExceptions.map((row) => row.employeeId), [emp3.id]);
   assert.match(data.workspaces.attendanceExceptions[0].reason, /not marked/i);
 });
 
@@ -225,6 +236,50 @@ test('payroll readiness reports missing fields without exposing sensitive values
   assert.equal(data.summary.payroll.recordsNeedingReview, 3);
   assert.ok(data.workspaces.payrollBlockers.some((row) => row.details.includes('salary bank account')));
   assert.doesNotMatch(serialized, /bankAccountNumber|aadhaarNumber|panNumber/i);
+});
+
+test('operational dashboard enforces branch-scoped HR access before applying filters', async () => {
+  const access = {
+    userId: adminUser.id,
+    employeeId: emp1.id,
+    organizationId: org.id,
+    accessControlMode: 'PERMISSIONS',
+    activeBranchIds: [branch1.id, branch2.id],
+    activeDepartmentIds: [],
+    at: new Date().toISOString().slice(0, 10),
+    grants: [{ action: 'hr.view', scope: 'SELECTED_BRANCHES', branchIds: [branch1.id], departmentIds: [] }],
+  };
+  const data = await getDashboardAnalytics(org.id, {}, access);
+
+  assert.equal(data.totalEmployees, 2);
+  assert.deepEqual(data.filterOptions.branches.map((row) => row.id), [branch1.id]);
+  assert.ok(data.actions.every((row) => row.branchId === branch1.id));
+});
+
+test('direct-pay employees with complete salary and bank data are payroll-ready without a pay scale', async () => {
+  const employee = await Employee.create({
+    organizationId: org.id, branchId: branch1.id, postCadreId: post.id, empCode: 'E104', name: 'Direct Pay Ready',
+    doj: '2024-01-01', directPay: true, currentBasicPay: 25000, bankName: 'Test Bank', bankAccountNumber: '123456789', bankIfsc: 'TEST0000001',
+  });
+  try {
+    const data = await getDashboardAnalytics(org.id);
+    assert.equal(data.workspaces.payrollBlockers.some((row) => row.employeeId === employee.id), false);
+  } finally {
+    await employee.destroy();
+  }
+});
+
+test('probation confirmation due date includes recorded loss-of-pay extensions', async () => {
+  const employee = await Employee.create({ organizationId: org.id, branchId: branch1.id, postCadreId: post.id, empCode: 'E105', name: 'Probation Extended', doj: '2025-11-18', currentBasicPay: 20000 });
+  const attendance = await EmployeeAttendance.create({ employeeId: employee.id, year: 2026, month: 4, lopDays: 10 });
+  try {
+    const data = await getDashboardAnalytics(org.id, { date: '2026-11-18' });
+    const alert = data.workspaces.complianceAlerts.find((row) => row.employeeId === employee.id);
+    assert.equal(alert.dueDate, '2026-11-28');
+  } finally {
+    await attendance.destroy();
+    await employee.destroy();
+  }
 });
 
 test('GET /org/dashboard-analytics returns 200 with complete analytics structure', async () => {

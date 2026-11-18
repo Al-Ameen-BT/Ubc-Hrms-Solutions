@@ -2,6 +2,7 @@
 
 const { Op } = require('sequelize');
 const { todayIST } = require('./orgAccess');
+const { scopedWhere } = require('./accessControl');
 const {
   Employee,
   OrganizationBranch,
@@ -12,6 +13,7 @@ const {
   PostCadre,
   EmployeeTransfer,
   PayrollRun,
+  EmployeeAttendance,
 } = require('../models');
 
 function workingDates(endDate, count) {
@@ -72,22 +74,22 @@ const CADRE_PALETTE = [
  * - Leave metrics (pie chart of types, pending approvals, active leaves)
  * - Promotion and cadre distribution (pie chart of designations, recent career events)
  */
-async function getDashboardAnalytics(organizationId, filters = {}) {
+async function getDashboardAnalytics(organizationId, filters = {}, access = null) {
   const today = filters.date || todayIST();
 
   // 1. Fetch active branches
-  const branches = await OrganizationBranch.findAll({
+  const allBranches = await OrganizationBranch.findAll({
     where: { organizationId, status: 'ACTIVE' },
     order: [['displayOrder', 'ASC'], ['id', 'ASC']],
   });
 
   // 2. Fetch active employees with post cadre info
   const allEmployees = await Employee.findAll({
-    where: { organizationId, status: 'ACTIVE' },
+    where: { [Op.and]: [{ organizationId, status: 'ACTIVE' }, access ? scopedWhere(access, 'hr.view', 'Employee') : {}] },
     include: [{ model: PostCadre, attributes: ['id', 'code', 'name'] }],
     attributes: [
       'id', 'empCode', 'name', 'branchId', 'departmentId', 'department', 'postCadreId',
-      'employmentStatus', 'employmentType', 'doj', 'dateOfConfirmation',
+      'employmentStatus', 'employmentType', 'directPay', 'doj', 'dateOfConfirmation',
       'educationalQualification', 'panNumber', 'aadhaarNumber', 'bankName',
       'bankAccountNumber', 'bankIfsc', 'currentPayScaleId', 'currentStageId', 'currentBasicPay',
     ],
@@ -101,9 +103,13 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
     && (!search || employee.name.toLowerCase().includes(search) || employee.empCode.toLowerCase().includes(search))
   ));
 
+  const organisationWide = !access || access.grants.some((grant) => grant.action === 'hr.view' && grant.scope === 'ORGANISATION');
+  const accessibleBranchIds = new Set(allEmployees.map((employee) => employee.branchId).filter(Boolean));
+  const branches = organisationWide ? allBranches : allBranches.filter((branch) => accessibleBranchIds.has(branch.id));
+
   const employeeMap = new Map();
   const branchMap = new Map();
-  branches.forEach((b) => branchMap.set(b.id, b));
+  allBranches.forEach((b) => branchMap.set(b.id, b));
 
   employees.forEach((emp) => {
     employeeMap.set(emp.id, emp);
@@ -132,7 +138,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
     include: [
       {
         model: Employee,
-        where: { organizationId },
+        where: { organizationId, id: { [Op.in]: [...scopedEmployeeIds] } },
         attributes: ['id', 'empCode', 'name', 'branchId'],
       },
       {
@@ -184,7 +190,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
     include: [
       {
         model: Employee,
-        where: { organizationId },
+        where: { organizationId, id: { [Op.in]: [...scopedEmployeeIds] } },
         attributes: ['id', 'empCode', 'name', 'branchId', 'postCadreId'],
         include: [{ model: PostCadre, attributes: ['id', 'code', 'name'] }],
       },
@@ -381,10 +387,21 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
     destination: '/leave',
   }));
 
+  const probationAttendance = scopedEmployeeIds.size ? await EmployeeAttendance.findAll({
+    where: { employeeId: { [Op.in]: [...scopedEmployeeIds] } },
+    attributes: ['employeeId', 'year', 'month', 'lopDays'],
+  }) : [];
+  const selectedMonth = Number(today.slice(0, 4)) * 100 + Number(today.slice(5, 7));
+  const probationLopDays = new Map();
+  probationAttendance.forEach((row) => {
+    if (Number(row.year) * 100 + Number(row.month) > selectedMonth) return;
+    probationLopDays.set(row.employeeId, (probationLopDays.get(row.employeeId) || 0) + Number(row.lopDays || 0));
+  });
+
   const payrollBlockers = employees.flatMap((employee) => {
     const missing = [];
     if (!employee.bankName || !employee.bankAccountNumber || !employee.bankIfsc) missing.push('salary bank account');
-    if (!employee.currentPayScaleId || !employee.currentStageId || employee.currentBasicPay == null) missing.push('pay-scale assignment');
+    if (employee.currentBasicPay == null || (!employee.directPay && (!employee.currentPayScaleId || !employee.currentStageId))) missing.push(employee.directPay ? 'approved direct-pay salary' : 'pay-scale assignment');
     if (!missing.length) return [];
     return [actionFor(employee, {
       id: `payroll-${employee.id}`,
@@ -401,7 +418,7 @@ async function getDashboardAnalytics(organizationId, filters = {}) {
     const missing = [];
     if (!employee.educationalQualification) missing.push('education qualification verification');
     if (!employee.panNumber || !employee.aadhaarNumber) missing.push('identity/KYC details');
-    const probationDue = employee.dateOfConfirmation ? null : addDays(employee.doj, 365);
+    const probationDue = employee.dateOfConfirmation ? null : addDays(employee.doj, 365 + Math.ceil(probationLopDays.get(employee.id) || 0));
     if (probationDue && daysBetween(today, probationDue) <= 30) missing.push(probationDue < today ? 'probation confirmation overdue' : 'probation confirmation due');
     if (!missing.length) return [];
     return [actionFor(employee, {

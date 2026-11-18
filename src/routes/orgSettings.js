@@ -54,7 +54,7 @@ router.get('/dashboard-analytics', requireFeaturePermission('hr.view', ['ORG_ADM
       if (search.length > 80) return res.status(400).json({ status: 'error', message: 'Employee search is too long.' });
       filters.search = search;
     }
-    const analytics = await getDashboardAnalytics(req.user.organizationId, filters);
+    const analytics = await getDashboardAnalytics(req.user.organizationId, filters, req.access);
     res.json({ data: analytics });
   } catch (err) { sendError(res, err); }
 });
