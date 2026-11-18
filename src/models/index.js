@@ -79,6 +79,10 @@ const DpdpDataRequest = require('./dpdpDataRequest');
 const DpdpIncident = require('./dpdpIncident');
 const DpdpOrganizationProfile = require('./dpdpOrganizationProfile');
 const DpdpRetentionRule = require('./dpdpRetentionRule')(sequelize);
+const DpdpProcessingActivity = require('./dpdpProcessingActivity');
+const DpdpProcessor = require('./dpdpProcessor');
+const DpdpSharingEvent = require('./dpdpSharingEvent');
+const DpdpControlAssessment = require('./dpdpControlAssessment');
 
 // ----------------------------------------------------------------------------
 // Associations — this is the literal implementation of the required chain:
@@ -410,6 +414,14 @@ Organization.hasOne(DpdpOrganizationProfile, { foreignKey: 'organizationId' });
 DpdpRetentionRule.belongsTo(Organization, { foreignKey: 'organizationId' });
 Organization.hasMany(DpdpRetentionRule, { foreignKey: 'organizationId' });
 
+for (const model of [DpdpProcessingActivity, DpdpProcessor, DpdpSharingEvent, DpdpControlAssessment]) {
+  model.belongsTo(Organization, { foreignKey: 'organizationId' });
+  Organization.hasMany(model, { foreignKey: 'organizationId' });
+}
+DpdpSharingEvent.belongsTo(Employee, { foreignKey: 'employeeId' });
+DpdpSharingEvent.belongsTo(DpdpProcessingActivity, { foreignKey: 'processingActivityId' });
+DpdpSharingEvent.belongsTo(DpdpProcessor, { foreignKey: 'processorId' });
+
 module.exports = {
   DpdpDocument,
   DpdpAcknowledgement,
@@ -417,6 +429,10 @@ module.exports = {
   DpdpIncident,
   DpdpOrganizationProfile,
   DpdpRetentionRule,
+  DpdpProcessingActivity,
+  DpdpProcessor,
+  DpdpSharingEvent,
+  DpdpControlAssessment,
   EmployeeTransfer,
   OrganizationDepartment,
   OrganizationPosition,

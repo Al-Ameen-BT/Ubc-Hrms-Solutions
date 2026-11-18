@@ -28,6 +28,7 @@ test('organisation access indexes have explicit short unique names', () => {
     'EmployeeOrganizationAssignment', 'OrganizationResponsibilityAssignment', 'OrganizationRole',
     'OrganizationRolePermission', 'UserRoleAssignment', 'UserRoleBranch', 'UserRoleDepartment',
     'DpdpDocument', 'DpdpAcknowledgement', 'DpdpDataRequest', 'DpdpIncident', 'DpdpOrganizationProfile',
+    'DpdpProcessingActivity', 'DpdpProcessor', 'DpdpSharingEvent', 'DpdpControlAssessment',
   ]) {
     const model = sequelize.models[modelName];
     assert.ok(model, `${modelName} exists`);

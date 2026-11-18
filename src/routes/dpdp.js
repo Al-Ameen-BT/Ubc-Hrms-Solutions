@@ -4,6 +4,7 @@ const express = require('express');
 const { requireFeaturePermission } = require('../middleware/permissions');
 const { authenticate } = require('../middleware/auth');
 const dpdpDocuments = require('../services/dpdpDocuments');
+const dpdpRegistry = require('../services/dpdpRegistry');
 const { sendError } = require('../services/userAdmin');
 
 const router = express.Router();
@@ -11,6 +12,50 @@ const router = express.Router();
 // -------------------------------------------------------- Organisation Routes
 // Mounted under /org/dpdp in index.js
 router.use(authenticate);
+
+router.get('/dashboard', requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.dashboard(req.user.organizationId) }); } catch (err) { sendError(res, err); }
+});
+
+router.get('/processing-activities', requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.listProcessingActivities({ organizationId: req.user.organizationId, status: req.query.status }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/processing-activities', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.status(201).json({ data: await dpdpRegistry.upsertProcessingActivity({ actor: req.user, data: req.body }) }); } catch (err) { sendError(res, err); }
+});
+
+router.put('/processing-activities/:id', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.upsertProcessingActivity({ actor: req.user, id: Number(req.params.id), data: req.body }) }); } catch (err) { sendError(res, err); }
+});
+
+router.get('/processors', requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.listProcessors({ organizationId: req.user.organizationId, status: req.query.status }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/processors', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.status(201).json({ data: await dpdpRegistry.upsertProcessor({ actor: req.user, data: req.body }) }); } catch (err) { sendError(res, err); }
+});
+
+router.put('/processors/:id', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.upsertProcessor({ actor: req.user, id: Number(req.params.id), data: req.body }) }); } catch (err) { sendError(res, err); }
+});
+
+router.get('/sharing-events', requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.listSharingEvents({ organizationId: req.user.organizationId, employeeId: req.query.employeeId }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/sharing-events', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.status(201).json({ data: await dpdpRegistry.recordSharingEvent({ actor: req.user, data: req.body }) }); } catch (err) { sendError(res, err); }
+});
+
+router.get('/controls', requireFeaturePermission('dpdp.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.listControlAssessments({ organizationId: req.user.organizationId }) }); } catch (err) { sendError(res, err); }
+});
+
+router.put('/controls', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRegistry.upsertControlAssessment({ actor: req.user, data: req.body }) }); } catch (err) { sendError(res, err); }
+});
 
 // GET /api/v1/org/dpdp/documents
 router.get(
