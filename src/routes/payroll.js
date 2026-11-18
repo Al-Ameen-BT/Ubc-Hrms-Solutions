@@ -36,6 +36,8 @@ const { buildPayslipPdf } = require('../services/payslipPdf');
 const { sendPayslipForLine } = require('../services/payslipEmail');
 const { roundRupees } = require('../utils/money');
 
+const { requireFeature } = require('../middleware/featureGate');
+
 const router = express.Router({ mergeParams: true });
 
 const VIEWERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'];
@@ -50,6 +52,8 @@ router.use((req, res, next) => {
   }
   next();
 });
+
+router.use(requireFeature('payroll'));
 
 const paymentOnly = req => req.access?.accessControlMode === 'PERMISSIONS' && req.permissionCode === 'payments.view';
 const paymentRunFields = ['id', 'organizationId', 'year', 'month', 'status', 'employeeCount', 'totalNetPay', 'approvedAt', 'paidAt'];

@@ -18,6 +18,28 @@ function clientIp(req) {
  * @param {number|null} [opts.organizationId] - tenant concerned; defaults to the actor's own
  * @param {object} [opts.actor] - override actor {id, email} (e.g. before req.user exists, at login)
  */
+const SENSITIVE_KEYS = new Set([
+  'password', 'temppassword', 'temporarypassword', 'passwordhash',
+  'token', 'secret', 'mfasecret', 'claimsecret', 'aadhaar', 'pan',
+]);
+
+function sanitizeDetails(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeDetails);
+  const clean = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (SENSITIVE_KEYS.has(normKey)) {
+      clean[key] = '[REDACTED]';
+    } else if (value && typeof value === 'object') {
+      clean[key] = sanitizeDetails(value);
+    } else {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
 async function audit(req, action, opts = {}) {
   try {
     const actor = opts.actor || (req && req.user) || {};
@@ -31,7 +53,7 @@ async function audit(req, action, opts = {}) {
       action,
       targetType: opts.targetType || null,
       targetId: opts.targetId != null ? String(opts.targetId) : null,
-      details: opts.details || null,
+      details: sanitizeDetails(opts.details) || null,
       ip: clientIp(req),
     });
   } catch (err) {

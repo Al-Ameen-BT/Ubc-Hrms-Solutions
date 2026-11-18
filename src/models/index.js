@@ -89,6 +89,7 @@ const DpdpRequestEvent = require('./dpdpRequestEvent');
 const DpdpNomination = require('./dpdpNomination');
 const DpdpRetentionProposal = require('./dpdpRetentionProposal');
 const DpdpDeletionResult = require('./dpdpDeletionResult');
+const OrganizationFeature = require('./organizationFeature');
 
 // ----------------------------------------------------------------------------
 // Associations — this is the literal implementation of the required chain:
@@ -96,6 +97,9 @@ const DpdpDeletionResult = require('./dpdpDeletionResult');
 // ----------------------------------------------------------------------------
 
 // Organization is the tenant root
+Organization.hasMany(OrganizationFeature, { foreignKey: 'organizationId', as: 'features' });
+OrganizationFeature.belongsTo(Organization, { foreignKey: 'organizationId' });
+
 Organization.hasMany(GovernmentOrder, { foreignKey: 'organizationId' });
 Organization.hasMany(RuleReference, { foreignKey: 'organizationId' });
 Organization.hasMany(PostCadre, { foreignKey: 'organizationId' });
@@ -476,6 +480,7 @@ module.exports = {
   BankRuleCatalogue,
   OrganizationCatalogueAdoption,
   EmployeeCompensationAssignment,
+  OrganizationFeature,
   sequelize,
   Organization,
   GovernmentOrder,

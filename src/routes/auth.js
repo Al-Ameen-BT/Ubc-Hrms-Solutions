@@ -198,7 +198,20 @@ router.get('/me', markDpdpPendingAllowed, authenticate, async (req, res) => {
   const user = await User.findByPk(req.user.id, withOrg);
   if (!user) return res.status(404).json({ status: 'error', message: 'Not found' });
   const access = await require('../services/accessControl').effectiveAccess(user.id);
-  res.json({ data: { ...await publicUser(user), accessControlMode: access.accessControlMode, bootstrapRestricted: !!access.bootstrapRestricted, permissionCodes: access.permissionCodes, scopeSummary: access.scopeSummary } });
+  const orgFeatures = require('../services/orgFeatures');
+  const enabledFeatures = user.organizationId
+    ? await orgFeatures.getEnabledFeatureCodes(user.organizationId)
+    : orgFeatures.FEATURE_CATALOGUE.map(f => f.code);
+  res.json({
+    data: {
+      ...await publicUser(user),
+      accessControlMode: access.accessControlMode,
+      bootstrapRestricted: !!access.bootstrapRestricted,
+      permissionCodes: access.permissionCodes,
+      scopeSummary: access.scopeSummary,
+      enabledFeatures,
+    },
+  });
 });
 
 router.post('/change-password', markDpdpPendingAllowed, authenticate, async (req, res) => {

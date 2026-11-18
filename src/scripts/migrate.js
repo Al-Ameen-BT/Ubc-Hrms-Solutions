@@ -33,6 +33,7 @@ const {
   DpdpDataRequest,
   DpdpIncident,
   DpdpOrganizationProfile,
+  OrganizationFeature,
 } = require('../models');
 
 const StageNumberMigration = sequelize.define('StageNumberMigration', {
@@ -310,6 +311,7 @@ async function migrate() {
   await DpdpDataRequest.sync();
   await DpdpIncident.sync();
   await DpdpOrganizationProfile.sync();
+  await OrganizationFeature.sync();
   for (const [table, column, spec] of COLUMN_STEPS) {
     // eslint-disable-next-line no-await-in-loop
     if (await addColumnIfMissing(qi, table, column, spec)) added.push(`${table}.${column}`);

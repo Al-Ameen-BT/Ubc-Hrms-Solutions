@@ -31,6 +31,7 @@ const orgDomains = require('../services/orgDomains');
 const payScaleLibrary = require('../services/payScaleLibrary');
 const payScaleRevision = require('../services/payScaleRevision');
 const { parseCsv, toCsv } = require('../services/csv');
+const orgFeatures = require('../services/orgFeatures');
 
 const router = express.Router();
 router.use(authenticate, requireRole('SUPER_ADMIN'));
@@ -557,6 +558,59 @@ router.post('/dpdp/documents/publish', async (req, res) => {
       actor: req.user,
     });
     res.status(201).json({ data: doc });
+  } catch (err) { sendError(res, err); }
+});
+
+// ---------------------------------------------------------------- Organisation Features
+router.get('/feature-catalogue', (req, res) => {
+  res.json({ data: orgFeatures.FEATURE_CATALOGUE });
+});
+
+router.get('/organizations/:id/features', async (req, res) => {
+  try {
+    const org = await Organization.findByPk(req.params.id);
+    if (!org) return res.status(404).json({ status: 'error', message: 'Organisation not found' });
+    const list = await orgFeatures.getFeatures(org.id);
+    res.json({ data: list });
+  } catch (err) { sendError(res, err); }
+});
+
+router.put('/organizations/:id/features', async (req, res) => {
+  try {
+    const org = await Organization.findByPk(req.params.id);
+    if (!org) return res.status(404).json({ status: 'error', message: 'Organisation not found' });
+    const { features } = req.body || {};
+    if (!Array.isArray(features)) {
+      return res.status(400).json({ status: 'error', message: 'Body must contain features array' });
+    }
+    await orgFeatures.setFeatures(org.id, features, req.user.id);
+    const updated = await orgFeatures.getFeatures(org.id);
+    await audit(req, 'org.features.update', {
+      organizationId: org.id,
+      targetType: 'organization',
+      targetId: org.id,
+      details: { orgCode: org.code, count: features.length },
+    });
+    res.json({ data: updated });
+  } catch (err) { sendError(res, err); }
+});
+
+router.put('/organizations/:id/features/:featureCode', async (req, res) => {
+  try {
+    const org = await Organization.findByPk(req.params.id);
+    if (!org) return res.status(404).json({ status: 'error', message: 'Organisation not found' });
+    const { enabled, notes } = req.body || {};
+    if (enabled === undefined) {
+      return res.status(400).json({ status: 'error', message: 'enabled boolean is required' });
+    }
+    const row = await orgFeatures.setFeature(org.id, req.params.featureCode, enabled, req.user.id, notes);
+    await audit(req, enabled ? 'org.feature.enable' : 'org.feature.disable', {
+      organizationId: org.id,
+      targetType: 'organization_feature',
+      targetId: req.params.featureCode,
+      details: { orgCode: org.code, feature: req.params.featureCode, enabled: Boolean(enabled), notes },
+    });
+    res.json({ data: row });
   } catch (err) { sendError(res, err); }
 });
 

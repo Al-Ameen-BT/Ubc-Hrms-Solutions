@@ -8,8 +8,9 @@ const { audit } = require('../services/audit');
 const { hasProtectedConflict } = require('../services/accessControl');
 const documents = require('../services/documents');
 const { isDateOnly } = require('../services/dateUtils');
+const { requireFeature } = require('../middleware/featureGate');
 const router = express.Router();
-router.use(authenticate);
+router.use(authenticate, requireFeature('expenses'));
 const error = (res, err) => res.status(err.status || 500).json({ status: 'error', message: err.message });
 async function ownClaim(req, res) {
   const row = await ExpenseClaim.findOne({ where: { id: req.params.id, organizationId: req.user.organizationId } });

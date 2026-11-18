@@ -31,10 +31,10 @@ const APPROVERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'APPROVING_AUTHORITY'
 function sendErr(res, err) { res.status(err.status || 500).json({ status: 'error', message: err.message }); }
 function orgIdFor(req) { return req.user.organizationId; }
 
-// ------------------------------------------------------------- Leave types
+const { requireFeature } = require('../middleware/featureGate');
 
 const types = express.Router();
-types.use(authenticate);
+types.use(authenticate, requireFeature('leave'));
 
 async function loadTypeOr404(req, res) {
   const row = await LeaveType.findByPk(req.params.id);
@@ -104,7 +104,7 @@ types.post('/:id/accrue', requireFeaturePermission('leave.manage', WRITERS, reso
 // -------------------------------------------------------- Leave applications
 
 const applications = express.Router();
-applications.use(authenticate);
+applications.use(authenticate, requireFeature('leave'));
 
 async function loadAppOr404(req, res) {
   const row = await LeaveApplication.findByPk(req.params.id, { include: [{ model: Employee }, { model: LeaveType }] });

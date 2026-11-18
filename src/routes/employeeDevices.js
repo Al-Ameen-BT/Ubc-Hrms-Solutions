@@ -41,7 +41,9 @@ async function mobileUser(user) {
     organization: { code: user.Organization.code, name: user.Organization.name, logoUrl: logo ? `/assets/org/${encodeURIComponent(user.Organization.code)}/logo?v=${logo.version}` : null } };
 }
 
-employee.use(authenticate);
+const { requireFeature } = require('../middleware/featureGate');
+
+employee.use(authenticate, requireFeature('mobile_app'));
 employee.use(async (req, res, next) => {
   try {
     if (req.user.deviceId) return error(res, 403, 'PORTAL_REQUIRED', 'Manage linked devices from your web portal.');
