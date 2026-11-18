@@ -47,7 +47,7 @@ test('DPDP Admin UI source contract verification', () => {
   assert.ok(orgContent.includes('assignDpo'), 'Org page implements DPO assignment');
   assert.ok(orgContent.includes('dpdpReadiness'), 'Org page checks DPDP readiness');
   assert.ok(orgContent.includes('assignDpo({ userId: Number(selectedUserId) })'), 'DPO assignment sends a named userId field');
-  assert.ok(orgContent.includes('readiness?.isReady'), 'Org page uses the readiness API isReady field');
-  assert.ok(orgContent.includes('b.message'), 'Org page renders blocker messages rather than blocker objects');
+  assert.ok(orgContent.includes('readiness.isReady'), 'Org page uses the readiness API isReady field');
+  assert.ok(orgContent.includes('item.message'), 'Org page renders blocker messages rather than blocker objects');
   assert.ok(orgContent.includes('profile?.dpoName'), 'Org page uses the flat DPO profile fields');
 });

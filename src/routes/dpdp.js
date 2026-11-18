@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { requireFeaturePermission } = require('../middleware/permissions');
+const { requireFeaturePermission, resource } = require('../middleware/permissions');
 const { authenticate } = require('../middleware/auth');
 const dpdpDocuments = require('../services/dpdpDocuments');
 const dpdpRegistry = require('../services/dpdpRegistry');
@@ -57,10 +57,9 @@ router.put('/controls', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'D
   try { res.json({ data: await dpdpRegistry.upsertControlAssessment({ actor: req.user, data: req.body }) }); } catch (err) { sendError(res, err); }
 });
 
-router.post('/sensitive-access', async (req, res) => {
+router.post('/sensitive-access', requireFeaturePermission('dpdp.sensitive.view', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER'], resource('Employee', 'employeeId', 'body')), async (req, res) => {
   try {
-    const access = await require('../services/accessControl').effectiveAccess(req.user.id);
-    const data = await require('../services/dpdpSensitiveAccess').reveal({ actor: req.user, access, ...req.body });
+    const data = await require('../services/dpdpSensitiveAccess').reveal({ actor: req.user, access: req.access, ...req.body });
     res.json({ data });
   } catch (err) { sendError(res, err); }
 });
