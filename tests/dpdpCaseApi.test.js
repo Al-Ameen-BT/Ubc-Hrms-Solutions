@@ -136,15 +136,41 @@ test('DPO can register and list incidents at /org/dpdp/incidents', async () => {
   const incRes = await request('/org/dpdp/incidents', dpoToken, 'POST', {
     title: 'Phishing attempt against staff email',
     severity: 'MEDIUM',
+    awareAt: '2026-11-18T10:00:00.000Z',
     summary: 'Phishing campaign detected and blocked at mail filter.',
   });
 
   assert.equal(incRes.status, 201);
   assert.equal(incRes.body.data.title, 'Phishing attempt against staff email');
+  assert.equal(incRes.body.data.boardDetailedDueAt, '2026-11-21T10:00:00.000Z');
+
+  const closeRes = await request(`/org/dpdp/incidents/${incRes.body.data.id}`, dpoToken, 'PUT', {
+    status: 'CLOSED',
+    rootCause: 'Credential harvesting email',
+    correctiveActions: 'Mail rule and staff guidance updated',
+    affectedPrincipalNotificationStatus: 'NOT_REQUIRED',
+    boardNotificationStatus: 'NOT_REQUIRED',
+  });
+  assert.equal(closeRes.status, 200);
+  assert.equal(closeRes.body.data.status, 'CLOSED');
 
   const listIncRes = await request('/org/dpdp/incidents', dpoToken, 'GET');
   assert.equal(listIncRes.status, 200);
   assert.equal(listIncRes.body.data.length, 1);
+});
+
+test('DPO can create and list controlled retention proposals', async () => {
+  const token = signToken(dpoUser);
+  const created = await request('/org/dpdp/retention/proposals', token, 'POST', {
+    category: 'TEMP_ATTACHMENTS',
+    cutoffAt: '2026-10-01',
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.status, 'PROPOSED');
+
+  const list = await request('/org/dpdp/retention/proposals', token);
+  assert.equal(list.status, 200);
+  assert.equal(list.body.data.length, 1);
 });
 
 test('DPO assisted intake and identity verification advance an external case', async () => {

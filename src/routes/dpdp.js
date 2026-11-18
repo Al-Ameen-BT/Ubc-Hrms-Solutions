@@ -199,6 +199,7 @@ router.post(
         affectedCategories: req.body.affectedCategories,
         affectedCount: req.body.affectedCount,
         discoveredAt: req.body.discoveredAt,
+        awareAt: req.body.awareAt,
         summary: req.body.summary,
       });
       res.status(201).json({ data: incident });
@@ -224,6 +225,10 @@ router.put(
         closedAt: req.body.closedAt,
         actionTaken: req.body.actionTaken,
         summary: req.body.summary,
+        rootCause: req.body.rootCause,
+        correctiveActions: req.body.correctiveActions,
+        affectedPrincipalNotificationStatus: req.body.affectedPrincipalNotificationStatus,
+        boardNotificationStatus: req.body.boardNotificationStatus,
       });
       res.json({ data: incident });
     } catch (err) {
@@ -279,5 +284,23 @@ router.put(
     }
   }
 );
+
+const dpdpRetentionProposals = require('../services/dpdpRetentionProposals');
+
+router.get('/retention/proposals', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRetentionProposals.listProposals({ organizationId: req.user.organizationId, status: req.query.status }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/retention/proposals', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.status(201).json({ data: await dpdpRetentionProposals.createProposal({ actor: req.user, category: req.body.category, cutoffAt: req.body.cutoffAt }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/retention/proposals/:id/decide', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRetentionProposals.decideProposal({ actor: req.user, proposalId: req.params.id, decision: req.body.decision, reason: req.body.reason }) }); } catch (err) { sendError(res, err); }
+});
+
+router.post('/retention/proposals/:id/execute', requireFeaturePermission('dpdp.manage', ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']), async (req, res) => {
+  try { res.json({ data: await dpdpRetentionProposals.executeProposal({ actor: req.user, proposalId: req.params.id }) }); } catch (err) { sendError(res, err); }
+});
 
 module.exports = router;

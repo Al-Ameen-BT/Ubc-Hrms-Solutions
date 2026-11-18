@@ -239,6 +239,7 @@ async function createIncident({
   affectedCategories = null,
   affectedCount = 0,
   discoveredAt = new Date(),
+  awareAt = new Date(),
   summary = null,
 } = {}) {
   if (!actor || !actor.organizationId) {
@@ -257,6 +258,8 @@ async function createIncident({
     throw err;
   }
 
+  const aware = awareAt instanceof Date ? awareAt : new Date(awareAt);
+  const boardDetailedDueAt = new Date(aware.getTime() + 72 * 60 * 60 * 1000);
   const incident = await DpdpIncident.create({
     organizationId: actor.organizationId,
     title: String(title).trim(),
@@ -265,6 +268,8 @@ async function createIncident({
     affectedCategories: affectedCategories ? String(affectedCategories).trim() : null,
     affectedCount: Number(affectedCount) || 0,
     discoveredAt: discoveredAt instanceof Date ? discoveredAt : new Date(discoveredAt),
+    awareAt: aware,
+    boardDetailedDueAt,
     summary: summary ? String(summary).trim() : null,
     reportedBy: actor.id,
   });
@@ -294,6 +299,10 @@ async function updateIncident({
   closedAt,
   actionTaken,
   summary,
+  rootCause,
+  correctiveActions,
+  affectedPrincipalNotificationStatus,
+  boardNotificationStatus,
 } = {}) {
   if (!actor || !actor.organizationId) {
     const err = new Error('Unauthorized.');
@@ -323,6 +332,17 @@ async function updateIncident({
       throw err;
     }
 
+    const closureEvidence = {
+      rootCause: rootCause ?? incident.rootCause,
+      correctiveActions: correctiveActions ?? incident.correctiveActions,
+      affectedPrincipalNotificationStatus: affectedPrincipalNotificationStatus ?? incident.affectedPrincipalNotificationStatus,
+      boardNotificationStatus: boardNotificationStatus ?? incident.boardNotificationStatus,
+    };
+    if (status === 'CLOSED' && Object.values(closureEvidence).some(value => !value)) {
+      const err = new Error('Root cause, corrective actions, affected-principal notification decision, and Board notification decision are required before closure.');
+      err.status = 400;
+      throw err;
+    }
     if (status && VALID_INCIDENT_STATUSES.includes(status)) {
       incident.status = status;
       if (status === 'CONTAINED' && !incident.containedAt) {
@@ -346,6 +366,10 @@ async function updateIncident({
     if (summary !== undefined) {
       incident.summary = summary ? String(summary).trim() : null;
     }
+    if (rootCause !== undefined) incident.rootCause = rootCause ? String(rootCause).trim() : null;
+    if (correctiveActions !== undefined) incident.correctiveActions = correctiveActions ? String(correctiveActions).trim() : null;
+    if (affectedPrincipalNotificationStatus !== undefined) incident.affectedPrincipalNotificationStatus = affectedPrincipalNotificationStatus;
+    if (boardNotificationStatus !== undefined) incident.boardNotificationStatus = boardNotificationStatus;
 
     await incident.save({ transaction });
 

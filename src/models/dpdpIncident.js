@@ -40,6 +40,12 @@ const DpdpIncident = sequelize.define('DpdpIncident', {
     allowNull: false,
     field: 'discovered_at',
   },
+  awareAt: { type: DataTypes.DATE, allowNull: true, field: 'aware_at' },
+  boardDetailedDueAt: { type: DataTypes.DATE, allowNull: true, field: 'board_detailed_due_at' },
+  rootCause: { type: DataTypes.TEXT, allowNull: true, field: 'root_cause' },
+  correctiveActions: { type: DataTypes.TEXT, allowNull: true, field: 'corrective_actions' },
+  affectedPrincipalNotificationStatus: { type: DataTypes.STRING(32), allowNull: true, field: 'affected_principal_notification_status' },
+  boardNotificationStatus: { type: DataTypes.STRING(32), allowNull: true, field: 'board_notification_status' },
   containedAt: {
     type: DataTypes.DATE,
     allowNull: true,
