@@ -6,5 +6,4 @@ export { Table } from './Table';
 export { Modal } from './Modal';
 export { StatLedger } from './StatLedger';
 export { EmptyState } from './EmptyState';
-export { ColorfulPieChart } from './ColorfulPieChart';
 export { ToastProvider, useToast } from './Toast';

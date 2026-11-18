@@ -1,710 +1,303 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { orgApi, fmt } from '../../api/client';
-import { Card } from '../../components/ui/Card';
+import { orgApi } from '../../api/client';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { ColorfulPieChart } from '../../components/ui/ColorfulPieChart';
+import {
+  AttentionList,
+  DashboardError,
+  DashboardSkeleton,
+  DashboardSummary,
+  DistributionBars,
+} from '../dashboard/DashboardPrimitives';
+import {
+  clampedPercent,
+  configuredBranches,
+  licenceAttention,
+  nextTabIndex,
+} from '../dashboard/dashboardModel';
+
+const TABS = [
+  { id: 'branches', label: 'Branches' },
+  { id: 'clockins', label: 'Today’s check-ins' },
+  { id: 'leaves', label: 'Staff on leave' },
+  { id: 'promotions', label: 'Career changes' },
+  { id: 'setup', label: 'Setup readiness' },
+];
 
 export function OrgDashboard() {
   const navigate = useNavigate();
   const [selectedBranchId, setSelectedBranchId] = useState('ALL');
-  const [activeTab, setActiveTab] = useState('branches'); // 'branches' | 'clockins' | 'leaves' | 'promotions' | 'setup'
+  const [activeTab, setActiveTab] = useState('branches');
 
-  // Settings & Licence query
-  const { data: settings } = useQuery({
-    queryKey: ['org-settings'],
-    queryFn: orgApi.settings,
-  });
-
-  // Operational Analytics query
-  const { data: analytics, isLoading: loadingAnalytics } = useQuery({
+  const settingsQuery = useQuery({ queryKey: ['org-settings'], queryFn: orgApi.settings });
+  const analyticsQuery = useQuery({
     queryKey: ['org-dashboard-analytics'],
     queryFn: orgApi.dashboardAnalytics,
-    refetchInterval: 30000, // Refresh live metrics every 30s
+    refetchInterval: 30000,
   });
 
+  const settings = settingsQuery.data;
+  const analytics = analyticsQuery.data;
   const license = settings?.license || {};
   const usage = settings?.usage || {};
-  const expired = license.expiresAt && new Date(license.expiresAt) < new Date();
-
   const branches = analytics?.branches || [];
+  const configuredBranchRows = configuredBranches(branches);
   const attendance = analytics?.attendance || {};
   const leaves = analytics?.leaves || {};
   const promotions = analytics?.promotions || {};
+  const settingsAvailable = Boolean(settings);
+  const analyticsAvailable = Boolean(analytics);
 
-  // Find currently selected branch object
   const currentBranch = useMemo(() => {
     if (selectedBranchId === 'ALL') return null;
-    return branches.find((b) => String(b.id) === String(selectedBranchId)) || null;
+    return branches.find((branch) => String(branch.id) === String(selectedBranchId)) || null;
   }, [branches, selectedBranchId]);
 
-  // Dynamic metrics based on selected branch
   const metrics = useMemo(() => {
     if (currentBranch) {
-      const total = currentBranch.totalEmployees || 0;
-      const present = currentBranch.presentToday || 0;
-      const onLeave = currentBranch.onLeaveToday || 0;
-      const absent = currentBranch.absentToday || 0;
-      const rate = currentBranch.presenceRate || 0;
-
+      const total = Number(currentBranch.totalEmployees) || 0;
+      const present = Number(currentBranch.presentToday) || 0;
       return {
         totalEmployees: total,
         presentToday: present,
-        onLeaveToday: onLeave,
-        absentToday: absent,
-        presenceRate: rate,
+        onLeaveToday: Number(currentBranch.onLeaveToday) || 0,
+        absentToday: Number(currentBranch.absentToday) || 0,
+        presenceRate: clampedPercent(present, total),
         scopeName: currentBranch.name,
-        attendancePie: [
-          { label: 'Present Today', value: present, color: '#10B981' },
-          { label: 'On Approved Leave', value: onLeave, color: '#F59E0B' },
-          { label: 'Absent / Unmarked', value: absent, color: '#EF4444' },
-        ],
       };
     }
-
-    // Bank-wide
-    const total = attendance.totalEmployees || usage.employees || 0;
-    const present = attendance.presentToday || 0;
-    const onLeave = attendance.onLeaveToday || 0;
-    const absent = attendance.absentToday != null ? attendance.absentToday : Math.max(0, total - present - onLeave);
-    const rate = attendance.presenceRate || (total > 0 ? Math.round((present / total) * 100) : 0);
-
+    const total = Number(attendance.totalEmployees ?? usage.employees) || 0;
+    if (!analyticsAvailable) {
+      return {
+        totalEmployees: total,
+        presentToday: 0,
+        onLeaveToday: 0,
+        absentToday: 0,
+        presenceRate: 0,
+        scopeName: 'All branches',
+        attendanceAvailable: false,
+      };
+    }
+    const present = Number(attendance.presentToday) || 0;
+    const onLeave = Number(attendance.onLeaveToday) || 0;
+    const absent = attendance.absentToday == null
+      ? Math.max(0, total - present - onLeave)
+      : Number(attendance.absentToday) || 0;
     return {
       totalEmployees: total,
       presentToday: present,
       onLeaveToday: onLeave,
       absentToday: absent,
-      presenceRate: rate,
-      scopeName: 'All Branches (Bank-Wide)',
-      attendancePie: attendance.pieChartData || [
-        { label: 'Present Today', value: present, color: '#10B981' },
-        { label: 'On Approved Leave', value: onLeave, color: '#F59E0B' },
-        { label: 'Absent / Unmarked', value: absent, color: '#EF4444' },
-      ],
+      presenceRate: clampedPercent(present, total),
+      scopeName: 'All branches',
+      attendanceAvailable: true,
     };
-  }, [currentBranch, attendance, usage.employees]);
+  }, [analyticsAvailable, attendance, currentBranch, usage.employees]);
 
-  // Filtered recent clock-ins
-  const filteredClockIns = useMemo(() => {
-    const list = attendance.recentCheckIns || [];
-    if (selectedBranchId === 'ALL') return list;
-    return list.filter((ci) => !currentBranch || ci.branchName === currentBranch.name);
-  }, [attendance.recentCheckIns, selectedBranchId, currentBranch]);
+  const filteredClockIns = useMemo(() => filterByBranch(attendance.recentCheckIns, currentBranch), [attendance.recentCheckIns, currentBranch]);
+  const filteredLeaves = useMemo(() => filterByBranch(leaves.activeLeavesList, currentBranch), [leaves.activeLeavesList, currentBranch]);
+  const filteredPromotions = useMemo(() => filterByBranch(promotions.recentEvents, currentBranch), [promotions.recentEvents, currentBranch]);
+  const setupItems = [
+    { done: settingsAvailable ? Boolean(settings?.organization?.name) : null, label: 'Organisation profile and details configured' },
+    { done: settingsAvailable ? Boolean(settings?.smtp?.enabled) : null, label: 'Email notification service configured' },
+    { done: settingsAvailable ? Number(usage.users) > 0 : null, label: 'System administrative users created' },
+    { done: settingsAvailable ? Number(usage.employees) > 0 : null, label: 'Employee records onboarded' },
+    { done: analyticsAvailable ? configuredBranchRows.length > 0 : null, label: 'Branch hierarchy configured' },
+  ];
+  const incompleteSetup = setupItems.filter((item) => item.done === false).length;
+  const pendingApprovals = Number(leaves.pendingApprovalsCount) || 0;
+  const licenceStatus = licenceAttention(license);
 
-  // Filtered leaves
-  const filteredLeaves = useMemo(() => {
-    const list = leaves.activeLeavesList || [];
-    if (selectedBranchId === 'ALL') return list;
-    return list.filter((l) => !currentBranch || l.branchName === currentBranch.name);
-  }, [leaves.activeLeavesList, selectedBranchId, currentBranch]);
+  const summaryItems = [
+    {
+      id: 'present', label: 'Present today', value: metrics.attendanceAvailable === false ? `— / ${metrics.totalEmployees}` : `${metrics.presentToday} / ${metrics.totalEmployees}`,
+      detail: metrics.attendanceAvailable === false ? 'Attendance analytics unavailable' : `${metrics.presenceRate}% attendance in ${metrics.scopeName}`,
+      tone: metrics.attendanceAvailable === false ? 'neutral' : metrics.presenceRate >= 85 ? 'success' : metrics.presenceRate >= 65 ? 'warning' : 'danger',
+    },
+    {
+      id: 'leave', label: 'On approved leave', value: metrics.attendanceAvailable === false ? '—' : metrics.onLeaveToday,
+      detail: metrics.attendanceAvailable === false ? 'Attendance analytics unavailable' : currentBranch ? `Current status in ${currentBranch.name}` : 'Current organisation status',
+      tone: metrics.attendanceAvailable !== false && metrics.onLeaveToday ? 'warning' : 'neutral',
+    },
+    {
+      id: 'exceptions', label: 'Attendance exceptions', value: metrics.attendanceAvailable === false ? '—' : metrics.absentToday,
+      detail: metrics.attendanceAvailable === false ? 'Attendance analytics unavailable' : 'Absent or not yet marked',
+      tone: metrics.attendanceAvailable === false ? 'neutral' : metrics.absentToday ? 'danger' : 'success',
+    },
+    {
+      id: 'branches', label: 'Active branch units', value: analyticsAvailable ? configuredBranchRows.length : '—',
+      detail: analyticsAvailable ? `${configuredBranchRows.filter((branch) => branch.isHeadOffice).length} Head Office · ${configuredBranchRows.filter((branch) => !branch.isHeadOffice).length} branches` : 'Branch analytics unavailable',
+    },
+  ];
+  const attendanceBars = [
+    { id: 'present', label: 'Present', value: metrics.presentToday, tone: 'success' },
+    { id: 'leave', label: 'Approved leave', value: metrics.onLeaveToday, tone: 'warning' },
+    { id: 'absent', label: 'Absent or unmarked', value: metrics.absentToday, tone: 'danger' },
+  ];
+  const attentionItems = [
+    pendingApprovals > 0 && {
+      id: 'leave-approvals', title: `${pendingApprovals} leave ${pendingApprovals === 1 ? 'request' : 'requests'} awaiting review`,
+      detail: 'Organisation-wide approval queue.', tone: 'warning', actionLabel: 'Review', onAction: () => navigate('/leave'),
+    },
+    analyticsAvailable && metrics.absentToday > 0 && {
+      id: 'attendance', title: `${metrics.absentToday} attendance ${metrics.absentToday === 1 ? 'exception' : 'exceptions'}`,
+      detail: `Absent or unmarked in ${metrics.scopeName}.`, tone: 'danger', actionLabel: 'Open people', onAction: () => navigate('/people'),
+    },
+    settingsAvailable && licenceStatus.warning && {
+      id: 'licence', title: licenceStatus.title,
+      detail: 'Review the licence status to avoid interrupted access.', tone: 'danger', actionLabel: 'Settings', onAction: () => navigate('/settings'),
+    },
+    incompleteSetup > 0 && {
+      id: 'setup', title: `${incompleteSetup} setup ${incompleteSetup === 1 ? 'item' : 'items'} incomplete`,
+      detail: 'Complete the operational readiness checklist.', tone: 'warning', actionLabel: 'Review', onAction: () => setActiveTab('setup'),
+    },
+  ].filter(Boolean);
+  const branchRanking = [...configuredBranchRows].sort((left, right) => Number(right.presenceRate || 0) - Number(left.presenceRate || 0)).slice(0, 5);
+  const cadreRanking = [...(promotions.cadrePieChart || [])].sort((left, right) => Number(right.value || 0) - Number(left.value || 0)).slice(0, 5);
+  const tabCounts = {
+    branches: branches.length,
+    clockins: filteredClockIns.length,
+    leaves: filteredLeaves.length,
+    promotions: filteredPromotions.length,
+    setup: incompleteSetup,
+  };
 
-  // Filtered promotions
-  const filteredPromotions = useMemo(() => {
-    const list = promotions.recentEvents || [];
-    if (selectedBranchId === 'ALL') return list;
-    return list.filter((p) => !currentBranch || p.branchName === currentBranch.name);
-  }, [promotions.recentEvents, selectedBranchId, currentBranch]);
+  const handleTabKeyDown = (event, index) => {
+    const nextIndex = nextTabIndex(index, event.key, TABS.length);
+    if (nextIndex === index) return;
+    event.preventDefault();
+    const tabList = event.currentTarget.parentElement;
+    setActiveTab(TABS[nextIndex].id);
+    requestAnimationFrame(() => tabList?.querySelectorAll('[role="tab"]')[nextIndex]?.focus());
+  };
+
+  if (analyticsQuery.isLoading && !analytics) return <DashboardSkeleton />;
 
   return (
-    <div className="page" style={{ paddingBottom: 'var(--space-8)' }}>
-      {/* HEADER SECTION */}
-      <header className="page-header" style={{ marginBottom: 'var(--space-5)' }}>
-        <div className="page-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-              <h1 style={{ margin: 0, fontSize: 'var(--text-2xl)', fontWeight: 700 }}>
-                {settings?.organization?.name || 'Bank'} Overview
-              </h1>
-              <Badge variant="info" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {metrics.scopeName}
-              </Badge>
-            </div>
-            <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)' }}>
-              Interactive operations dashboard · Live branch presence, leaves, promotions & staff analytics
-            </p>
+    <div className="page dashboard-page">
+      <header className="dashboard-header">
+        <div className="dashboard-header-copy">
+          <h1>{settings?.organization?.name || 'Organisation'} Overview</h1>
+          <p>Current attendance, operational exceptions, and branch activity in one control room.</p>
+        </div>
+        <div className="dashboard-toolbar">
+          <div className="dashboard-scope">
+            <label htmlFor="dash-branch-select">Reporting scope</label>
+            <select id="dash-branch-select" className="input" value={selectedBranchId} onChange={(event) => setSelectedBranchId(event.target.value)}>
+              <option value="ALL">All organisation staff</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.code} — {branch.name} ({branch.totalEmployees} staff)</option>)}
+            </select>
           </div>
-
-          {/* Quick Actions & Branch Filter Toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <label htmlFor="dash-branch-select" style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
-                Branch:
-              </label>
-              <select
-                id="dash-branch-select"
-                className="input"
-                style={{ padding: '6px 12px', minWidth: '180px', fontSize: 'var(--text-sm)', fontWeight: 500 }}
-                value={selectedBranchId}
-                onChange={(e) => setSelectedBranchId(e.target.value)}
-              >
-                <option value="ALL">All Branches ({branches.length})</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.code} — {b.name} ({b.totalEmployees} staff)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <Button variant="secondary" onClick={() => navigate('/people')}>
-                Employees
-              </Button>
-              <Button variant="secondary" onClick={() => navigate('/org/structure')}>
-                Branches
-              </Button>
-              <Button variant="primary" onClick={() => navigate('/payroll')}>
-                Payroll
-              </Button>
-            </div>
+          <div className="dashboard-actions">
+            <Button variant="secondary" onClick={() => navigate('/people')}>People</Button>
+            <Button variant="secondary" onClick={() => navigate('/organisation-structure')}>Structure</Button>
+            <Button onClick={() => navigate('/payroll')}>Payroll</Button>
           </div>
         </div>
       </header>
 
-      {/* 1. TOP EXECUTIVE TELEMETRY KPI CARDS */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-          gap: 'var(--space-4)',
-          marginBottom: 'var(--space-6)',
-        }}
-      >
-        {/* Card 1: Attendance Rate */}
-        <div
-          style={{
-            background: 'var(--surface-raised)',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-4)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Presence Today
-            </span>
-            <span style={{ fontSize: '18px' }}>🟢</span>
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: 700, fontFamily: 'var(--font-mono)', margin: '8px 0 2px', color: 'var(--text-primary)' }}>
-            {metrics.presentToday} <span style={{ fontSize: '16px', fontWeight: 400, color: 'var(--text-tertiary)' }}>/ {metrics.totalEmployees}</span>
-          </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ color: '#10B981', fontWeight: 600 }}>{metrics.presenceRate}%</span> attendance rate
-          </div>
-        </div>
+      {settingsQuery.isError ? <DashboardError message="Organisation settings could not be loaded. Available analytics remain visible." onRetry={() => settingsQuery.refetch()} /> : null}
+      {analyticsQuery.isError ? <DashboardError message="Operational analytics could not be loaded." onRetry={() => analyticsQuery.refetch()} /> : null}
+      <DashboardSummary items={summaryItems} />
 
-        {/* Card 2: Active Leaves */}
-        <div
-          style={{
-            background: 'var(--surface-raised)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-4)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              On Leave Today
-            </span>
-            <span style={{ fontSize: '18px' }}>🌴</span>
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: 700, fontFamily: 'var(--font-mono)', margin: '8px 0 2px', color: 'var(--text-primary)' }}>
-            {metrics.onLeaveToday}
-          </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            {leaves.pendingApprovalsCount || 0} pending application(s)
-          </div>
-        </div>
-
-        {/* Card 3: Branches & Units */}
-        <div
-          style={{
-            background: 'var(--surface-raised)',
-            border: '1px solid rgba(6, 182, 212, 0.3)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-4)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: '#06B6D4', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Branch Units
-            </span>
-            <span style={{ fontSize: '18px' }}>🏛️</span>
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: 700, fontFamily: 'var(--font-mono)', margin: '8px 0 2px', color: 'var(--text-primary)' }}>
-            {branches.length}
-          </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            {branches.filter((b) => b.isHeadOffice).length} Head Office · {branches.filter((b) => !b.isHeadOffice).length} Branches
-          </div>
-        </div>
-
-        {/* Card 4: Promotions & Milestones */}
-        <div
-          style={{
-            background: 'var(--surface-raised)',
-            border: '1px solid rgba(139, 92, 246, 0.3)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-4)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: '#8B5CF6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Career Milestones
-            </span>
-            <span style={{ fontSize: '18px' }}>⭐</span>
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: 700, fontFamily: 'var(--font-mono)', margin: '8px 0 2px', color: 'var(--text-primary)' }}>
-            {promotions.recentEvents?.length || 0}
-          </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            Promotions & confirmations recorded
-          </div>
-        </div>
-
-        {/* Card 5: Licence Seats */}
-        <div
-          style={{
-            background: 'var(--surface-raised)',
-            border: '1px solid rgba(99, 102, 241, 0.3)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-4)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: '#6366F1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Licence & Seats
-            </span>
-            <span style={{ fontSize: '18px' }}>🔐</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono)', margin: '10px 0 4px', color: 'var(--text-primary)' }}>
-            {usage.employees || 0} <span style={{ fontSize: '14px', color: 'var(--text-tertiary)' }}>/ {license.maxEmployees ?? '∞'} Seats</span>
-          </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: expired ? 'var(--danger)' : 'var(--text-secondary)' }}>
-            {license.plan || 'Standard'} {license.daysLeft != null ? `(${license.daysLeft}d left)` : ''}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. THE THREE CORE COLORFUL PIE CHARTS */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gap: 'var(--space-5)',
-          marginBottom: 'var(--space-6)',
-        }}
-      >
-        {/* CHART 1: ATTENDANCE & PRESENCE BREAKDOWN */}
-        <Card>
-          <div style={{ borderBottom: '2px solid #10B981', paddingBottom: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--text-base)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-              Today&apos;s Presence Breakdown
-            </h3>
-            <p style={{ margin: '2px 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              Live presence status for {metrics.scopeName}
-            </p>
-          </div>
-
-          <ColorfulPieChart
-            data={metrics.attendancePie}
-            size={200}
-            donutWidth={34}
-            centerTitle="Present"
-            centerValue={`${metrics.presenceRate}%`}
-          />
-        </Card>
-
-        {/* CHART 2: LEAVE TYPES DISTRIBUTION */}
-        <Card>
-          <div style={{ borderBottom: '2px solid #3B82F6', paddingBottom: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--text-base)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3B82F6' }} />
-              Leave Types Distribution
-            </h3>
-            <p style={{ margin: '2px 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              Breakdown by Casual, Privilege, Medical & LOP
-            </p>
-          </div>
-
-          <ColorfulPieChart
-            data={leaves.pieChartData || []}
-            size={200}
-            donutWidth={34}
-            centerTitle="Total Leaves"
-            centerValue={leaves.pieChartData?.reduce((a, b) => a + Number(b.value), 0) || 0}
-          />
-        </Card>
-
-        {/* CHART 3: CADRE & DESIGNATION DISTRIBUTION */}
-        <Card>
-          <div style={{ borderBottom: '2px solid #8B5CF6', paddingBottom: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--text-base)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#8B5CF6' }} />
-              Staff Cadre Distribution
-            </h3>
-            <p style={{ margin: '2px 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              Headcount distribution across bank designations
-            </p>
-          </div>
-
-          <ColorfulPieChart
-            data={promotions.cadrePieChart || []}
-            size={200}
-            donutWidth={34}
-            centerTitle="Staff"
-            centerValue={metrics.totalEmployees}
-          />
-        </Card>
-      </div>
-
-      {/* 3. CORE BRANCH DETAILS & OPERATIONAL TELEMETRY */}
-      <Card noPadding>
-        {/* Navigation tabs for branch matrix and telemetry */}
-        <div
-          className="tabs"
-          style={{
-            padding: 'var(--space-3) var(--space-4) 0',
-            margin: 0,
-            borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-glass)',
-          }}
-        >
-          <button
-            type="button"
-            className={`tab ${activeTab === 'branches' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('branches')}
-          >
-            🏛️ Branch Performance Matrix ({branches.length})
-          </button>
-          <button
-            type="button"
-            className={`tab ${activeTab === 'clockins' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('clockins')}
-          >
-            ⏱️ Today&apos;s Live Clock-Ins ({filteredClockIns.length})
-          </button>
-          <button
-            type="button"
-            className={`tab ${activeTab === 'leaves' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('leaves')}
-          >
-            🌴 Staff On Leave Today ({filteredLeaves.length})
-          </button>
-          <button
-            type="button"
-            className={`tab ${activeTab === 'promotions' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('promotions')}
-          >
-            ⭐ Promotions & Career Milestones ({filteredPromotions.length})
-          </button>
-          <button
-            type="button"
-            className={`tab ${activeTab === 'setup' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('setup')}
-          >
-            ⚙️ System Setup Checklist
-          </button>
-        </div>
-
-        {/* TAB 1: BRANCH PERFORMANCE MATRIX */}
-        {activeTab === 'branches' && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 'var(--text-base)' }}>Branch Operations & Attendance Matrix</h3>
-                <p style={{ margin: '2px 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                  Core operational statistics for each branch base across the bank
-                </p>
-              </div>
-              {selectedBranchId !== 'ALL' && (
-                <Button variant="secondary" onClick={() => setSelectedBranchId('ALL')}>
-                  Reset to All Branches
-                </Button>
-              )}
+      <div className="dashboard-control-grid">
+        <section className="dashboard-panel" aria-labelledby="attendance-overview-title">
+          <div className="dashboard-panel-header"><div><h2 id="attendance-overview-title">Attendance overview</h2><p>Current status for {metrics.scopeName}.</p></div></div>
+          <div className="dashboard-panel-body">
+            <div className="dashboard-panel-section">
+              <DistributionBars items={attendanceBars} total={metrics.totalEmployees} emptyMessage="No employee attendance data is available for this scope." ariaLabel={`Attendance distribution for ${metrics.scopeName}`} />
             </div>
-
-            {branches.length === 0 ? (
-              <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                No active branches found. Create bank branches under Organisation Structure.
+            {branchRanking.length > 1 ? (
+              <div className="dashboard-panel-section">
+                <h3 className="dashboard-subheading">Branch comparison <span>by today’s presence rate</span></h3>
+                <ul className="dashboard-ranked-list">{branchRanking.map((branch) => <li key={branch.id}><span>{branch.name}</span><strong>{Number(branch.presenceRate) || 0}%</strong></li>)}</ul>
               </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th className="table-th">Branch Name & Code</th>
-                      <th className="table-th">Unit Type</th>
-                      <th className="table-th table-th-right">Total Staff</th>
-                      <th className="table-th table-th-right" style={{ color: '#10B981' }}>Present</th>
-                      <th className="table-th table-th-right" style={{ color: '#F59E0B' }}>On Leave</th>
-                      <th className="table-th table-th-right" style={{ color: '#EF4444' }}>Absent</th>
-                      <th className="table-th" style={{ width: '220px' }}>Presence Progress</th>
-                      <th className="table-th table-th-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {branches.map((b) => {
-                      const isSelected = String(b.id) === String(selectedBranchId);
-                      const rate = b.presenceRate || 0;
-                      const progressColor = rate >= 85 ? '#10B981' : rate >= 65 ? '#F59E0B' : '#EF4444';
-
-                      return (
-                        <tr
-                          key={b.id}
-                          className="table-row"
-                          style={{
-                            background: isSelected ? 'var(--bg-glass-hover)' : 'transparent',
-                            fontWeight: isSelected ? 600 : 400,
-                          }}
-                        >
-                          <td className="table-td">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{b.name}</span>
-                              <span className="mono" style={{ fontSize: '11px', color: 'var(--text-tertiary)', background: 'var(--bg-glass)', padding: '1px 6px', borderRadius: '4px' }}>
-                                {b.code}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="table-td">
-                            <Badge variant={b.isHeadOffice ? 'info' : 'default'}>
-                              {b.unitType === 'HEAD_OFFICE' || b.isHeadOffice ? 'Head Office' : 'Branch'}
-                            </Badge>
-                          </td>
-                          <td className="table-td table-td-right mono" style={{ fontWeight: 600 }}>
-                            {b.totalEmployees}
-                          </td>
-                          <td className="table-td table-td-right mono" style={{ color: '#10B981', fontWeight: 600 }}>
-                            {b.presentToday}
-                          </td>
-                          <td className="table-td table-td-right mono" style={{ color: '#F59E0B', fontWeight: 600 }}>
-                            {b.onLeaveToday}
-                          </td>
-                          <td className="table-td table-td-right mono" style={{ color: '#EF4444', fontWeight: 600 }}>
-                            {b.absentToday}
-                          </td>
-                          <td className="table-td">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div
-                                style={{
-                                  flex: 1,
-                                  height: '8px',
-                                  backgroundColor: 'var(--border)',
-                                  borderRadius: '4px',
-                                  overflow: 'hidden',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    width: `${rate}%`,
-                                    height: '100%',
-                                    backgroundColor: progressColor,
-                                    borderRadius: '4px',
-                                    transition: 'width 0.4s ease',
-                                  }}
-                                />
-                              </div>
-                              <span className="mono" style={{ fontSize: '11px', fontWeight: 600, minWidth: '32px', textAlign: 'right', color: progressColor }}>
-                                {rate}%
-                              </span>
-                            </div>
-                          </td>
-                          <td className="table-td table-td-right">
-                            <Button
-                              variant={isSelected ? 'primary' : 'ghost'}
-                              style={{ padding: '2px 8px', fontSize: '12px', minHeight: 'auto' }}
-                              onClick={() => setSelectedBranchId(isSelected ? 'ALL' : String(b.id))}
-                            >
-                              {isSelected ? 'Viewing' : 'Inspect'}
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 2: LIVE CLOCK-IN FEED */}
-        {activeTab === 'clockins' && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            <h3 style={{ margin: '0 0 var(--space-3)', fontSize: 'var(--text-base)' }}>
-              Recent Check-Ins Today ({metrics.scopeName})
-            </h3>
-            {filteredClockIns.length === 0 ? (
-              <p style={{ color: 'var(--text-tertiary)', margin: 'var(--space-4) 0' }}>
-                No clock-in events recorded yet for today in this scope.
-              </p>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th className="table-th">Employee</th>
-                      <th className="table-th">Branch</th>
-                      <th className="table-th">Check-In Time</th>
-                      <th className="table-th">Check-Out Time</th>
-                      <th className="table-th">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredClockIns.map((ci) => (
-                      <tr key={ci.id} className="table-row">
-                        <td className="table-td">
-                          <span style={{ fontWeight: 600 }}>{ci.name}</span>{' '}
-                          <span className="mono" style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({ci.empCode})</span>
-                        </td>
-                        <td className="table-td">{ci.branchName}</td>
-                        <td className="table-td mono" style={{ color: '#10B981', fontWeight: 600 }}>{ci.checkInTime}</td>
-                        <td className="table-td mono">{ci.checkOutTime || '—'}</td>
-                        <td className="table-td">
-                          <Badge variant={ci.checkOutTime ? 'default' : 'success'}>
-                            {ci.checkOutTime ? 'Clocked Out' : 'Active / Present'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 3: STAFF ON LEAVE */}
-        {activeTab === 'leaves' && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            <h3 style={{ margin: '0 0 var(--space-3)', fontSize: 'var(--text-base)' }}>
-              Staff on Approved Leave ({metrics.scopeName})
-            </h3>
-            {filteredLeaves.length === 0 ? (
-              <p style={{ color: 'var(--text-tertiary)', margin: 'var(--space-4) 0' }}>
-                No staff members currently on leave today.
-              </p>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th className="table-th">Employee</th>
-                      <th className="table-th">Branch</th>
-                      <th className="table-th">Leave Type</th>
-                      <th className="table-th">Duration</th>
-                      <th className="table-th">From - To</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLeaves.map((l) => (
-                      <tr key={l.id} className="table-row">
-                        <td className="table-td">
-                          <span style={{ fontWeight: 600 }}>{l.name}</span>{' '}
-                          <span className="mono" style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({l.empCode})</span>
-                        </td>
-                        <td className="table-td">{l.branchName}</td>
-                        <td className="table-td">
-                          <Badge variant="warning">{l.leaveType}</Badge>
-                        </td>
-                        <td className="table-td mono">{l.days} Day(s)</td>
-                        <td className="table-td mono">{l.fromDate} to {l.toDate}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 4: PROMOTIONS & MILESTONES */}
-        {activeTab === 'promotions' && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            <h3 style={{ margin: '0 0 var(--space-3)', fontSize: 'var(--text-base)' }}>
-              Recent Promotions & Career Milestones ({metrics.scopeName})
-            </h3>
-            {filteredPromotions.length === 0 ? (
-              <p style={{ color: 'var(--text-tertiary)', margin: 'var(--space-4) 0' }}>
-                No recent career promotions or cadre changes recorded.
-              </p>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th className="table-th">Date</th>
-                      <th className="table-th">Employee</th>
-                      <th className="table-th">Branch</th>
-                      <th className="table-th">Event</th>
-                      <th className="table-th">Current Cadre</th>
-                      <th className="table-th">Order Ref / Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPromotions.map((p) => (
-                      <tr key={p.id} className="table-row">
-                        <td className="table-td mono">{p.eventDate}</td>
-                        <td className="table-td">
-                          <span style={{ fontWeight: 600 }}>{p.name}</span>{' '}
-                          <span className="mono" style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({p.empCode})</span>
-                        </td>
-                        <td className="table-td">{p.branchName}</td>
-                        <td className="table-td">
-                          <Badge variant="info">{p.eventType}</Badge>
-                        </td>
-                        <td className="table-td">{p.cadre}</td>
-                        <td className="table-td">{p.orderRef ? <span className="mono">[{p.orderRef}] </span> : ''}{p.remarks}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 5: SYSTEM SETUP CHECKLIST */}
-        {activeTab === 'setup' && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            <h3 style={{ margin: '0 0 var(--space-3)', fontSize: 'var(--text-base)' }}>Getting Started Checklist</h3>
-            <div className="checklist">
-              <ChecklistItem done={!!settings?.organization?.name} label="Organisation profile and details configured" />
-              <ChecklistItem done={!!settings?.smtp?.enabled} label="Email notification service (SMTP) configured" />
-              <ChecklistItem done={(usage.users || 0) > 0} label="System administrative users created" />
-              <ChecklistItem done={(usage.employees || 0) > 0} label="Bank employee records onboarded" />
-              <ChecklistItem done={branches.length > 0} label="Bank branch hierarchy configured" />
+            ) : null}
+            <div className="dashboard-panel-section">
+              <h3 className="dashboard-subheading">Staff cadre <span>Organisation-wide</span></h3>
+              {cadreRanking.length ? <ul className="dashboard-ranked-list">{cadreRanking.map((cadre) => <li key={cadre.label}><span>{cadre.label}</span><strong>{cadre.value}</strong></li>)}</ul> : <p className="dashboard-empty">No cadre distribution is available.</p>}
             </div>
           </div>
-        )}
-      </Card>
+        </section>
+        <aside className="dashboard-panel" aria-labelledby="org-attention-title">
+          <div className="dashboard-panel-header"><div><h2 id="org-attention-title">Needs attention</h2><p>Items that may need an administrator’s action.</p></div></div>
+          <div className="dashboard-panel-body"><AttentionList items={attentionItems} emptyTitle="No immediate action required" emptyDetail="Attendance, leave, licence, and setup checks are clear." /></div>
+        </aside>
+      </div>
+
+      <section className="dashboard-panel dashboard-workspace" aria-label="Operational workspace">
+        <div className="dashboard-tabs" role="tablist" aria-label="Organisation dashboard views">
+          {TABS.map((tab, index) => (
+            <button id={`dashboard-tab-${tab.id}`} key={tab.id} type="button" role="tab" className="dashboard-tab" aria-selected={activeTab === tab.id} aria-controls={`dashboard-panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => handleTabKeyDown(event, index)}>
+              {tab.label}<span className="dashboard-tab-count">{tabCounts[tab.id]}</span>
+            </button>
+          ))}
+        </div>
+        <div id={`dashboard-panel-${activeTab}`} className="dashboard-tab-panel" role="tabpanel" aria-labelledby={`dashboard-tab-${activeTab}`}>
+          {activeTab === 'branches' ? <BranchesPanel branches={branches} selectedBranchId={selectedBranchId} onSelect={setSelectedBranchId} /> : null}
+          {activeTab === 'clockins' ? <CheckInsPanel rows={filteredClockIns} scopeName={metrics.scopeName} /> : null}
+          {activeTab === 'leaves' ? <LeavesPanel rows={filteredLeaves} scopeName={metrics.scopeName} /> : null}
+          {activeTab === 'promotions' ? <CareerPanel rows={filteredPromotions} scopeName={metrics.scopeName} /> : null}
+          {activeTab === 'setup' ? <SetupPanel items={setupItems} /> : null}
+        </div>
+      </section>
     </div>
   );
 }
 
-function ChecklistItem({ done, label }) {
+function filterByBranch(rows = [], currentBranch) {
+  if (!currentBranch) return rows || [];
+  return (rows || []).filter((row) => row.branchName === currentBranch.name);
+}
+
+function PanelHeading({ title, detail, action }) {
+  return <div className="dashboard-tab-heading"><div><h2>{title}</h2><p>{detail}</p></div>{action}</div>;
+}
+
+function BranchesPanel({ branches, selectedBranchId, onSelect }) {
   return (
-    <div className={`checklist-item ${done ? 'checklist-done' : ''}`}>
-      <span className="checklist-check">{done ? '✓' : '○'}</span>
-      <span>{label}</span>
-    </div>
+    <>
+      <PanelHeading title="Branch operations" detail="Today’s staffing and attendance by operating unit." action={selectedBranchId !== 'ALL' ? <Button variant="secondary" size="sm" onClick={() => onSelect('ALL')}>Show all branches</Button> : null} />
+      {!branches.length ? <p className="dashboard-empty-table">No active branches found. Add branches under Organisation Structure.</p> : (
+        <div className="dashboard-table-scroll"><table className="table"><thead><tr>
+          <th className="table-th">Branch</th><th className="table-th">Unit type</th><th className="table-th table-th-right">Staff</th><th className="table-th table-th-right">Present</th><th className="table-th table-th-right">On leave</th><th className="table-th table-th-right">Exceptions</th><th className="table-th">Presence</th><th className="table-th table-th-right">Action</th>
+        </tr></thead><tbody>{branches.map((branch) => {
+          const selected = String(branch.id) === String(selectedBranchId);
+          const rate = Number(branch.presenceRate) || 0;
+          const progressClass = rate >= 85 ? 'dashboard-progress-success' : rate >= 65 ? 'dashboard-progress-warning' : 'dashboard-progress-danger';
+          return <tr key={branch.id} className={`table-row ${selected ? 'dashboard-table-row-selected' : ''}`}>
+            <td className="table-td"><div className="dashboard-table-name"><strong>{branch.name}</strong><span className="mono dashboard-code">{branch.code}</span></div></td>
+            <td className="table-td"><Badge variant={branch.isHeadOffice ? 'info' : 'default'}>{branch.unitType === 'HEAD_OFFICE' || branch.isHeadOffice ? 'Head Office' : 'Branch'}</Badge></td>
+            <td className="table-td table-td-right dashboard-number">{branch.totalEmployees}</td><td className="table-td table-td-right dashboard-number dashboard-number-success">{branch.presentToday}</td><td className="table-td table-td-right dashboard-number dashboard-number-warning">{branch.onLeaveToday}</td><td className="table-td table-td-right dashboard-number dashboard-number-danger">{branch.absentToday}</td>
+            <td className="table-td"><div className="dashboard-progress-cell"><progress className={`dashboard-table-progress ${progressClass}`} max="100" value={rate} aria-label={`${branch.name} presence ${rate}%`} /><span>{rate}%</span></div></td>
+            <td className="table-td table-td-right"><Button variant={selected ? 'primary' : 'ghost'} size="sm" onClick={() => onSelect(selected ? 'ALL' : String(branch.id))}>{selected ? 'Viewing' : 'Inspect'}</Button></td>
+          </tr>;
+        })}</tbody></table></div>
+      )}
+    </>
   );
+}
+
+function CheckInsPanel({ rows, scopeName }) {
+  return <><PanelHeading title="Recent check-ins today" detail={`Recent server activity for ${scopeName}; this is not a complete attendance history.`} />
+    {!rows.length ? <p className="dashboard-empty-table">No check-in events have been recorded for this scope today.</p> : <div className="dashboard-table-scroll"><table className="table"><thead><tr><th className="table-th">Employee</th><th className="table-th">Branch</th><th className="table-th">Check-in</th><th className="table-th">Check-out</th><th className="table-th">Status</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><strong>{row.name}</strong> <span className="mono dashboard-code">({row.empCode})</span></td><td className="table-td">{row.branchName}</td><td className="table-td mono dashboard-number-success">{row.checkInTime}</td><td className="table-td mono">{row.checkOutTime || '—'}</td><td className="table-td"><Badge variant={row.checkOutTime ? 'default' : 'success'}>{row.checkOutTime ? 'Clocked out' : 'Present'}</Badge></td></tr>)}</tbody></table></div>}
+  </>;
+}
+
+function LeavesPanel({ rows, scopeName }) {
+  return <><PanelHeading title="Staff on approved leave" detail={`Current approved leave for ${scopeName}.`} />
+    {!rows.length ? <p className="dashboard-empty-table">No staff members are on approved leave in this scope today.</p> : <div className="dashboard-table-scroll"><table className="table"><thead><tr><th className="table-th">Employee</th><th className="table-th">Branch</th><th className="table-th">Leave type</th><th className="table-th">Duration</th><th className="table-th">Period</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td"><strong>{row.name}</strong> <span className="mono dashboard-code">({row.empCode})</span></td><td className="table-td">{row.branchName}</td><td className="table-td"><Badge variant="warning">{row.leaveType}</Badge></td><td className="table-td mono">{row.days} days</td><td className="table-td mono">{row.fromDate} to {row.toDate}</td></tr>)}</tbody></table></div>}
+  </>;
+}
+
+function CareerPanel({ rows, scopeName }) {
+  return <><PanelHeading title="Recent career changes" detail={`Recent server activity for ${scopeName}; this is not a complete service history.`} />
+    {!rows.length ? <p className="dashboard-empty-table">No recent promotions or cadre changes are available for this scope.</p> : <div className="dashboard-table-scroll"><table className="table"><thead><tr><th className="table-th">Date</th><th className="table-th">Employee</th><th className="table-th">Branch</th><th className="table-th">Event</th><th className="table-th">Current cadre</th><th className="table-th">Order reference / notes</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="table-row"><td className="table-td mono">{row.eventDate}</td><td className="table-td"><strong>{row.name}</strong> <span className="mono dashboard-code">({row.empCode})</span></td><td className="table-td">{row.branchName}</td><td className="table-td"><Badge variant="info">{row.eventType}</Badge></td><td className="table-td">{row.cadre}</td><td className="table-td">{row.orderRef ? <span className="mono">[{row.orderRef}] </span> : null}{row.remarks}</td></tr>)}</tbody></table></div>}
+  </>;
+}
+
+function SetupPanel({ items }) {
+  return <><PanelHeading title="Setup readiness" detail="Core configuration needed for normal organisation operations." /><div className="dashboard-checklist">{items.map((item) => <div key={item.label} className="dashboard-checklist-item" data-complete={item.done === true}><span className="dashboard-checklist-mark">{item.done == null ? 'Unavailable' : item.done ? 'Complete' : 'Pending'}</span><span>{item.label}</span></div>)}</div></>;
 }
