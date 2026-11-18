@@ -48,3 +48,17 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# --- Local AI-agent workspaces and implementation notes -----------------
+.superpowers/
+**/.superpowers/
+.impeccable/
+**/.impeccable/
+.agents/
+.codex/
+.claude/
+docs/superpowers/
+docs/**/*-task-details.md
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
