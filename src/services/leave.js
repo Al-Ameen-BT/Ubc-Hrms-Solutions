@@ -19,7 +19,7 @@
  * figure is editable per organisation once created.
  */
 
-const { sequelize, LeaveType, EmployeeLeaveBalance, LeaveApplication, Employee, OrgPayrollSetting, Organization, User, OrganizationBranch, EmployeeOrganizationAssignment, OrganizationResponsibilityAssignment } = require('../models');
+const { sequelize, LeaveType, OrgLeaveSetting, OrganizationHoliday, EmployeeLeaveBalance, LeaveApplication, Employee, OrgPayrollSetting, Organization, User, OrganizationBranch, EmployeeOrganizationAssignment, OrganizationResponsibilityAssignment } = require('../models');
 const { Op } = require('sequelize');
 const { todayIST } = require('./orgAccess');
 const { effectiveAccess, can, scopedWhere } = require('./accessControl');
@@ -33,11 +33,11 @@ class LeaveError extends Error {
 function round1(n) { return Math.round((Number(n) || 0) * 10) / 10; }
 
 const DEFAULT_LEAVE_TYPES = [
-  { code: 'CL', name: 'Casual Leave', accrualMethod: 'FIXED_ANNUAL', annualDays: 20, carryForward: false, maxAccumulation: null, encashable: false, paidPercent: 100 },
-  { code: 'EL', name: 'Earned Leave', accrualMethod: 'ACCRUAL_PER_MONTH', annualDays: 30, carryForward: true, maxAccumulation: 300, encashable: true, paidPercent: 100 },
-  { code: 'HPL', name: 'Half Pay Leave', accrualMethod: 'ACCRUAL_PER_MONTH', annualDays: 20, carryForward: true, maxAccumulation: null, encashable: false, paidPercent: 50 },
-  { code: 'ML', name: 'Maternity Leave', accrualMethod: 'FIXED_ANNUAL', annualDays: 180, carryForward: false, maxAccumulation: null, encashable: false, paidPercent: 100 },
-  { code: 'SPL', name: 'Special Casual Leave', accrualMethod: 'NONE', annualDays: 0, carryForward: false, maxAccumulation: null, encashable: false, paidPercent: 100, requiresApproval: true },
+  { code: 'CL', name: 'Casual Leave', accrualMethod: 'FIXED_ANNUAL', annualDays: 20, carryForward: false, maxAccumulation: null, encashable: false, paidPercent: 100, includeHolidays: false, isLop: false },
+  { code: 'EL', name: 'Earned Leave', accrualMethod: 'ACCRUAL_PER_MONTH', annualDays: 30, carryForward: true, maxAccumulation: 300, encashable: true, paidPercent: 100, includeHolidays: true, isLop: false },
+  { code: 'HPL', name: 'Half Pay Leave', accrualMethod: 'ACCRUAL_PER_MONTH', annualDays: 20, carryForward: true, maxAccumulation: null, encashable: false, paidPercent: 50, includeHolidays: true, isLop: false },
+  { code: 'ML', name: 'Maternity Leave', accrualMethod: 'FIXED_ANNUAL', annualDays: 180, carryForward: false, maxAccumulation: null, encashable: false, paidPercent: 100, includeHolidays: true, isLop: false },
+  { code: 'SPL', name: 'Special Casual Leave', accrualMethod: 'NONE', annualDays: 0, carryForward: false, maxAccumulation: null, encashable: false, paidPercent: 100, requiresApproval: true, includeHolidays: false, isLop: false },
 ];
 
 async function seedDefaultLeaveTypes(organizationId) {
@@ -58,8 +58,16 @@ function validateTypeBody(b) {
   if (b.accrualMethod !== 'NONE' && !(annualDays > 0)) throw new LeaveError('annualDays must be a positive number for this accrual method.');
   const paidPercent = b.paidPercent != null && b.paidPercent !== '' ? Number(b.paidPercent) : 100;
   if (!(paidPercent >= 0 && paidPercent <= 100)) throw new LeaveError('paidPercent must be between 0 and 100.');
+  const code = String(b.code).trim().toUpperCase().slice(0, 16);
+  const isLop = b.isLop === true || code === 'LOP';
+  let includeHolidays = b.includeHolidays;
+  if (includeHolidays === undefined) {
+    includeHolidays = code !== 'CL' && !isLop;
+  } else {
+    includeHolidays = Boolean(includeHolidays);
+  }
   return {
-    code: String(b.code).trim().toUpperCase().slice(0, 16),
+    code,
     name: String(b.name).trim(),
     accrualMethod: b.accrualMethod,
     annualDays,
@@ -67,6 +75,8 @@ function validateTypeBody(b) {
     carryForward: b.carryForward !== false,
     encashable: b.encashable === true,
     paidPercent,
+    includeHolidays,
+    isLop,
     requiresApproval: b.requiresApproval !== false,
   };
 }
@@ -140,6 +150,138 @@ async function accrueForMonth(organizationId, leaveTypeId, year, month) {
   return { leaveType: leaveType.code, year, month, employeesCredited: credited };
 }
 
+async function getLeaveSettings(organizationId, transaction) {
+  const [row] = await OrgLeaveSetting.findOrCreate({
+    where: { organizationId },
+    defaults: { organizationId },
+    transaction,
+  });
+  return row;
+}
+
+async function updateLeaveSettings(organizationId, body, transaction) {
+  const row = await getLeaveSettings(organizationId, transaction);
+  const payload = {};
+  if (body.sandwichRuleEnabled !== undefined) payload.sandwichRuleEnabled = Boolean(body.sandwichRuleEnabled);
+  if (body.excludeHolidaysCasualLeave !== undefined) payload.excludeHolidaysCasualLeave = Boolean(body.excludeHolidaysCasualLeave);
+  if (body.excludeHolidaysLop !== undefined) payload.excludeHolidaysLop = Boolean(body.excludeHolidaysLop);
+  if (body.countSundaysAsHolidays !== undefined) payload.countSundaysAsHolidays = Boolean(body.countSundaysAsHolidays);
+  if (body.weekendPolicy && ['SUNDAY_ONLY', 'SATURDAY_SUNDAY', 'SECOND_FOURTH_SATURDAY_SUNDAY'].includes(body.weekendPolicy)) {
+    payload.weekendPolicy = body.weekendPolicy;
+  }
+  if (body.remarks !== undefined) payload.remarks = body.remarks ? String(body.remarks).slice(0, 500) : null;
+  await row.update(payload, { transaction });
+  return row;
+}
+
+function isWeekendDay(dateObj, weekendPolicy) {
+  const dayOfWeek = dateObj.getUTCDay(); // 0 is Sunday, 6 is Saturday
+  if (dayOfWeek === 0) return true;
+  if (weekendPolicy === 'SATURDAY_SUNDAY') {
+    return dayOfWeek === 6;
+  }
+  if (weekendPolicy === 'SECOND_FOURTH_SATURDAY_SUNDAY') {
+    if (dayOfWeek === 6) {
+      const dateOfMonth = dateObj.getUTCDate();
+      return (dateOfMonth >= 8 && dateOfMonth <= 14) || (dateOfMonth >= 22 && dateOfMonth <= 28);
+    }
+  }
+  return false;
+}
+
+async function calculateLeaveBreakdown(organizationId, leaveType, fromDate, toDate, transaction) {
+  if (!fromDate || !toDate) throw new LeaveError('fromDate and toDate are required.');
+  const cur = new Date(String(fromDate) + 'T00:00:00Z');
+  const end = new Date(String(toDate) + 'T00:00:00Z');
+  if (isNaN(cur.getTime()) || isNaN(end.getTime())) throw new LeaveError('Invalid date format for fromDate or toDate.');
+  if (cur.getTime() > end.getTime()) throw new LeaveError('toDate must be on or after fromDate.');
+
+  const settings = await getLeaveSettings(organizationId, transaction);
+  const holidays = await OrganizationHoliday.findAll({
+    where: {
+      organizationId,
+      status: 'ACTIVE',
+      date: { [Op.between]: [fromDate, toDate] },
+    },
+    transaction,
+  });
+
+  const holidayMap = new Map();
+  for (const h of holidays) {
+    holidayMap.set(h.date, h.name);
+  }
+
+  const code = leaveType.code ? String(leaveType.code).toUpperCase() : '';
+  const isCasual = code === 'CL';
+  const isLop = leaveType.isLop === true || code === 'LOP';
+
+  let shouldInclude = false;
+  if (settings.sandwichRuleEnabled) {
+    if (isCasual) {
+      shouldInclude = !settings.excludeHolidaysCasualLeave;
+    } else if (isLop) {
+      shouldInclude = !settings.excludeHolidaysLop;
+    } else {
+      shouldInclude = leaveType.includeHolidays !== false;
+    }
+  } else {
+    shouldInclude = false;
+  }
+
+  const holidaysDetected = [];
+  const weekendsDetected = [];
+  let calendarDays = 0;
+  let chargeableDays = 0;
+  let workingDays = 0;
+
+  const iter = new Date(cur.getTime());
+  while (iter.getTime() <= end.getTime()) {
+    calendarDays += 1;
+    const dateStr = iter.toISOString().slice(0, 10);
+    const holidayName = holidayMap.get(dateStr);
+    const isHoliday = !!holidayName;
+    const isWeekend = settings.countSundaysAsHolidays && isWeekendDay(iter, settings.weekendPolicy);
+
+    if (isHoliday) {
+      holidaysDetected.push({ date: dateStr, name: holidayName });
+    }
+    if (isWeekend && !isHoliday) {
+      weekendsDetected.push({ date: dateStr, day: iter.getUTCDay() === 0 ? 'Sunday' : 'Saturday' });
+    }
+
+    const isNonWorking = isHoliday || isWeekend;
+    if (!isNonWorking) {
+      workingDays += 1;
+    }
+
+    if (shouldInclude) {
+      // Common holidays & weekends in range count as leave taken dates
+      chargeableDays += 1;
+    } else {
+      // Excluded: only working days count
+      if (!isNonWorking) {
+        chargeableDays += 1;
+      }
+    }
+
+    iter.setUTCDate(iter.getUTCDate() + 1);
+  }
+
+  return {
+    days: chargeableDays,
+    calendarDays,
+    workingDays,
+    holidaysDetected,
+    weekendsDetected,
+    includeHolidays: shouldInclude,
+    sandwichRuleApplied: shouldInclude,
+    policyName: shouldInclude ? 'Sandwich Rule (Holidays Included)' : 'Working Days Only (Holidays Excluded)',
+    policyNotice: shouldInclude
+      ? `Common holidays (${holidaysDetected.length}) and weekly offs (${weekendsDetected.length}) are counted as leave taken.`
+      : `Common holidays (${holidaysDetected.length}) and weekly offs (${weekendsDetected.length}) are excluded from leave deduction.`,
+  };
+}
+
 function inclusiveDays(fromDate, toDate) {
   const a = new Date(String(fromDate) + 'T00:00:00Z');
   const b = new Date(String(toDate) + 'T00:00:00Z');
@@ -171,8 +313,12 @@ async function applyLeave(employee, { leaveTypeId, fromDate, toDate, reason }, u
   if (!leaveType || String(leaveType.organizationId) !== String(employee.organizationId)) throw new LeaveError('Leave type not found.', 404);
   if (leaveType.status !== 'ACTIVE') throw new LeaveError('This leave type is inactive.', 400);
   if (!fromDate || !toDate) throw new LeaveError('fromDate and toDate are required.');
-  const days = inclusiveDays(fromDate, toDate);
-  if (!(days >= 1)) throw new LeaveError('toDate must be on or after fromDate.');
+
+  const breakdown = await calculateLeaveBreakdown(employee.organizationId, leaveType, fromDate, toDate);
+  const days = breakdown.days;
+  if (!(days >= 1)) {
+    throw new LeaveError('The selected leave period contains only common holidays or weekly offs; no leave days need to be deducted.', 400);
+  }
 
   if (leaveType.accrualMethod !== 'NONE') {
     const year = await currentYearLabel(employee.organizationId, fromDate);
@@ -281,4 +427,5 @@ module.exports = {
   createType, updateType, currentYearLabel,
   accrueForMonth, applyLeave, decideLeave, cancelLeave, balancesFor,
   inclusiveDays,
+  getLeaveSettings, updateLeaveSettings, calculateLeaveBreakdown, isWeekendDay,
 };

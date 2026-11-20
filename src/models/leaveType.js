@@ -28,6 +28,8 @@ const LeaveType = sequelize.define('LeaveType', {
   carryForward: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true, field: 'carry_forward' },
   encashable: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   paidPercent: { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 100, field: 'paid_percent' }, // e.g. 50 for Half Pay Leave
+  includeHolidays: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'include_holidays' }, // if true, intervening holidays count towards leave taken (Sandwich Rule)
+  isLop: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'is_lop' }, // Loss of Pay
   requiresApproval: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true, field: 'requires_approval' },
   status: { type: DataTypes.ENUM('ACTIVE', 'INACTIVE'), allowNull: false, defaultValue: 'ACTIVE' },
   remarks: { type: DataTypes.STRING(500), allowNull: true },

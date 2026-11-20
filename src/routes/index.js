@@ -80,6 +80,7 @@ router.use('/overdraft-slabs', require('./overdraftSlabs'));
 const leaveRoutes = require('./leave');
 router.use('/leave-types', leaveRoutes.types);
 router.use('/leave-applications', leaveRoutes.applications);
+router.use('/leave-settings', leaveRoutes.leaveSettings);
 const serviceBook = require('./serviceBook');
 router.use('/employees', serviceBook);
 router.use('/employees', leaveRoutes.employeeLeave);

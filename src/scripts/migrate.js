@@ -37,6 +37,8 @@ const {
   DeductionType,
   DeductionTypePost,
   OverdraftSlab,
+  LeaveType,
+  OrgLeaveSetting,
 } = require('../models');
 
 const StageNumberMigration = sequelize.define('StageNumberMigration', {
@@ -269,6 +271,9 @@ const COLUMN_STEPS = [
   ['org_payroll_setting', 'hra_max_amount', { type: DataTypes.DECIMAL(10, 2), allowNull: true }],
   ['employee', 'hra_type', { type: DataTypes.ENUM('PERCENT', 'FIXED'), allowNull: false, defaultValue: 'PERCENT' }],
   ['employee', 'fixed_hra_amount', { type: DataTypes.DECIMAL(10, 2), allowNull: true }],
+  // Slice: Leave calculation settings & sandwich rule (common holidays included in leaves other than CL and LOP)
+  ['leave_type', 'include_holidays', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
+  ['leave_type', 'is_lop', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
 ];
 
 /**
@@ -327,6 +332,8 @@ async function migrate() {
   await DeductionType.sync();
   await DeductionTypePost.sync();
   await OverdraftSlab.sync();
+  await OrgLeaveSetting.sync();
+  await LeaveType.update({ includeHolidays: true }, { where: { code: ['EL', 'HPL', 'ML'], includeHolidays: false } }).catch(() => {});
   for (const [table, column, spec] of COLUMN_STEPS) {
     // eslint-disable-next-line no-await-in-loop
     if (await addColumnIfMissing(qi, table, column, spec)) added.push(`${table}.${column}`);

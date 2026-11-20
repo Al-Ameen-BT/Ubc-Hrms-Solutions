@@ -24,6 +24,9 @@ export const leaveApi = {
     api.get(`/employees/${employeeId}/leave-balances${year ? `?year=${year}` : ''}`),
   employeeApplications: (employeeId) => api.get(`/employees/${employeeId}/leave-applications`),
   applyForEmployee: (employeeId, data) => api.post(`/employees/${employeeId}/leave-applications`, data),
+  calculate: (data) => api.post('/leave-types/calculate', data),
+  getSettings: () => api.get('/leave-settings'),
+  updateSettings: (data) => api.put('/leave-settings', data),
 };
 
 /* ----------------------------------------------------------- Allowances */

@@ -60,6 +60,7 @@ const DeductionTypePost = require('./deductionTypePost');
 const OverdraftSlab = require('./overdraftSlab');
 const YearEndClosure = require('./yearEndClosure');
 const LeaveType = require('./leaveType');
+const OrgLeaveSetting = require('./orgLeaveSetting');
 const EmployeeLeaveBalance = require('./employeeLeaveBalance');
 const LeaveApplication = require('./leaveApplication');
 const EmployeeBankAccount = require('./employeeBankAccount');
@@ -361,6 +362,8 @@ YearEndClosure.belongsTo(User, { as: 'ClosedByUser', foreignKey: 'closedBy' });
 // Leave Policy / Leave Management (feature: leave types, balances, applications)
 Organization.hasMany(LeaveType, { foreignKey: 'organizationId' });
 LeaveType.belongsTo(Organization, { foreignKey: 'organizationId' });
+Organization.hasOne(OrgLeaveSetting, { foreignKey: 'organizationId' });
+OrgLeaveSetting.belongsTo(Organization, { foreignKey: 'organizationId' });
 
 Employee.hasMany(EmployeeLeaveBalance, { foreignKey: 'employeeId' });
 EmployeeLeaveBalance.belongsTo(Employee, { foreignKey: 'employeeId' });
@@ -545,6 +548,7 @@ module.exports = {
   OverdraftSlab,
   YearEndClosure,
   LeaveType,
+  OrgLeaveSetting,
   EmployeeLeaveBalance,
   LeaveApplication,
   EmployeeBankAccount,

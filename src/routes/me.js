@@ -200,6 +200,16 @@ router.post('/leave/applications', requireFeaturePermission('self.leave', SELF_S
     res.status(201).json({ data: row });
   } catch (err) { fail(res, err); }
 });
+router.post('/leave/calculate', requireFeaturePermission('self.leave', SELF_SERVICE_ROLES), async (req, res) => {
+  try {
+    const { leaveTypeId, fromDate, toDate } = req.body || {};
+    if (!isDateOnly(fromDate) || !isDateOnly(toDate)) return res.status(400).json({ status: 'error', message: 'Use valid YYYY-MM-DD dates.' });
+    const leaveType = await LeaveType.findOne({ where: { id: leaveTypeId, organizationId: req.user.organizationId } });
+    if (!leaveType) return res.status(404).json({ status: 'error', message: 'Leave type not found.' });
+    const breakdown = await leave.calculateLeaveBreakdown(req.user.organizationId, leaveType, fromDate, toDate);
+    res.json({ data: breakdown });
+  } catch (err) { fail(res, err); }
+});
 router.post('/leave/applications/:id/cancel', requireFeaturePermission('self.leave', SELF_SERVICE_ROLES), async (req, res) => {
   try {
     const row = await LeaveApplication.findOne({ where: { id: req.params.id, employeeId: req.employee.id } });

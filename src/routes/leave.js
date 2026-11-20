@@ -53,6 +53,19 @@ types.get('/', requireFeaturePermission('leave.view', VIEWERS), async (req, res)
   } catch (err) { sendErr(res, err); }
 });
 
+types.post('/calculate', requireFeaturePermission('leave.view', VIEWERS), async (req, res) => {
+  try {
+    const { leaveTypeId, fromDate, toDate } = req.body || {};
+    if (!leaveTypeId || !fromDate || !toDate) return res.status(400).json({ status: 'error', message: 'leaveTypeId, fromDate, and toDate are required.' });
+    const leaveType = await LeaveType.findByPk(leaveTypeId);
+    if (!leaveType || (req.user.role !== 'SUPER_ADMIN' && String(leaveType.organizationId) !== String(orgIdFor(req)))) {
+      return res.status(404).json({ status: 'error', message: 'Leave type not found' });
+    }
+    const breakdown = await leave.calculateLeaveBreakdown(orgIdFor(req), leaveType, fromDate, toDate);
+    res.json({ data: breakdown });
+  } catch (err) { sendErr(res, err); }
+});
+
 types.post('/', requireFeaturePermission('leave.manage', WRITERS, req => ({ resourceType: 'Organization', id: req.user.organizationId })), async (req, res) => {
   try {
     const row = await leave.createType(orgIdFor(req), req.body);
@@ -177,4 +190,24 @@ employeeLeave.post('/:id/leave-applications', requireFeaturePermission('leave.ma
   } catch (err) { sendErr(res, err); }
 });
 
-module.exports = { types, applications, employeeLeave };
+// -------------------------------------------------------- Leave Settings
+
+const leaveSettings = express.Router();
+leaveSettings.use(authenticate, requireFeature('leave'));
+
+leaveSettings.get('/', requireFeaturePermission('leave.view', VIEWERS), async (req, res) => {
+  try {
+    const data = await leave.getLeaveSettings(orgIdFor(req));
+    res.json({ data });
+  } catch (err) { sendErr(res, err); }
+});
+
+leaveSettings.put('/', requireFeaturePermission('leave.manage', WRITERS, req => ({ resourceType: 'Organization', id: req.user.organizationId })), async (req, res) => {
+  try {
+    const data = await leave.updateLeaveSettings(orgIdFor(req), req.body);
+    await audit(req, 'leave_settings.update', { organizationId: orgIdFor(req), targetType: 'organization', targetId: orgIdFor(req), details: req.body });
+    res.json({ data });
+  } catch (err) { sendErr(res, err); }
+});
+
+module.exports = { types, applications, employeeLeave, leaveSettings };
