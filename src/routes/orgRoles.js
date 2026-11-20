@@ -7,6 +7,10 @@ const router = express.Router();
 const options = req => ({ organizationId: req.user.organizationId, actor: req.user, id: req.params.id, userId: req.params.userId, data: req.body || {} });
 const handle = (work, status = 200) => async (req, res) => { try { res.status(status).json({ data: await work(req) }); } catch (error) { users.sendError(res, error); } };
 router.get('/roles/readiness', authenticate, requirePermission('roles.manage'), handle(req => users.previewAccessReadiness(options(req))));
+router.post('/roles/bootstrap', authenticate, requirePermission('roles.manage'), handle(async req => {
+  const { bootstrapOrganizationAccess } = require('../services/accessBootstrap');
+  return bootstrapOrganizationAccess({ organizationId: req.user.organizationId });
+}));
 router.post('/roles/activate', authenticate, requirePermission('roles.manage'), handle(req => {
   const data = users.inputShape(req.body || {}, ['accessControlMode']);
   if (data.accessControlMode !== undefined && data.accessControlMode !== 'PERMISSIONS') throw new users.UserAdminError(400, 'Permission mode activation is one-way');

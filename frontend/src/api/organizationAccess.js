@@ -43,6 +43,7 @@ async function loadStructurePhoto(path) {
 export const organizationAccessApi = {
   catalogue: () => api.get('/org/roles/catalogue'),
   readiness: () => api.get('/org/roles/readiness'),
+  bootstrap: () => api.post('/org/roles/bootstrap', {}),
   activate: () => api.post('/org/roles/activate', { accessControlMode: 'PERMISSIONS' }),
   roles: () => api.get('/org/roles'),
   role: id => api.get(`/org/roles/${id}`),
