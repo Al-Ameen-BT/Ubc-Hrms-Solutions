@@ -13,6 +13,7 @@ import { Modal } from '../../components/ui/Modal';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { organizationAccessApi } from '../../api/organizationAccess';
 import { TempPasswordModal } from '../../components/TempPasswordModal';
+import { AlertTriangleIcon } from '../../components/ui/Icons';
 
 
 export function UsersPage({ embedded = false }) {
@@ -555,7 +556,7 @@ export function UsersPage({ embedded = false }) {
         <div className="confirm-modal-content">
           {actionError && <div className="auth-error" role="alert">{actionError}</div>}
           <div className="confirm-warning-banner banner-danger">
-            <span className="confirm-warning-icon" aria-hidden="true">⚠️</span>
+            <span className="confirm-warning-icon" aria-hidden="true"><AlertTriangleIcon size={18} /></span>
             <div>
               This permanently removes <strong>{removeStep2Target?.name}</strong> (<span className="mono">{removeStep2Target?.email}</span>) from the organisation and cannot be undone.
             </div>

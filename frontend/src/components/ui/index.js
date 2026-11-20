@@ -7,3 +7,4 @@ export { Modal } from './Modal';
 export { StatLedger } from './StatLedger';
 export { EmptyState } from './EmptyState';
 export { ToastProvider, useToast } from './Toast';
+export * from './Icons';

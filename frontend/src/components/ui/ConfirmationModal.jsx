@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input } from './Input';
+import { AlertTriangleIcon, InfoIcon } from './Icons';
 
 export function ConfirmationModal({
   open,
@@ -58,7 +59,7 @@ export function ConfirmationModal({
 
         <div className={`confirm-warning-banner ${confirmVariant === 'danger' ? 'banner-danger' : confirmVariant === 'primary' ? 'banner-primary' : 'banner-warning'}`}>
           <span className="confirm-warning-icon" aria-hidden="true">
-            {confirmVariant === 'danger' ? '⚠️' : confirmVariant === 'primary' ? 'ℹ️' : 'ℹ️'}
+            {confirmVariant === 'danger' ? <AlertTriangleIcon size={18} /> : <InfoIcon size={18} />}
           </span>
           <div>{warningMessage}</div>
         </div>

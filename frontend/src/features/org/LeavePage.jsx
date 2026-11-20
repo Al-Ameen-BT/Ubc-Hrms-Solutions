@@ -11,6 +11,7 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { SettingsIcon } from '../../components/ui/Icons';
 
 export function LeavePage() {
   const queryClient = useQueryClient();
@@ -262,7 +263,8 @@ export function LeavePage() {
           variant={activeTab === 'settings' ? 'primary' : 'secondary'}
           onClick={() => setActiveTab('settings')}
         >
-          ⚙️ Leave Settings
+          <SettingsIcon size={16} style={{ marginRight: '0.4rem', verticalAlign: '-2px' }} />
+          Leave Settings
         </Button>
       </div>
 

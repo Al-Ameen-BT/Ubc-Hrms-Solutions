@@ -12,6 +12,21 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { useToast } from '../../components/ui/Toast';
+import {
+  ShieldIcon,
+  UsersIcon,
+  UserIcon,
+  FileTextIcon,
+  ZapIcon,
+  RefreshCwIcon,
+  BuildingIcon,
+  SettingsIcon,
+  AlertTriangleIcon,
+  CheckCircleIcon,
+  ClipboardListIcon,
+  LockIcon,
+  ArrowRightIcon,
+} from '../../components/ui/Icons';
 import './RolesPermissionsPage.css';
 
 const IMPACT_COPY = 'Browser users must sign in again. QR-only mobile users must relink their phone from the self-service portal: My Account → Linked devices.';
@@ -25,7 +40,7 @@ function categorizeBlockers(blockers = [], bootstrapUserId, users = []) {
     roles: {
       id: 'roles',
       title: 'Protected System Roles & Baselines',
-      icon: '🛡️',
+      icon: <ShieldIcon size={16} />,
       description: 'System roles, baseline permissions, and administrative access assignments',
       items: [],
       canAutoFix: true,
@@ -33,7 +48,7 @@ function categorizeBlockers(blockers = [], bootstrapUserId, users = []) {
     identity: {
       id: 'identity',
       title: 'Admin Identity & Employee Profiles',
-      icon: '👤',
+      icon: <UserIcon size={16} />,
       description: 'Account mapping to active employee profiles for audit compliance',
       items: [],
       canAutoFix: false,
@@ -41,7 +56,7 @@ function categorizeBlockers(blockers = [], bootstrapUserId, users = []) {
     branch: {
       id: 'branch',
       title: 'Branch & Organisation Structure',
-      icon: '🏢',
+      icon: <BuildingIcon size={16} />,
       description: 'Branch placement and Head Office structure configuration',
       items: [],
       canAutoFix: false,
@@ -49,7 +64,7 @@ function categorizeBlockers(blockers = [], bootstrapUserId, users = []) {
     other: {
       id: 'other',
       title: 'Operational Readiness',
-      icon: '⚙️',
+      icon: <SettingsIcon size={16} />,
       description: 'Pending workflow or transaction preconditions',
       items: [],
       canAutoFix: false,
@@ -237,7 +252,10 @@ export function RolesPermissionsPage() {
             <p>Manage bank responsibilities, record access boundaries, and role assignments.</p>
           </div>
           <div className="page-header-actions">
-            <Link to="/audit" className="btn btn-secondary btn-sm">📋 View Audit Log</Link>
+            <Link to="/audit" className="btn btn-secondary btn-sm">
+              <ClipboardListIcon size={14} style={{ marginRight: '0.4rem', verticalAlign: '-2px' }} />
+              View Audit Log
+            </Link>
           </div>
         </div>
       </header>
@@ -249,7 +267,8 @@ export function RolesPermissionsPage() {
           className={`btn btn-sm ${activeTab === 'readiness' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => { setActiveTab('readiness'); setParams({ tab: 'readiness' }); }}
         >
-          🛡️ Access Readiness &amp; Migration
+          <ShieldIcon size={15} style={{ marginRight: '0.4rem', verticalAlign: '-2px' }} />
+          Access Readiness &amp; Migration
           {readiness && !readiness.ready && (
             <Badge variant="warning" style={{ marginLeft: '0.5rem' }}>{readiness.blockers?.length || '!'}</Badge>
           )}
@@ -259,14 +278,16 @@ export function RolesPermissionsPage() {
           className={`btn btn-sm ${activeTab === 'assignments' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => { setActiveTab('assignments'); setParams({ tab: 'assignments' }); }}
         >
-          👥 User Role Assignments
+          <UsersIcon size={15} style={{ marginRight: '0.4rem', verticalAlign: '-2px' }} />
+          User Role Assignments
         </button>
         <button
           type="button"
           className={`btn btn-sm ${activeTab === 'roles' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => { setActiveTab('roles'); setParams({ tab: 'roles' }); }}
         >
-          📑 Role Templates &amp; Matrix
+          <FileTextIcon size={15} style={{ marginRight: '0.4rem', verticalAlign: '-2px' }} />
+          Role Templates &amp; Matrix
           <Badge variant="secondary" style={{ marginLeft: '0.5rem' }}>{roles.length}</Badge>
         </button>
       </nav>
@@ -315,14 +336,17 @@ export function RolesPermissionsPage() {
                 <div className="roles-hero-actions">
                   {hasAutoFixableBlockers && (
                     <Button variant="primary" size="sm" loading={busy} onClick={handleAutoBootstrap}>
-                      ⚡ Auto-Provision Roles &amp; Baselines
+                      <ZapIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+                      Auto-Provision Roles &amp; Baselines
                     </Button>
                   )}
                   <Button size="sm" variant="secondary" loading={readinessQuery.isFetching} onClick={() => readinessQuery.refetch()}>
-                    🔄 Check Readiness
+                    <RefreshCwIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+                    Check Readiness
                   </Button>
                   <Link to="/people?view=access" className="btn btn-secondary btn-sm">
-                    👤 Manage Account Links
+                    <UserIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+                    Manage Account Links
                   </Link>
                 </div>
               </div>
@@ -334,13 +358,14 @@ export function RolesPermissionsPage() {
                     <div key={category.id} className="roles-blocker-category">
                       <div className="roles-blocker-category-header">
                         <div className="roles-blocker-category-title">
-                          <span>{category.icon}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center' }}>{category.icon}</span>
                           <span>{category.title}</span>
                           <Badge variant="warning">{category.items.length}</Badge>
                         </div>
                         {category.canAutoFix && (
                           <Button size="sm" variant="secondary" loading={busy} onClick={handleAutoBootstrap}>
-                            ⚡ Auto-Provision
+                            <ZapIcon size={13} style={{ marginRight: '0.3rem', verticalAlign: '-1px' }} />
+                            Auto-Provision
                           </Button>
                         )}
                       </div>
@@ -348,7 +373,9 @@ export function RolesPermissionsPage() {
                         {category.items.map(item => (
                           <div key={item.id} className="roles-blocker-item">
                             <div className="roles-blocker-item-main">
-                              <div className="roles-blocker-item-icon">⚠️</div>
+                              <div className="roles-blocker-item-icon">
+                                <AlertTriangleIcon size={15} />
+                              </div>
                               <div>
                                 <div className="roles-blocker-item-title">{item.title}</div>
                                 <div className="roles-blocker-item-desc">{item.desc}</div>
@@ -357,7 +384,8 @@ export function RolesPermissionsPage() {
                             <div className="roles-blocker-item-action">
                               {item.actionLink ? (
                                 <Link to={item.actionLink} className="btn btn-secondary btn-sm">
-                                  {item.actionLabel || 'Resolve'} →
+                                  {item.actionLabel || 'Resolve'}
+                                  <ArrowRightIcon size={13} style={{ marginLeft: '0.3rem', verticalAlign: '-1px' }} />
                                 </Link>
                               ) : item.isAutoFixable ? (
                                 <Button size="sm" variant="secondary" loading={busy} onClick={handleAutoBootstrap}>
@@ -374,7 +402,10 @@ export function RolesPermissionsPage() {
               ) : readiness?.ready ? (
                 <div className="roles-activation-container is-ready">
                   <div className="roles-activation-info">
-                    <h3 className="roles-activation-title">✅ All Readiness Requirements Satisfied</h3>
+                    <h3 className="roles-activation-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <CheckCircleIcon size={20} style={{ color: '#16a34a' }} />
+                      All Readiness Requirements Satisfied
+                    </h3>
                     <p className="roles-activation-desc">
                       Your organisation structure, protected role templates, baseline assignments, and employee identity links have all passed authoritative verification.
                     </p>
@@ -386,7 +417,8 @@ export function RolesPermissionsPage() {
               {readiness?.accessControlMode === 'LEGACY' && (
                 <div className={`roles-activation-container ${readiness.ready ? 'is-ready' : ''}`}>
                   <div className="roles-activation-info">
-                    <h3 className="roles-activation-title">
+                    <h3 className="roles-activation-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <LockIcon size={17} />
                       {readiness.ready ? 'Activate Permission Mode Permanently' : 'Permission Mode Activation (Locked)'}
                     </h3>
                     <p className="roles-activation-desc">
@@ -418,7 +450,8 @@ export function RolesPermissionsPage() {
             title="User Role Assignments"
             actions={
               <Link className="btn btn-secondary btn-sm" to="/people?view=access">
-                👤 Manage Account &amp; Employee Links
+                <UserIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+                Manage Account &amp; Employee Links
               </Link>
             }
           >
@@ -495,7 +528,10 @@ export function RolesPermissionsPage() {
                       {selectedUser.employeeId ? (
                         <Badge variant="success">Linked Employee #{selectedUser.employeeId}</Badge>
                       ) : (
-                        <Badge variant="warning">Unlinked Admin Account</Badge>
+                        <Badge variant="warning">
+                          <AlertTriangleIcon size={12} style={{ marginRight: '0.25rem', verticalAlign: '-1px' }} />
+                          Unlinked Admin Account
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -716,7 +752,8 @@ export function RolesPermissionsPage() {
                 <div className="roles-list-empty">
                   <p>No roles are currently configured in this bank.</p>
                   <Button variant="primary" size="sm" loading={busy} onClick={handleAutoBootstrap} style={{ marginTop: '0.5rem' }}>
-                    ⚡ Auto-Provision Protected Roles
+                    <ZapIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+                    Auto-Provision Protected Roles
                   </Button>
                 </div>
               )}
