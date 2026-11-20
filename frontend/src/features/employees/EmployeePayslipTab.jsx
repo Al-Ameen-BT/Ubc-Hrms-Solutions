@@ -47,6 +47,7 @@ export function EmployeePayslipTab({ employeeId, employeeName, directPay }) {
     ['Festival Advance', d.festivalAdvance], ['Overdraft', d.overdraft],
     ['Recurring Deposit', d.recurringDeposit], ['LIC', d.lic],
     ['Housing Loan', d.housingLoan], ['Vehicle Loan', d.vehicleLoan],
+    ...(d.customDeductions || []).map((c) => [c.name || 'Deduction', c.amount]),
   ].filter(([, v]) => Number(v)) : [];
 
   return (

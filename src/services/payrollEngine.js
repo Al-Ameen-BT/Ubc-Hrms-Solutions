@@ -24,6 +24,7 @@ const loans = require('./loans');
 const attendance = require('./attendance');
 const { computePayslip } = require('./payslip');
 const { applicableAllowancesFor } = require('./allowances');
+const { applicableDeductionsFor } = require('./deductions');
 const { round2 } = require('./loans');
 const { createHash } = require('node:crypto');
 const { segmentsForMonth } = require('./compensationResolver');
@@ -45,13 +46,16 @@ async function payrollInputFingerprint(organizationId, year, month, transaction)
   const employees = await models.Employee.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true, transaction });
   const employeeIds = employees.map(row => row.id);
   const allowanceTypes = await models.AllowanceType.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true, transaction });
+  const deductionTypes = await models.DeductionType.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true, transaction });
   const scales = await models.PayScale.findAll({ where: { organizationId }, order: [['id', 'ASC']], raw: true, transaction });
-  const rows = [await models.Organization.findByPk(organizationId, { raw: true, transaction }), employees, allowanceTypes, scales];
+  const rows = [await models.Organization.findByPk(organizationId, { raw: true, transaction }), employees, allowanceTypes, deductionTypes, scales];
   const collect = async (Model, where) => rows.push(await Model.findAll({ where, order: [['id', 'ASC']], raw: true, transaction }));
   await collect(models.OrgPayrollSetting, { organizationId });
   await collect(models.PostCadre, { organizationId });
   await collect(models.PayStage, { payScaleId: { [Op.in]: scales.map(row => row.id) } });
   await collect(models.AllowanceTypePost, { allowanceTypeId: { [Op.in]: allowanceTypes.map(row => row.id) } });
+  await collect(models.DeductionTypePost, { deductionTypeId: { [Op.in]: deductionTypes.map(row => row.id) } });
+  await collect(models.OverdraftSlab, { organizationId });
   await collect(models.EmployeeAttendance, { employeeId: { [Op.in]: employeeIds }, year, month });
   await collect(models.EmployeeBankAccount, { employeeId: { [Op.in]: employeeIds } });
   for (const Model of [models.EmployeeFestivalAdvance, models.EmployeeOverdraft, models.EmployeeRecurringDeposit, models.EmployeeLic, models.EmployeeHousingLoan, models.EmployeeVehicleLoan]) {
@@ -134,15 +138,16 @@ async function processRun({ organizationId, year, month, userId }) {
     }
     const last = salarySegments.at(-1);
     const post = last?.source === 'CATALOGUE' ? await PostCadre.findOne({ where: { organizationId, code: last.postCode } }) : null;
-    const [activeLoans, attendanceRow, customAllowances] = await Promise.all([
+    const [activeLoans, attendanceRow, customAllowances, customDeductions] = await Promise.all([
       loans.loadActiveLoans(employee.id, asOf),
       attendance.getForMonth(employee.id, month),
       applicableAllowancesFor(organizationId, post?.id || employee.postCadreId, year, month),
+      applicableDeductionsFor(organizationId, post?.id || employee.postCadreId, year, month),
     ]);
     const catalogueSegments = salarySegments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? salarySegments : null;
     const effectiveSettings = catalogueSegments ? catalogueSegments.at(-1).settings : settings;
     const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
-    const payslip = computePayslip(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, year);
+    const payslip = computePayslip(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, year, customDeductions);
     totalGross = round2(totalGross + payslip.earnings.grossEarnings);
     totalDeductions = round2(totalDeductions + payslip.deductions.totalDeductions);
     totalNet = round2(totalNet + payslip.netPay);

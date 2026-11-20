@@ -114,8 +114,34 @@ export function PayrollSettingsPage() {
         </div>
       </Card>
 
-      <Card title="Employee Overdraft">
-        <p className="form-note">The minimum bank offer is (Basic + DA) × 15. HR records the amount borrowed, total repayment, and monthly payment. Repayment is limited to 84 months or the employee's earlier retirement.</p>
+      <Card title="Welfare Fund (Statutory Deductions)">
+        <p className="form-note">Kerala statutory co-operative welfare fund rules. Standard deduction is ₹45 each for employee and employer. Slab rules apply based on Basic + DA (threshold ₹10,000).</p>
+        <div className="form-grid">
+          <Select
+            id="ps-wfrule"
+            label="Welfare Fund Rule"
+            value={form.welfareFundRule || 'SLAB'}
+            onChange={(v) => setForm((s) => ({ ...s, welfareFundRule: v }))}
+            options={[
+              { value: 'SLAB', label: 'Salary Slabs (Basic + DA)' },
+              { value: 'FLAT', label: 'Flat Standard Amount' },
+            ]}
+          />
+          <Input id="ps-wfthreshold" label="Slab Threshold (Basic + DA ₹)" type="number" step="1" value={form.welfareFundThreshold ?? 10000} onChange={f('welfareFundThreshold')} mono />
+          <Input id="ps-wfabove-emp" label="Above Threshold: Employee (₹)" type="number" step="1" value={form.welfareFundAboveEmployee ?? 300} onChange={f('welfareFundAboveEmployee')} mono />
+          <Input id="ps-wfabove-empr" label="Above Threshold: Employer (₹)" type="number" step="1" value={form.welfareFundAboveEmployer ?? 250} onChange={f('welfareFundAboveEmployer')} mono />
+          <Input id="ps-wfbelow-emp" label="Below/At Threshold: Employee (₹)" type="number" step="1" value={form.welfareFundBelowEmployee ?? 250} onChange={f('welfareFundBelowEmployee')} mono />
+          <Input id="ps-wfbelow-empr" label="Below/At Threshold: Employer (₹)" type="number" step="1" value={form.welfareFundBelowEmployer ?? 200} onChange={f('welfareFundBelowEmployer')} mono />
+          <Input id="ps-wfbase-emp" label="Flat Base: Employee (₹)" type="number" step="1" value={form.welfareFundBaseEmployee ?? 45} onChange={f('welfareFundBaseEmployee')} mono />
+          <Input id="ps-wfbase-empr" label="Flat Base: Employer (₹)" type="number" step="1" value={form.welfareFundBaseEmployer ?? 45} onChange={f('welfareFundBaseEmployer')} mono />
+        </div>
+      </Card>
+
+      <Card title="Employee Overdraft &amp; Slabs">
+        <p className="form-note">
+          Employee Overdraft limits are governed by bank-configured salary slabs and tiers.
+          {' '}<Link to="/deductions" style={{ fontWeight: 600 }}>Manage Overdraft Slabs &amp; Deduction Categories &rarr;</Link>
+        </p>
       </Card>
 
       <Card title="Festival Advance — Recoverable Advance">

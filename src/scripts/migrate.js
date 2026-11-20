@@ -34,6 +34,9 @@ const {
   DpdpIncident,
   DpdpOrganizationProfile,
   OrganizationFeature,
+  DeductionType,
+  DeductionTypePost,
+  OverdraftSlab,
 } = require('../models');
 
 const StageNumberMigration = sequelize.define('StageNumberMigration', {
@@ -216,6 +219,15 @@ const COLUMN_STEPS = [
   // organization_branch / organization_board_member tables, no column
   // steps needed for them), Aadhaar number, document header/footer.
   ['org_payroll_setting', 'retirement_age', { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 58 }],
+  // Slice: Welfare fund statutory deductions and slab values
+  ['org_payroll_setting', 'welfare_fund_rule', { type: DataTypes.ENUM('SLAB', 'FLAT'), allowNull: false, defaultValue: 'SLAB' }],
+  ['org_payroll_setting', 'welfare_fund_threshold', { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 10000 }],
+  ['org_payroll_setting', 'welfare_fund_above_employee', { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 300 }],
+  ['org_payroll_setting', 'welfare_fund_above_employer', { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 250 }],
+  ['org_payroll_setting', 'welfare_fund_below_employee', { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 250 }],
+  ['org_payroll_setting', 'welfare_fund_below_employer', { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 200 }],
+  ['org_payroll_setting', 'welfare_fund_base_employee', { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 45 }],
+  ['org_payroll_setting', 'welfare_fund_base_employer', { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 45 }],
   ['organization', 'mandatory_employee_fields', { type: DataTypes.JSON, allowNull: true }],
   ['organization', 'established_year', { type: DataTypes.INTEGER.UNSIGNED, allowNull: true }],
   ['organization', 'registration_number', { type: DataTypes.STRING(128), allowNull: true }],
@@ -312,6 +324,9 @@ async function migrate() {
   await DpdpIncident.sync();
   await DpdpOrganizationProfile.sync();
   await OrganizationFeature.sync();
+  await DeductionType.sync();
+  await DeductionTypePost.sync();
+  await OverdraftSlab.sync();
   for (const [table, column, spec] of COLUMN_STEPS) {
     // eslint-disable-next-line no-await-in-loop
     if (await addColumnIfMissing(qi, table, column, spec)) added.push(`${table}.${column}`);

@@ -83,16 +83,65 @@ function scheduleStatus(record, asOf) {
   };
 }
 
-/** The bank's minimum overdraft offer is fifteen times Basic plus DA. */
-function overdraftEligibility(employee, settings) {
-  const basicPaise = toPaise(employee.currentBasicPay);
-  const daPaise = employee.daType === 'FIXED' ? toPaise(employee.fixedDaAmount) : percentOf(basicPaise, settings.daPercent);
-  return { basic: toRupees(basicPaise), da: toRupees(daPaise), minimumOffer: toRupees(multiply(add(basicPaise, daPaise), 15)) };
+/** Overdraft eligibility: evaluates against configured overdraft slabs, or defaults to 15x Basic + DA. */
+function overdraftEligibility(employee, settings = {}, slabs = []) {
+  const basicPaise = toPaise(employee?.currentBasicPay || 0);
+  const daPaise = employee?.daType === 'FIXED' ? toPaise(employee?.fixedDaAmount || 0) : percentOf(basicPaise, settings?.daPercent || 0);
+  const salaryBasePaise = add(basicPaise, daPaise);
+  const salaryBaseRupees = toRupees(salaryBasePaise);
+
+  let matchedSlab = null;
+  const activeSlabs = (slabs || []).filter(s => s.status === 'ACTIVE');
+  if (activeSlabs.length > 0) {
+    for (const slab of activeSlabs) {
+      const from = Number(slab.fromSalary || 0);
+      const to = slab.toSalary != null && slab.toSalary !== '' ? Number(slab.toSalary) : null;
+      if (salaryBaseRupees >= from && (to === null || salaryBaseRupees <= to)) {
+        matchedSlab = slab;
+        break;
+      }
+    }
+  }
+
+  const multiplier = matchedSlab ? Number(matchedSlab.multiplier) : (Number(settings?.odMultiplier) || 15);
+  const calculatedOfferPaise = multiply(salaryBasePaise, multiplier);
+  let finalOfferPaise = calculatedOfferPaise;
+
+  if (matchedSlab) {
+    if (matchedSlab.maxLimit != null && matchedSlab.maxLimit !== '') {
+      finalOfferPaise = min(finalOfferPaise, toPaise(matchedSlab.maxLimit));
+    }
+    if (matchedSlab.minLimit != null && matchedSlab.minLimit !== '') {
+      finalOfferPaise = max(finalOfferPaise, toPaise(matchedSlab.minLimit));
+    }
+  }
+
+  const maxTenure = matchedSlab?.maxTenureMonths ? Number(matchedSlab.maxTenureMonths) : (Number(settings?.odMaxRepayMonths) || 84);
+
+  return {
+    basic: toRupees(basicPaise),
+    da: toRupees(daPaise),
+    salaryBase: salaryBaseRupees,
+    slab: matchedSlab ? {
+      id: matchedSlab.id,
+      name: matchedSlab.slabName,
+      fromSalary: matchedSlab.fromSalary,
+      toSalary: matchedSlab.toSalary,
+      multiplier,
+      maxLimit: matchedSlab.maxLimit,
+      minLimit: matchedSlab.minLimit,
+      maxTenureMonths: maxTenure,
+    } : null,
+    multiplier,
+    minimumOffer: toRupees(finalOfferPaise),
+    eligibleLimit: toRupees(finalOfferPaise),
+    maxTenureMonths: maxTenure,
+  };
 }
 
-/** Maximum allowed Overdraft repayment period: the org's standard (default 84 months), shortened to whatever's left until retirement if that's sooner. */
-function overdraftMaxRepayMonths(employee, settings, asOf) {
-  const orgMax = 84;
+/** Maximum allowed Overdraft repayment period: the org's standard (default 84 months, or slab limit), shortened to whatever's left until retirement if that's sooner. */
+function overdraftMaxRepayMonths(employee, settings, asOf, matchedSlab = null) {
+  const orgMax = matchedSlab?.maxTenureMonths ? Number(matchedSlab.maxTenureMonths) : (Number(settings?.odMaxRepayMonths) || 84);
   const untilRetirement = monthsUntilRetirement(employee, asOf || new Date(), settings);
   if (untilRetirement === null) return orgMax;
   return Math.max(0, Math.min(orgMax, untilRetirement));

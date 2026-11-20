@@ -34,6 +34,7 @@ import { GovernmentOrdersPage } from './features/org/GovernmentOrdersPage';
 import { KsrRulesPage } from './features/org/KsrRulesPage';
 import { OrgProfilePage } from './features/org/OrgProfilePage';
 import { AllowancesPage } from './features/org/AllowancesPage';
+import { DeductionsPage } from './features/org/DeductionsPage';
 import { YearEndPage } from './features/org/YearEndPage';
 import { ArrearsPage } from './features/org/ArrearsPage';
 import { ArrearsCasePage } from './features/org/ArrearsCasePage';
@@ -132,6 +133,7 @@ function AppRoutes() {
         <Route path="pay-scales" element={<PayScalesPage />} />
         <Route path="leave" element={<LeavePage />} />
         <Route path="allowances" element={<AllowancesPage />} />
+        <Route path="deductions" element={<DeductionsPage />} />
         <Route path="arrears" element={<ArrearsPage />} />
         <Route path="arrears-cases/:id" element={<ArrearsCasePage />} />
         <Route path="da-revisions/:id" element={<DaRevisionPage />} />

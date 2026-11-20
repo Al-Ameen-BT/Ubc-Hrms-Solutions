@@ -5,6 +5,8 @@ const { OrgPayrollSetting } = require('../models');
 const FIELDS = [
   'daPercent', 'hraType', 'hraPercent', 'hraFixedAmount', 'hraMaxAmount', 'pfEmployeePercent', 'pfEmployerPercent', 'pfCalculationBase',
   'gsliAmount', 'gsliCutoffDate', 'ptSchedule', 'ptMonth1', 'ptMonth2',
+  'welfareFundRule', 'welfareFundThreshold', 'welfareFundAboveEmployee', 'welfareFundAboveEmployer',
+  'welfareFundBelowEmployee', 'welfareFundBelowEmployer', 'welfareFundBaseEmployee', 'welfareFundBaseEmployer',
   'festivalAdvanceRepayMonths', 'stagnationYears', 'stagnationExtraStages',
   'medicalAllowanceAmount', 'medicalAllowanceMonth',
   'bonusMonth', 'bonusResult',

@@ -31,7 +31,7 @@ function attendanceFraction(lopDays, payableDays) {
   return { num: paidDays, den: payableDays };
 }
 
-function computePayslip(employee, settings, forMonth, loans, attendance, customAllowances, compensationSegments, forYear) {
+function computePayslip(employee, settings, forMonth, loans, attendance, customAllowances, compensationSegments, forYear, customDeductions) {
   const month = forMonth || (new Date().getMonth() + 1);
   loans = loans || {};
   const year = forYear || Number(compensationSegments?.[0]?.fromDate.slice(0, 4)) || new Date().getUTCFullYear();
@@ -158,7 +158,32 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
     : employee.vpfPercent ? percentOf(pfBasePaise, employee.vpfPercent) : 0;
 
   // ---- Welfare Fund ----
-  const welfarePaise = employee.welfareFundOptIn ? toPaise(employee.welfareFundAmount) : 0;
+  let welfareEmployeePaise = 0;
+  let welfareEmployerPaise = 0;
+  if (employee.welfareFundOptIn) {
+    if (employee.welfareFundAmount != null && Number(employee.welfareFundAmount) > 0) {
+      welfareEmployeePaise = toPaise(employee.welfareFundAmount);
+      welfareEmployerPaise = toPaise(settings.welfareFundBaseEmployer != null ? settings.welfareFundBaseEmployer : 45);
+    } else {
+      const rule = settings.welfareFundRule || 'SLAB';
+      if (rule === 'FLAT') {
+        welfareEmployeePaise = toPaise(settings.welfareFundBaseEmployee != null ? settings.welfareFundBaseEmployee : 45);
+        welfareEmployerPaise = toPaise(settings.welfareFundBaseEmployer != null ? settings.welfareFundBaseEmployer : 45);
+      } else {
+        // Slab based on Basic + DA
+        const salaryBasePaise = add(basicPaise, daPaise);
+        const salaryBaseRupees = toRupees(salaryBasePaise);
+        const threshold = settings.welfareFundThreshold != null ? Number(settings.welfareFundThreshold) : 10000;
+        if (salaryBaseRupees > threshold) {
+          welfareEmployeePaise = toPaise(settings.welfareFundAboveEmployee != null ? settings.welfareFundAboveEmployee : 300);
+          welfareEmployerPaise = toPaise(settings.welfareFundAboveEmployer != null ? settings.welfareFundAboveEmployer : 250);
+        } else {
+          welfareEmployeePaise = toPaise(settings.welfareFundBelowEmployee != null ? settings.welfareFundBelowEmployee : 250);
+          welfareEmployerPaise = toPaise(settings.welfareFundBelowEmployer != null ? settings.welfareFundBelowEmployer : 200);
+        }
+      }
+    }
+  }
 
   // ---- GSLI ----
   const gsliEligible = employee.gsliOptIn === true
@@ -217,10 +242,21 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   const grossEarningsRupees = basicRupees + daRupees + hraRupees + riskRupees + otherRupees
     + ccaRupees + conveyanceRupees + medicalAllowanceRupees + bonusRupees + customAllowancesTotalRupees;
 
+  const customDeductionRows = (directPay ? [] : customDeductions || []).map((d) => ({
+    id: d.id,
+    name: d.name,
+    category: d.category || 'OTHER',
+    amount: toRupees(toPaise(d.amount)),
+    employerAmount: d.employerAmount ? toRupees(toPaise(d.employerAmount)) : 0,
+  }));
+  const customDeductionsTotalPaise = sum(customDeductionRows.map(d => toPaise(d.amount)));
+  const customDeductionsTotalRupees = toRupees(customDeductionsTotalPaise);
+
   const pfEmployeeRupees = toRupees(pfEmployeePaise);
   const pfEmployerRupees = toRupees(pfEmployerPaise);
   const vpfRupees = toRupees(vpfPaise);
-  const welfareRupees = toRupees(welfarePaise);
+  const welfareRupees = toRupees(welfareEmployeePaise);
+  const welfareEmployerRupees = toRupees(welfareEmployerPaise);
   const gsliRupees = toRupees(gsliPaise);
   const ptRupees = toRupees(ptPaise);
   const monthlyTaxRupees = toRupees(monthlyTaxPaise);
@@ -232,7 +268,8 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
   const vehicleLoanRupees = toRupees(vehicleLoanPaise);
 
   const totalDeductionsRupees = pfEmployeeRupees + vpfRupees + welfareRupees + gsliRupees + ptRupees
-    + monthlyTaxRupees + festivalAdvanceRupees + overdraftRupees + recurringDepositRupees + licRupees + housingLoanRupees + vehicleLoanRupees;
+    + monthlyTaxRupees + festivalAdvanceRupees + overdraftRupees + recurringDepositRupees + licRupees + housingLoanRupees + vehicleLoanRupees
+    + customDeductionsTotalRupees;
 
   const netPayRupees = grossEarningsRupees - totalDeductionsRupees;
 
@@ -273,6 +310,7 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
       pfCalculationBase: settings.pfCalculationBase || 'BASIC',
       vpf: vpfRupees,
       welfareFund: welfareRupees,
+      welfareFundEmployer: welfareEmployerRupees,
       gsli: gsliRupees,
       professionalTax: ptRupees,
       incomeTax: monthlyTaxRupees,
@@ -282,6 +320,8 @@ function computePayslip(employee, settings, forMonth, loans, attendance, customA
       lic: licRupees,
       housingLoan: housingLoanRupees,
       vehicleLoan: vehicleLoanRupees,
+      customDeductions: customDeductionRows,
+      customDeductionsTotal: customDeductionsTotalRupees,
       totalDeductions: totalDeductionsRupees,
     },
     loanStatus: {

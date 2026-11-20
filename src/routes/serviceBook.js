@@ -17,6 +17,7 @@ const {
   PayStage,
   EmployeeFestivalAdvance,
   EmployeeOverdraft,
+  OverdraftSlab,
   EmployeeRecurringDeposit,
   EmployeeLic,
   EmployeeHousingLoan,
@@ -643,20 +644,24 @@ router.get('/:id/payslip', authenticate, requireFeaturePermission('payroll.view'
     const resolvedMonth = month || (new Date().getMonth() + 1);
     const resolvedYear = req.query.year ? Number(req.query.year) : new Date().getFullYear();
     const asOf = loans.asOfForMonth(resolvedMonth, resolvedYear);
-    const [activeLoans, attendanceRow, customAllowances] = await Promise.all([
+    const [activeLoans, attendanceRow, customAllowances, customDeductions] = await Promise.all([
       loans.loadActiveLoans(employee.id, asOf),
       attendance.getForMonth(employee.id, month),
       require('../services/allowances').applicableAllowancesFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
+      require('../services/deductions').applicableDeductionsFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
     ]);
     const segments = await require('../services/compensationResolver').segmentsForMonth(employee, resolvedYear, resolvedMonth);
     const currentSegment = segments.at(-1);
     if (currentSegment?.source === 'CATALOGUE') {
       const post = await PostCadre.findOne({ where: { organizationId: employee.organizationId, code: currentSegment.postCode } });
-      if (post) customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+      if (post) {
+        customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+        customDeductions.splice(0, customDeductions.length, ...await require('../services/deductions').applicableDeductionsFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+      }
     }
     const catalogueSegments = segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? segments : null;
     const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
-    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear);
+    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear, customDeductions);
     res.json({ data: payslip });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });
@@ -681,20 +686,24 @@ router.get('/:id/payslip.pdf', authenticate, requireFeaturePermission('payroll.v
     const resolvedMonth = month || (new Date().getMonth() + 1);
     const resolvedYear = req.query.year ? Number(req.query.year) : new Date().getFullYear();
     const asOf = loans.asOfForMonth(resolvedMonth, resolvedYear);
-    const [activeLoans, attendanceRow, customAllowances] = await Promise.all([
+    const [activeLoans, attendanceRow, customAllowances, customDeductions] = await Promise.all([
       loans.loadActiveLoans(employee.id, asOf),
       attendance.getForMonth(employee.id, month),
       require('../services/allowances').applicableAllowancesFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
+      require('../services/deductions').applicableDeductionsFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
     ]);
     const segments = await require('../services/compensationResolver').segmentsForMonth(employee, resolvedYear, resolvedMonth);
     const currentSegment = segments.at(-1);
     if (currentSegment?.source === 'CATALOGUE') {
       const post = await PostCadre.findOne({ where: { organizationId: employee.organizationId, code: currentSegment.postCode } });
-      if (post) customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+      if (post) {
+        customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+        customDeductions.splice(0, customDeductions.length, ...await require('../services/deductions').applicableDeductionsFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
+      }
     }
     const catalogueSegments = segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? segments : null;
     const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
-    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear);
+    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear, customDeductions);
     const org = await Organization.findByPk(employee.organizationId, { attributes: ['id', 'name', 'shortName'] });
     const { buildPayslipPdf } = require('../services/payslipPdf');
     const pdf = await buildPayslipPdf({
@@ -922,11 +931,13 @@ router.get('/:id/overdrafts', authenticate, requireFeaturePermission('compensati
     const bankSettings = await require('../services/payrollSettings').getSettings(employee.organizationId);
     const salary = await compensation.resolveCompensation(employee, todayIST());
     const settings = await compensation.effectiveSettingsForDate(employee, todayIST(), bankSettings, salary);
+    const slabs = await OverdraftSlab.findAll({ where: { organizationId: employee.organizationId, status: 'ACTIVE' }, order: [['fromSalary', 'ASC']] });
+    const eligibility = loans.overdraftEligibility({ ...employee.toJSON(), currentBasicPay: salary.basicPay }, settings, slabs);
     const today = new Date();
     res.json({
       data: rows.map((r) => ({ ...r.toJSON(), ...loans.scheduleStatus(r, today) })),
-      eligibility: loans.overdraftEligibility({ ...employee.toJSON(), currentBasicPay: salary.basicPay }, settings),
-      maxRepayMonths: loans.overdraftMaxRepayMonths(employee, settings, today),
+      eligibility,
+      maxRepayMonths: loans.overdraftMaxRepayMonths(employee, settings, today, eligibility.slab),
       retirementDate: loans.retirementDate(employee, settings),
     });
   } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
@@ -941,10 +952,23 @@ router.post('/:id/overdrafts', authenticate, requireFeaturePermission('compensat
     if (existing.some((r) => !loans.scheduleStatus(r, today).fullyRepaid)) {
       return res.status(400).json({ status: 'error', message: 'This employee already has an unrepaid Overdraft.' });
     }
-    const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
+    const bankSettings = await require('../services/payrollSettings').getSettings(employee.organizationId);
+    const salary = await compensation.resolveCompensation(employee, todayIST());
+    const settings = await compensation.effectiveSettingsForDate(employee, todayIST(), bankSettings, salary);
+    const slabs = await OverdraftSlab.findAll({ where: { organizationId: employee.organizationId, status: 'ACTIVE' }, order: [['fromSalary', 'ASC']] });
+    const eligibility = loans.overdraftEligibility({ ...employee.toJSON(), currentBasicPay: salary.basicPay }, settings, slabs);
+
     const amount = Number(b.amount);
     if (!(amount > 0)) return res.status(400).json({ status: 'error', message: 'Amount must be positive.' });
-    const maxMonths = loans.overdraftMaxRepayMonths(employee, settings, today);
+
+    if (eligibility.eligibleLimit && amount > eligibility.eligibleLimit) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Amount ₹${amount} exceeds the overdraft eligibility limit of ₹${eligibility.eligibleLimit}${eligibility.slab ? ` for slab "${eligibility.slab.name}"` : ''}.`,
+      });
+    }
+
+    const maxMonths = loans.overdraftMaxRepayMonths(employee, settings, today, eligibility.slab);
     if (maxMonths < 1) {
       return res.status(400).json({ status: 'error', message: 'This employee is at or past standard retirement age — no repayment period remains.' });
     }

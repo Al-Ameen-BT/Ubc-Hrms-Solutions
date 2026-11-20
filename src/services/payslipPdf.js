@@ -113,10 +113,12 @@ async function buildPayslipPdf({ organization, employee, payslip, year }) {
       d.gsli ? ['GSLI', d.gsli] : null,
       ['Professional Tax', d.professionalTax],
       d.festivalAdvance ? ['Festival Advance', d.festivalAdvance] : null,
+      d.overdraft ? ['Overdraft', d.overdraft] : null,
       d.recurringDeposit ? ['Recurring Deposit', d.recurringDeposit] : null,
       d.lic ? ['LIC', d.lic] : null,
       d.housingLoan ? ['Housing Loan', d.housingLoan] : null,
       d.vehicleLoan ? ['Vehicle Loan', d.vehicleLoan] : null,
+      ...(d.customDeductions || []).map(c => [c.name, c.amount]),
       ['Income Tax (TDS)', d.incomeTax],
       ['Total Deductions', d.totalDeductions, true],
     ].filter(Boolean);

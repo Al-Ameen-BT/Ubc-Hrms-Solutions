@@ -55,6 +55,9 @@ const ArrearsMonthDetail = require('./arrearsMonthDetail');
 const ArrearsInstallment = require('./arrearsInstallment');
 const AllowanceType = require('./allowanceType');
 const AllowanceTypePost = require('./allowanceTypePost');
+const DeductionType = require('./deductionType');
+const DeductionTypePost = require('./deductionTypePost');
+const OverdraftSlab = require('./overdraftSlab');
 const YearEndClosure = require('./yearEndClosure');
 const LeaveType = require('./leaveType');
 const EmployeeLeaveBalance = require('./employeeLeaveBalance');
@@ -339,6 +342,17 @@ AllowanceType.hasMany(AllowanceTypePost, { foreignKey: 'allowanceTypeId' });
 AllowanceTypePost.belongsTo(AllowanceType, { foreignKey: 'allowanceTypeId' });
 AllowanceTypePost.belongsTo(PostCadre, { foreignKey: 'postCadreId' });
 
+// Deduction master (feature: admin-configurable deductions by category)
+Organization.hasMany(DeductionType, { foreignKey: 'organizationId' });
+DeductionType.belongsTo(Organization, { foreignKey: 'organizationId' });
+DeductionType.hasMany(DeductionTypePost, { foreignKey: 'deductionTypeId' });
+DeductionTypePost.belongsTo(DeductionType, { foreignKey: 'deductionTypeId' });
+DeductionTypePost.belongsTo(PostCadre, { foreignKey: 'postCadreId' });
+
+// Overdraft slabs (feature: bank-defined overdraft eligibility slabs)
+Organization.hasMany(OverdraftSlab, { foreignKey: 'organizationId' });
+OverdraftSlab.belongsTo(Organization, { foreignKey: 'organizationId' });
+
 // Year-End Process (feature: financial-year vs calendar-year closing)
 Organization.hasMany(YearEndClosure, { foreignKey: 'organizationId' });
 YearEndClosure.belongsTo(Organization, { foreignKey: 'organizationId' });
@@ -526,6 +540,9 @@ module.exports = {
   ArrearsInstallment,
   AllowanceType,
   AllowanceTypePost,
+  DeductionType,
+  DeductionTypePost,
+  OverdraftSlab,
   YearEndClosure,
   LeaveType,
   EmployeeLeaveBalance,

@@ -64,8 +64,14 @@ export function EmployeeLoansTab({ employeeId }) {
         initial={{ amount: '', availedDate: '', repayMonths: '', totalRepaymentAmount: '', monthlyPayment: '', remarks: '' }}
         meta={(d) => (d?.eligibility ? (
           <p className="form-note">
-            Minimum bank offer {money(d.eligibility.minimumOffer)} (Basic + DA) × 15.
-            {' '}Maximum repayment {d.maxRepayMonths} months.
+            {d.eligibility.slab ? (
+              <span>
+                <strong>Slab Applied:</strong> {d.eligibility.slab.name} ({d.eligibility.multiplier}x Basic+DA{d.eligibility.slab.maxLimit ? `, Capped at ${money(d.eligibility.slab.maxLimit)}` : ''}). Eligible Overdraft Limit: <strong>{money(d.eligibility.eligibleLimit)}</strong>.
+              </span>
+            ) : (
+              <span>Bank offer {money(d.eligibility.minimumOffer)} (Basic + DA) × {d.eligibility.multiplier || 15}.</span>
+            )}
+            {' '}Maximum repayment: {d.maxRepayMonths} months.
           </p>
         ) : null)}
         fields={[

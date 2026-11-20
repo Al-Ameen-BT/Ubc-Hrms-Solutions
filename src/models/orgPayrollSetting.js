@@ -35,6 +35,20 @@ const OrgPayrollSetting = sequelize.define('OrgPayrollSetting', {
   gsliAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 20, field: 'gsli_amount' },
   gsliCutoffDate: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: '2014-09-01', field: 'gsli_cutoff_date' },
 
+  // Welfare Fund — Kerala Co-operative / Banking statutory welfare fund
+  // Standard deduction is ₹45 for employee and employer.
+  // Slab based on Basic + DA:
+  // If Basic + DA > 10,000: employee = ₹300, employer = ₹250.
+  // If Basic + DA <= 10,000: employee = ₹250, employer = ₹200.
+  welfareFundRule: { type: DataTypes.ENUM('SLAB', 'FLAT'), allowNull: false, defaultValue: 'SLAB', field: 'welfare_fund_rule' },
+  welfareFundThreshold: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 10000, field: 'welfare_fund_threshold' },
+  welfareFundAboveEmployee: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 300, field: 'welfare_fund_above_employee' },
+  welfareFundAboveEmployer: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 250, field: 'welfare_fund_above_employer' },
+  welfareFundBelowEmployee: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 250, field: 'welfare_fund_below_employee' },
+  welfareFundBelowEmployer: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 200, field: 'welfare_fund_below_employer' },
+  welfareFundBaseEmployee: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 45, field: 'welfare_fund_base_employee' },
+  welfareFundBaseEmployer: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 45, field: 'welfare_fund_base_employer' },
+
   // Professional Tax — schedule only; the amount itself is entered per
   // employee (no statutory slab table is built in — see Employee.ptAmount).
   ptSchedule: { type: DataTypes.ENUM('MONTHLY', 'HALF_YEARLY'), allowNull: false, defaultValue: 'HALF_YEARLY', field: 'pt_schedule' },

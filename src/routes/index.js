@@ -73,6 +73,8 @@ router.use('/pay-revisions', payScales.revisions);
 router.use('/pay-scales', payScales.scales);
 
 router.use('/allowance-types', require('./allowanceTypes'));
+router.use('/deduction-types', require('./deductionTypes'));
+router.use('/overdraft-slabs', require('./overdraftSlabs'));
 
 // Leave Policy / Leave Management — see routes/leave.js
 const leaveRoutes = require('./leave');

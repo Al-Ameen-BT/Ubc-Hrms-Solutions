@@ -133,10 +133,10 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
 
   const presentEmployeeIds = new Set(timeEntries.map((te) => te.employeeId));
 
-  // 4. Active leaves today
+  // 4. Active leaves today (approved and pending)
   const allActiveLeavesToday = await LeaveApplication.findAll({
     where: {
-      status: 'APPROVED',
+      status: { [Op.in]: ['APPROVED', 'PENDING'] },
       fromDate: { [Op.lte]: today },
       toDate: { [Op.gte]: today },
     },
@@ -154,7 +154,7 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
   });
   const activeLeavesToday = allActiveLeavesToday.filter((leave) => scopedEmployeeIds.has(leave.employeeId));
 
-  const onLeaveEmployeeIds = new Set(activeLeavesToday.map((l) => l.employeeId));
+  const onLeaveEmployeeIds = new Set(activeLeavesToday.filter((l) => l.status === 'APPROVED').map((l) => l.employeeId));
 
   // Count pending leave requests and retain the employee rows for the action queue.
   const pendingLeaves = await LeaveApplication.findAll({

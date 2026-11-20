@@ -41,6 +41,7 @@ const NAV = {
         { to: '/leave', label: 'Leave', icon: 'leave' },
         { to: '/employee-services', label: 'Employee Services', icon: 'users' },
         { to: '/allowances', label: 'Allowances', icon: 'payroll' },
+        { to: '/deductions', label: 'Deductions & Slabs', icon: 'payroll' },
         { to: '/arrears', label: 'DA Arrears', icon: 'scales' },
         { to: '/year-end', label: 'Year-End', icon: 'go' },
       ],

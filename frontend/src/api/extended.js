@@ -37,6 +37,29 @@ export const allowanceApi = {
   setPosts: (id, postCadreIds) => api.put(`/allowance-types/${id}/posts`, { postCadreIds }),
 };
 
+/* ----------------------------------------------------------- Deductions */
+/* routes/deductionTypes.js */
+export const deductionApi = {
+  list: (params) => api.get(`/deduction-types?${new URLSearchParams(params || {})}`),
+  get: (id) => api.get(`/deduction-types/${id}`),
+  create: (data) => api.post('/deduction-types', data),
+  update: (id, data) => api.put(`/deduction-types/${id}`, data),
+  setStatus: (id, status) => api.post(`/deduction-types/${id}/status`, { status }),
+  setPosts: (id, postCadreIds) => api.put(`/deduction-types/${id}/posts`, { postCadreIds }),
+  delete: (id) => api.delete(`/deduction-types/${id}`),
+};
+
+/* ------------------------------------------------------ Overdraft Slabs */
+/* routes/overdraftSlabs.js */
+export const overdraftSlabApi = {
+  list: (params) => api.get(`/overdraft-slabs?${new URLSearchParams(params || {})}`),
+  get: (id) => api.get(`/overdraft-slabs/${id}`),
+  create: (data) => api.post('/overdraft-slabs', data),
+  update: (id, data) => api.put(`/overdraft-slabs/${id}`, data),
+  setStatus: (id, status) => api.post(`/overdraft-slabs/${id}/status`, { status }),
+  delete: (id) => api.delete(`/overdraft-slabs/${id}`),
+};
+
 /* ------------------------------------------------------------ DA Arrears */
 /* routes/arrears.js */
 export const arrearsApi = {
