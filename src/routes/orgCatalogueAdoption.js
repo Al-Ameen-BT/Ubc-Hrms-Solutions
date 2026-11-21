@@ -9,7 +9,7 @@ const adoption = require('../services/catalogueAdoption');
 const router = express.Router();
 router.use(authenticate);
 
-router.get('/', requireFeaturePermission('compensation.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']), async (req, res) => {
+router.get('/', requireFeaturePermission(['compensation.view', 'settings.view'], ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY']), async (req, res) => {
   try {
     const org = await Organization.findByPk(req.user.organizationId);
     const [available, history] = await Promise.all([

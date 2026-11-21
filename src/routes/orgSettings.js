@@ -144,11 +144,11 @@ router.post('/settings/smtp/test', requireFeaturePermission('settings.configure'
 // (DA/HRA %, PF %, GSLI default/cutoff, Professional Tax schedule, Overdraft
 // limits, Festival Advance repayment window, stagnation-increment policy).
 // Lazily created with defaults on first read.
-router.get('/settings/payroll', requireFeaturePermission('compensation.view', ['ORG_ADMIN']), async (req, res) => {
+router.get('/settings/payroll', requireFeaturePermission(['compensation.view', 'settings.view'], ['ORG_ADMIN']), async (req, res) => {
   try { res.json({ data: await require('../services/financialChanges').settingsForDate(req.user.organizationId, new Date().toISOString().slice(0, 10)) }); } catch (err) { sendError(res, err); }
 });
 
-router.put('/settings/payroll', requireFeaturePermission('compensation.prepare', ['ORG_ADMIN']), async (req, res) => {
+router.put('/settings/payroll', requireFeaturePermission(['compensation.prepare', 'settings.configure'], ['ORG_ADMIN']), async (req, res) => {
   try {
     if (await require('../models').OrganizationCatalogueAdoption.count({ where: { organizationId: req.user.organizationId, status: 'APPROVED' } })) {
       return res.status(409).json({ status: 'error', message: 'Propose payroll setting changes for a separate financial approval.' });

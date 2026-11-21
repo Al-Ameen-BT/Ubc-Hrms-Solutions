@@ -128,7 +128,7 @@ const ROUTES = {
   'year-end': [['payroll.view'], PAYROLL_READERS],
   'government-orders': [['compensation.view'], STAFF], 'ksr-rules': [['compensation.view'], STAFF],
   'org-profile': [['settings.view'], ['ORG_ADMIN']], settings: [['settings.view'], ['ORG_ADMIN']],
-  'payroll-settings': [['compensation.view'], ['ORG_ADMIN']], 'catalogue-adoption': [['compensation.view'], FINANCIAL_READERS],
+  'payroll-settings': [['compensation.view', 'settings.view'], ['ORG_ADMIN']], 'catalogue-adoption': [['compensation.view', 'settings.view'], FINANCIAL_READERS],
   'financial-changes': [['financialChanges.view'], FINANCIAL_READERS], 'mandatory-fields': [['settings.view'], ['ORG_ADMIN']],
   'dpdp-compliance': [['dpdp.view', 'dpdp.manage', 'settings.configure'], ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']],
   audit: [['audit.view'], ['ORG_ADMIN']], 'roles-permissions': [['roles.manage'], []], users: [['users.manage'], ['ORG_ADMIN']],
