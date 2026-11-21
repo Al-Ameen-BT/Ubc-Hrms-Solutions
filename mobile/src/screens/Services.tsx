@@ -5,7 +5,7 @@ import type { EmployeeSession } from '../session';
 import { sharePrivateFile, pickReceipt } from '../files';
 import { bankToday, claimAmount, periodQuery } from '../validation';
 import { initials, isCurrentBankPeriod, statusMeta } from '../presentation';
-import { Action, Card, DataRow, Empty, ErrorText, Field, Loading, Notice, Page, radius, ScreenHeading, StatusBadge, colors, dateText, money, styles, timeText, useResource } from '../ui';
+import { Action, Avatar, BanihalWatermark, Card, DataRow, Empty, ErrorText, Field, Loading, Notice, Page, radius, ScreenHeading, StatusBadge, colors, dateText, money, styles, timeText, useResource } from '../ui';
 import { PasswordForm } from './Auth';
 import { version } from '../../package.json';
 
@@ -246,7 +246,37 @@ function Privacy({ api, session }: Props) {
 
 function Profile({ api, session, signOut }: Props & { signOut: () => void }) {
   const employee = session.context.employee;
-  return <Page><ScreenHeading eyebrow="Account" title="My profile" description="Your work identity and account security." /><Card>{session.user.organization?.logoUrl && <Image source={{ uri: `${api.root}${session.user.organization.logoUrl}` }} resizeMode="contain" style={local.profileLogo} accessibilityLabel={`${session.user.organization.name} logo`} />}<Text style={styles.cardTitle}>{employee?.name || session.user.name}</Text><Text style={styles.muted}>{session.user.organization?.name || session.user.organizationName}</Text><View style={local.ledger}><DataRow label="Employee code" value={employee?.empCode || '—'} /><DataRow label="Email" value={session.user.email} /><DataRow label="Role" value={employee?.designation || 'Employee'} /><DataRow label="Department" value={employee?.department || 'Unassigned'} /><DataRow label="Branch" value={employee?.branchName || 'Unassigned'} last /></View></Card><PasswordForm api={api} session={session} onSignOut={signOut} /><Action title="Sign out of this phone" secondary onPress={signOut} /><Text style={[styles.muted, { textAlign: 'center' }]}>UCB-HRMS · Version {version}</Text></Page>;
+  const employeePhotoUrl = employee?.photoUrl
+    ? `${api.root}${employee.photoUrl}`
+    : employee?.id
+    ? `${api.root}/api/v1/employees/${employee.id}/photo`
+    : null;
+
+  return (
+    <Page>
+      <ScreenHeading eyebrow="Account" title="My profile" description="Your work identity and account security." />
+      <Card>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <Avatar name={employee?.name || session.user.name} photoUrl={employeePhotoUrl} size={64} isOnline={true} showStatus={true} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{employee?.name || session.user.name}</Text>
+            <Text style={styles.muted}>{session.user.organization?.name || session.user.organizationName}</Text>
+          </View>
+        </View>
+        <View style={local.ledger}>
+          <DataRow label="Employee code" value={employee?.empCode || '—'} />
+          <DataRow label="Email" value={session.user.email} />
+          <DataRow label="Role" value={employee?.designation || 'Employee'} />
+          <DataRow label="Department" value={employee?.department || 'Unassigned'} />
+          <DataRow label="Branch" value={employee?.branchName || 'Unassigned'} last />
+        </View>
+      </Card>
+      <PasswordForm api={api} session={session} onSignOut={signOut} />
+      <Action title="Sign out of this phone" secondary onPress={signOut} />
+      <Text style={[styles.muted, { textAlign: 'center' }]}>UCB-HRMS · Version {version}</Text>
+      <BanihalWatermark />
+    </Page>
+  );
 }
 
 const moreItems = [
@@ -268,7 +298,19 @@ export function Services({ section, api, session, navigate, signOut }: Props & {
   if (section === 'Claims') return <Claims api={api} session={session} navigate={navigate} />;
   if (section === 'Privacy') return <Privacy api={api} session={session} navigate={navigate} />;
   if (section === 'Profile') return <Profile api={api} session={session} navigate={navigate} signOut={signOut} />;
-  return <Page><ScreenHeading eyebrow="Employee services" title="More" description="Everything else you need from your workplace." />{moreItems.map(item => <Pressable accessibilityRole="button" accessibilityLabel={item.title} key={item.section} onPress={() => navigate(item.section)} style={({ pressed }) => [local.serviceRow, pressed && local.pressed]}><View style={local.serviceIcon}><Text style={local.serviceGlyph}>{item.glyph}</Text></View><View style={{ flex: 1 }}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.muted}>{item.detail}</Text></View><Text style={local.chevron}>›</Text></Pressable>)}</Page>;
+  return (
+    <Page>
+      <ScreenHeading eyebrow="Employee services" title="More" description="Everything else you need from your workplace." />
+      {moreItems.map(item => (
+        <Pressable accessibilityRole="button" accessibilityLabel={item.title} key={item.section} onPress={() => navigate(item.section)} style={({ pressed }) => [local.serviceRow, pressed && local.pressed]}>
+          <View style={local.serviceIcon}><Text style={local.serviceGlyph}>{item.glyph}</Text></View>
+          <View style={{ flex: 1 }}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.muted}>{item.detail}</Text></View>
+          <Text style={local.chevron}>›</Text>
+        </Pressable>
+      ))}
+      <BanihalWatermark />
+    </Page>
+  );
 }
 
 const local = StyleSheet.create({

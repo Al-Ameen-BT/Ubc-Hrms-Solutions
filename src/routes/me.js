@@ -140,7 +140,7 @@ router.post('/dpdp/nomination', requireFeaturePermission('self.profile', SELF_SE
 router.get('/context', requireFeaturePermission('self.profile', SELF_SERVICE_ROLES), async (req, res) => {
   try {
     const employee = await ownEmployee(req);
-    res.json({ data: { linked: !!employee, employee: employee ? { id: employee.id, empCode: employee.empCode, name: employee.name, designation: employee.designation, department: employee.department, branchName: employee.branchName } : null } });
+    res.json({ data: { linked: !!employee, employee: employee ? { id: employee.id, empCode: employee.empCode, name: employee.name, designation: employee.designation, department: employee.department, branchName: employee.branchName, photoUrl: employee.photoAssetId ? `/api/v1/employees/${employee.id}/photo` : null } : null } });
   } catch (err) { fail(res, err); }
 });
 

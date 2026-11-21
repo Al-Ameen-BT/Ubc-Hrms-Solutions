@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Api } from './api';
 import type { StatusTone } from './presentation';
 
@@ -92,3 +92,129 @@ export function useResource<T>(api: Api, path: string, token: string, refresh = 
 export const money = (value: number | string | null | undefined) => value == null ? '—' : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(value));
 export const dateText = (value?: string | null) => value ? new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(value.length === 10 ? `${value}T12:00:00+05:30` : value)) : '—';
 export const timeText = (value?: string | null) => value ? new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(value)) : '—';
+
+/* ================= Custom Vector Icons (Strictly No Emojis) ================= */
+
+export function HomeIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  const w = size;
+  const h = size;
+  return (
+    <View style={{ width: w, height: h, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 0, height: 0, borderLeftWidth: w * 0.44, borderRightWidth: w * 0.44, borderBottomWidth: h * 0.38, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: color }} />
+      <View style={{ width: w * 0.64, height: h * 0.44, backgroundColor: color, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, alignItems: 'center', justifyContent: 'flex-end' }}>
+        <View style={{ width: w * 0.22, height: h * 0.24, backgroundColor: colors.white, borderTopLeftRadius: 2, borderTopRightRadius: 2 }} />
+      </View>
+    </View>
+  );
+}
+
+export function PayIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return (
+    <View style={{ width: size, height: size, borderRadius: size * 0.28, borderWidth: 1.8, borderColor: color, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ color, fontSize: Math.round(size * 0.62), fontWeight: '900', lineHeight: Math.round(size * 0.72) }}>₹</Text>
+    </View>
+  );
+}
+
+export function LeaveIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return (
+    <View style={{ width: size * 0.88, height: size, borderRadius: 4, borderWidth: 1.8, borderColor: color, overflow: 'hidden' }}>
+      <View style={{ height: size * 0.32, backgroundColor: color, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingHorizontal: 1 }}>
+        <View style={{ width: 2, height: 4, backgroundColor: colors.white, borderRadius: 1 }} />
+        <View style={{ width: 2, height: 4, backgroundColor: colors.white, borderRadius: 1 }} />
+      </View>
+      <View style={{ flex: 1, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: size * 0.34, height: size * 0.18, borderBottomWidth: 1.8, borderLeftWidth: 1.8, borderColor: color, transform: [{ rotate: '-45deg' }], marginTop: -2 }} />
+      </View>
+    </View>
+  );
+}
+
+export function TimeIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 1.8, borderColor: color, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white }}>
+      <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: color, position: 'absolute' }} />
+      <View style={{ width: 1.8, height: size * 0.28, backgroundColor: color, position: 'absolute', top: size * 0.22, borderRadius: 1 }} />
+      <View style={{ width: size * 0.28, height: 1.8, backgroundColor: color, position: 'absolute', right: size * 0.22, borderRadius: 1 }} />
+    </View>
+  );
+}
+
+export function MoreIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  const dot = Math.round(size * 0.32);
+  return (
+    <View style={{ width: size, height: size, justifyContent: 'space-between', padding: 1 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <View style={{ width: dot, height: dot, borderRadius: 2.5, backgroundColor: color }} />
+        <View style={{ width: dot, height: dot, borderRadius: 2.5, backgroundColor: color }} />
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <View style={{ width: dot, height: dot, borderRadius: 2.5, backgroundColor: color }} />
+        <View style={{ width: dot, height: dot, borderRadius: 2.5, backgroundColor: color }} />
+      </View>
+    </View>
+  );
+}
+
+export function ChevronRightIcon({ color = colors.muted, size = 16 }: { color?: string; size?: number }) {
+  return (
+    <View style={{ width: size * 0.44, height: size * 0.44, borderTopWidth: 2, borderRightWidth: 2, borderColor: color, transform: [{ rotate: '45deg' }] }} />
+  );
+}
+
+export function CheckCircleIcon({ color = colors.green, size = 20 }: { color?: string; size?: number }) {
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: size * 0.42, height: size * 0.22, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: colors.white, transform: [{ rotate: '-45deg' }], marginTop: -2 }} />
+    </View>
+  );
+}
+
+/* ================= Profile Avatar ================= */
+
+export function Avatar({ name, photoUrl, size = 64, isOnline = true, showStatus = true }: { name?: string | null; photoUrl?: string | null; size?: number; isOnline?: boolean; showStatus?: boolean }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const initialsText = (name || 'Employee').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'E';
+  const indicatorSize = Math.max(12, Math.round(size * 0.22));
+
+  return (
+    <View style={{ width: size, height: size, position: 'relative' }}>
+      <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2.5, borderColor: '#3b82f6', overflow: 'hidden', backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', shadowColor: colors.shadow, shadowOpacity: 0.16, shadowRadius: 6, elevation: 4 }}>
+        {photoUrl && !imageFailed ? (
+          <Image source={{ uri: photoUrl }} onError={() => setImageFailed(true)} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
+        ) : (
+          <View style={{ width: '100%', height: '100%', backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: colors.white, fontSize: Math.round(size * 0.38), fontWeight: '900', letterSpacing: 0.5 }}>{initialsText}</Text>
+          </View>
+        )}
+      </View>
+      {showStatus && (
+        <View style={{ position: 'absolute', bottom: 1, right: 1, width: indicatorSize, height: indicatorSize, borderRadius: indicatorSize / 2, backgroundColor: isOnline ? colors.green : colors.muted, borderWidth: 2, borderColor: colors.white }} />
+      )}
+    </View>
+  );
+}
+
+/* ================= Banihal Watermark ================= */
+
+export function BanihalWatermark() {
+  return (
+    <View style={watermarkStyles.container}>
+      <Image source={require('../assets/banihal-round.png')} defaultSource={require('../assets/banihal-logo.png')} style={watermarkStyles.logo} resizeMode="contain" />
+      <View style={watermarkStyles.content}>
+        <Text style={watermarkStyles.poweredBy}>POWERED BY</Text>
+        <Text style={watermarkStyles.brand}>BANIHAL TECHNOLOGIES</Text>
+        <Text style={watermarkStyles.subtitle}>Core Banking Solutions & HRMS</Text>
+      </View>
+    </View>
+  );
+}
+
+const watermarkStyles = StyleSheet.create({
+  container: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 18, marginTop: 12, opacity: 0.88, backgroundColor: 'rgba(255, 255, 255, 0.7)', borderRadius: radius.md, borderWidth: 1, borderColor: '#e1e8ed' },
+  logo: { width: 38, height: 38, borderRadius: 9 },
+  content: { justifyContent: 'center' },
+  poweredBy: { color: colors.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
+  brand: { color: colors.ink, fontSize: 13, fontWeight: '900', letterSpacing: 0.6 },
+  subtitle: { color: colors.blue, fontSize: 10, fontWeight: '700' },
+});

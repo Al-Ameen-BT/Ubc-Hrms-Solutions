@@ -11,7 +11,7 @@ export type EmployeeUser = {
 
 export type EmployeeContext = {
   linked: boolean;
-  employee: { id: number; empCode: string; name: string; designation?: string; department?: string; branchName?: string } | null;
+  employee: { id: number; empCode: string; name: string; designation?: string; department?: string; branchName?: string; photoUrl?: string | null } | null;
 };
 
 export type ChartUnit = { id: number; code: string; name: string; unitType?: 'HEAD_OFFICE' | 'BRANCH' };

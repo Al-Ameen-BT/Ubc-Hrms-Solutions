@@ -126,6 +126,7 @@ const deviceRefreshLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, key
 const devicePortalStatusLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500, keyGenerator: req => deviceKey(`${req.headers.authorization || req.ip}:${req.params.id}`), standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-portal-status') || undefined, passOnStoreError: true, validate: { keyGeneratorIpFallback: false } });
 app.post('/api/v1/me/devices/link', deviceLinkLimiter);
 app.post('/api/v1/mobile/link/claim', deviceLinkLimiter);
+app.post('/api/v1/mobile/auth/direct-login', deviceLinkLimiter);
 app.post('/api/v1/me/devices/link/:id/approve', rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, store: redis.getRateStore('device-approve') || undefined }));
 app.get('/api/v1/me/devices/link/:id', devicePortalStatusLimiter);
 app.post('/api/v1/mobile/link/status', deviceStatusLimiter);

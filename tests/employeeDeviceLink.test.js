@@ -175,3 +175,26 @@ test('organisation role changes revoke the previous employee device', async () =
   assert.equal(result.status, 200);
   assert.ok((await device.reload()).revokedAt);
 });
+
+test('mobile direct login authenticates employee directly and returns device tokens', async () => {
+  other.passwordHash = await hashPassword('other-secret');
+  other.status = 'ACTIVE';
+  await other.save();
+
+  const res = await request('/mobile/auth/direct-login', 'POST', {
+    orgCode: 'DEVICE',
+    identifier: 'D2',
+    password: 'other-secret',
+    platform: 'android',
+    deviceName: 'Test Phone',
+  });
+  assert.equal(res.status, 200);
+  assert.ok(res.body.data.accessToken);
+  assert.ok(res.body.data.refreshToken);
+  assert.equal(res.body.data.user.email, 'otherdevice@self.invalid');
+
+  // Verify that the issued device token works on protected endpoints
+  const protectedRes = await get(res.body.data.accessToken);
+  assert.equal(protectedRes.status, 200);
+  assert.equal((await protectedRes.json()).id, other.id);
+});
