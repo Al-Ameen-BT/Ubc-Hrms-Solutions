@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { arrearsApi } from '../../api/extended';
-import { fmt } from '../../api/client';
+import { orgApi, fmt } from '../../api/client';
 import { canDecide } from '../../api/organizationAccess';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -12,6 +12,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { InfoIcon } from '../../components/ui/Icons';
 import './ArrearsPage.css';
 
 const NEXT_STATUS = { DRAFT: 'APPROVED', APPROVED: 'ACTIVE', ACTIVE: 'CLOSED' };
@@ -58,6 +59,20 @@ export function ArrearsPage() {
     queryFn: () => arrearsApi.revisions(),
   });
 
+  const { data: payrollSettings } = useQuery({
+    queryKey: ['org-payroll-settings'],
+    queryFn: () => orgApi.payrollSettings(),
+  });
+
+  useEffect(() => {
+    if (payrollSettings?.data?.daPercent != null && form.previousDaPercent === '') {
+      setForm((prev) => ({
+        ...prev,
+        previousDaPercent: prev.previousDaPercent || String(payrollSettings.data.daPercent),
+      }));
+    }
+  }, [payrollSettings]);
+
   const { data: cases, isLoading: casesLoading } = useQuery({
     queryKey: ['arrears-cases', selected],
     queryFn: () => arrearsApi.casesForRevision(selected),
@@ -66,6 +81,7 @@ export function ArrearsPage() {
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['da-revisions'] });
+    queryClient.invalidateQueries({ queryKey: ['org-payroll-settings'] });
     if (selected) {
       queryClient.invalidateQueries({ queryKey: ['arrears-cases', selected] });
     }
@@ -288,6 +304,12 @@ export function ArrearsPage() {
         <p className="da-arrears-subtitle">
           Record a DA revision order, calculate the arrears it creates from its Effective From date, then decide how each employee is paid.
         </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.625rem', fontSize: '0.85rem', color: '#475569', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', padding: '0.5rem 0.75rem', borderRadius: '6px', maxWidth: 'fit-content' }}>
+          <InfoIcon size={15} style={{ color: '#0f766e', flexShrink: 0 }} />
+          <span>
+            Active Monthly DA Rate in <Link to="/payroll-settings" style={{ color: '#0f766e', fontWeight: 600 }}>Payroll Settings</Link>: <strong>{payrollSettings?.data?.daPercent != null ? `${payrollSettings.data.daPercent}%` : '...'}</strong>. Activating an order below automatically synchronizes this rate for future payroll runs.
+          </span>
+        </div>
       </header>
 
       {canPrepare && (

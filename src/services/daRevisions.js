@@ -14,7 +14,7 @@
  * final (matching the pay-history "never rewrite" rule used elsewhere).
  */
 
-const { sequelize, Organization, DaRevision, PayRevision } = require('../models');
+const { sequelize, Organization, DaRevision, PayRevision, OrgPayrollSetting } = require('../models');
 
 class DaRevisionError extends Error {
   constructor(message, status) { super(message); this.status = status || 400; }
@@ -109,6 +109,17 @@ async function advanceStatus(row, toStatus, userId) {
       const org = await Organization.findByPk(row.organizationId, { transaction });
       if (org.accessControlMode === 'PERMISSIONS' && (!userId || !row.preparedBy || String(userId) === String(row.preparedBy))) throw new DaRevisionError('A separate authority must approve this revision.', 403);
       row.approvedBy = userId || null; row.approvedAt = new Date();
+    }
+    if (toStatus === 'ACTIVE') {
+      const [settings] = await OrgPayrollSetting.findOrCreate({
+        where: { organizationId: row.organizationId },
+        defaults: { organizationId: row.organizationId },
+        transaction,
+      });
+      if (row.revisedDaPercent != null) {
+        settings.daPercent = row.revisedDaPercent;
+        await settings.save({ transaction });
+      }
     }
     row.status = toStatus;
     return row.save({ transaction });

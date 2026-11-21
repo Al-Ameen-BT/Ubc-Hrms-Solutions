@@ -192,7 +192,17 @@ export function PayrollSettingsPage() {
 
       <Card title="Allowances &amp; Statutory Rates">
         <div className="form-grid">
-          <Input id="ps-da" label="Dearness Allowance %" type="number" step="0.001" disabled={!canEdit} value={form.daPercent ?? ''} onChange={f('daPercent')} mono />
+          <Input
+            id="ps-da"
+            label="Dearness Allowance %"
+            type="number"
+            step="0.001"
+            disabled={!canEdit}
+            value={form.daPercent ?? ''}
+            onChange={f('daPercent')}
+            mono
+            hint="Active monthly rate for regular payroll. For retroactive Government Orders with arrears calculation, manage under DA Arrears."
+          />
           <Select
             id="ps-hratype"
             label="HRA Calculation Basis"
