@@ -195,26 +195,47 @@ export function Avatar({ name, photoUrl, size = 64, isOnline = true, showStatus 
   );
 }
 
-/* ================= Banihal Watermark ================= */
+/* ================= Banihal Watermark (Matches Web App Style) ================= */
 
-export function BanihalWatermark() {
+export function BanihalWatermark({ version }: { version?: string }) {
   return (
     <View style={watermarkStyles.container}>
-      <Image source={require('../assets/banihal-round.png')} defaultSource={require('../assets/banihal-logo.png')} style={watermarkStyles.logo} resizeMode="contain" />
-      <View style={watermarkStyles.content}>
-        <Text style={watermarkStyles.poweredBy}>POWERED BY</Text>
-        <Text style={watermarkStyles.brand}>BANIHAL TECHNOLOGIES</Text>
-        <Text style={watermarkStyles.subtitle}>Core Banking Solutions & HRMS</Text>
-      </View>
+      {version ? <Text style={watermarkStyles.version}>Version {version}</Text> : null}
+      <Text style={watermarkStyles.poweredBy}>Powered By</Text>
+      <Image
+        source={require('../assets/banihal-logo.png')}
+        style={watermarkStyles.logo}
+        resizeMode="contain"
+        accessibilityLabel="Banihal Technologies"
+      />
     </View>
   );
 }
 
 const watermarkStyles = StyleSheet.create({
-  container: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 18, marginTop: 12, opacity: 0.88, backgroundColor: 'rgba(255, 255, 255, 0.7)', borderRadius: radius.md, borderWidth: 1, borderColor: '#e1e8ed' },
-  logo: { width: 38, height: 38, borderRadius: 9 },
-  content: { justifyContent: 'center' },
-  poweredBy: { color: colors.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
-  brand: { color: colors.ink, fontSize: 13, fontWeight: '900', letterSpacing: 0.6 },
-  subtitle: { color: colors.blue, fontSize: 10, fontWeight: '700' },
+  container: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 14,
+    marginTop: 10,
+  },
+  version: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  poweredBy: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  logo: {
+    width: 130,
+    height: 22,
+    opacity: 0.85,
+  },
 });

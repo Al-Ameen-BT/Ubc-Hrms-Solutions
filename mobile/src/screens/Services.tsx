@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { employeeChartSections, parseEmployeeChart, type Api, type ChartPerson } from '../api';
 import type { EmployeeSession } from '../session';
@@ -6,6 +6,7 @@ import { sharePrivateFile, pickReceipt } from '../files';
 import { bankToday, claimAmount, periodQuery } from '../validation';
 import { initials, isCurrentBankPeriod, statusMeta } from '../presentation';
 import { Action, Avatar, BanihalWatermark, Card, DataRow, Empty, ErrorText, Field, Loading, Notice, Page, radius, ScreenHeading, StatusBadge, colors, dateText, money, styles, timeText, useResource } from '../ui';
+import { checkBiometricsAvailable, isAppLockConfigured, promptAppUnlock, setAppLockConfigured } from '../appLock';
 import { PasswordForm } from './Auth';
 import { version } from '../../package.json';
 
@@ -272,10 +273,86 @@ function Profile({ api, session, signOut }: Props & { signOut: () => void }) {
         </View>
       </Card>
       <PasswordForm api={api} session={session} onSignOut={signOut} />
+      <AppLockSettings />
       <Action title="Sign out of this phone" secondary onPress={signOut} />
-      <Text style={[styles.muted, { textAlign: 'center' }]}>UCB-HRMS · Version {version}</Text>
-      <BanihalWatermark />
+      <BanihalWatermark version={version} />
     </Page>
+  );
+}
+
+function AppLockSettings() {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [biometryInfo, setBiometryInfo] = useState({ hasHardware: false, isEnrolled: false, biometryType: 'Biometrics / Screen Lock' });
+  const [statusMsg, setStatusMsg] = useState('');
+
+  useEffect(() => {
+    Promise.all([isAppLockConfigured(), checkBiometricsAvailable()]).then(([configured, info]) => {
+      setEnabled(configured);
+      setBiometryInfo(info);
+      setLoading(false);
+    });
+  }, []);
+
+  const toggleLock = async () => {
+    setStatusMsg('');
+    const targetState = !enabled;
+    const verified = await promptAppUnlock(targetState ? 'Authenticate to Enable App Lock' : 'Authenticate to Disable App Lock');
+    if (verified) {
+      await setAppLockConfigured(targetState);
+      setEnabled(targetState);
+      setStatusMsg(targetState ? `App Lock enabled with ${biometryInfo.biometryType}` : 'App Lock disabled');
+    } else {
+      setStatusMsg('Authentication cancelled or not verified');
+    }
+  };
+
+  return (
+    <Card title="App Security & Lock">
+      <View style={{ gap: 8 }}>
+        <Text style={styles.muted}>
+          Protect your banking workspace by requiring biometric authentication ({biometryInfo.biometryType}) or device lock PIN whenever the app is opened or resumed.
+        </Text>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityLabel="Toggle App Lock"
+          accessibilityState={{ checked: enabled }}
+          onPress={toggleLock}
+          style={[{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: 12,
+            backgroundColor: enabled ? colors.pale : colors.white,
+            borderRadius: radius.sm,
+            borderWidth: 1,
+            borderColor: enabled ? colors.blue : colors.line,
+            minHeight: 52,
+          }]}
+        >
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text style={[styles.cardTitle, { fontSize: 14 }]}>
+              {enabled ? 'App Lock is Active' : 'App Lock is Disabled'}
+            </Text>
+            <Text style={styles.muted}>
+              {enabled ? `Protected with ${biometryInfo.biometryType}` : 'Tap to enable biometric lock protection'}
+            </Text>
+          </View>
+          <View style={{
+            width: 44,
+            height: 26,
+            borderRadius: 13,
+            backgroundColor: enabled ? colors.blue : '#cbd5e1',
+            justifyContent: 'center',
+            paddingHorizontal: 2,
+            alignItems: enabled ? 'flex-end' : 'flex-start',
+          }}>
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors.white }} />
+          </View>
+        </Pressable>
+        {statusMsg ? <Text style={[styles.muted, { color: enabled ? colors.blue : '#e11d48', fontWeight: '700' }]}>{statusMsg}</Text> : null}
+      </View>
+    </Card>
   );
 }
 
@@ -308,7 +385,6 @@ export function Services({ section, api, session, navigate, signOut }: Props & {
           <Text style={local.chevron}>›</Text>
         </Pressable>
       ))}
-      <BanihalWatermark />
     </Page>
   );
 }

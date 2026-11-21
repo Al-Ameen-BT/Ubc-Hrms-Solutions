@@ -8,7 +8,6 @@ import { acceptEmployeeLink, type EmployeeSession } from '../session';
 import { parseLinkQr } from '../link';
 import {
   Action,
-  BanihalWatermark,
   Card,
   colors,
   ErrorText,
@@ -276,7 +275,6 @@ export function AuthScreen({ api, relinkNotice, onAuthenticated }: { api: Api; r
           secondary
           onPress={() => { setPreview(null); setError(''); }}
         />
-        <BanihalWatermark />
       </Page>
     );
   }
@@ -285,18 +283,18 @@ export function AuthScreen({ api, relinkNotice, onAuthenticated }: { api: Api; r
 
   return (
     <Page>
-      {/* Brand Header with Banihal Round Logo */}
+      {/* Brand Header with Crisp Master Logo */}
       <View style={local.brandRow}>
         <Image
-          source={require('../../assets/banihal-round.png')}
-          defaultSource={require('../../assets/banihal-logo.png')}
+          source={require('../../assets/icon.png')}
+          defaultSource={require('../../assets/banihal-round.png')}
           style={local.brandLogo}
           resizeMode="contain"
-          accessibilityLabel="Banihal Technologies"
+          accessibilityLabel="UCB-HRMS"
         />
         <View style={{ flex: 1 }}>
           <Text style={local.brand}>UCB-HRMS</Text>
-          <Text style={local.brandSub}>Powered by Banihal Technologies</Text>
+          <Text style={local.brandSub}>Urban Co-operative Banking Solutions</Text>
         </View>
       </View>
 
@@ -487,9 +485,6 @@ export function AuthScreen({ api, relinkNotice, onAuthenticated }: { api: Api; r
           </Card>
         </>
       )}
-
-      {/* Persistent Banihal Watermark */}
-      <BanihalWatermark />
     </Page>
   );
 }

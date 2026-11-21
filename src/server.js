@@ -189,7 +189,7 @@ app.get(['/assets/platform/favicon', '/favicon.ico'], async (req, res, next) => 
     // No upload yet: serve the Banihal round favicon directly
     if (!row) {
       res.set('Cache-Control', 'public, max-age=300');
-      return res.sendFile(path.join(__dirname, '..', 'public', 'favicon.png'));
+      return res.sendFile(path.join(__dirname, '..', 'public', 'banihal-round.png'));
     }
     return brand.send(res, row);
   } catch (err) { next(err); }

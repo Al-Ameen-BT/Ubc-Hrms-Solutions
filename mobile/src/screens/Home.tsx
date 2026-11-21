@@ -6,7 +6,6 @@ import { firstName, statusMeta } from '../presentation';
 import {
   Action,
   Avatar,
-  BanihalWatermark,
   CheckCircleIcon,
   ChevronRightIcon,
   colors,
@@ -422,9 +421,6 @@ export function Home({ api, session, navigate }: { api: Api; session: EmployeeSe
           </Pressable>
         </View>
       </View>
-
-      {/* Persistent Banihal Technologies Watermark */}
-      <BanihalWatermark />
     </Page>
   );
 }

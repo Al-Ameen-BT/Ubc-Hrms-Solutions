@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, AppState, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import { createApi, type Api } from './src/api';
 import { clearEmployeeSession, refreshEmployeeSession, relinkMessageFor, restoreEmployeeSession, revokeEmployeeSession, type EmployeeSession } from './src/session';
+import { isAppLockConfigured, promptAppUnlock } from './src/appLock';
 import { AuthScreen } from './src/screens/Auth';
 import { Home } from './src/screens/Home';
 import { Services } from './src/screens/Services';
@@ -29,6 +30,7 @@ function EmployeeApp() {
   const insets = useSafeAreaInsets();
   const [session, setSession] = useState<EmployeeSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLocked, setIsLocked] = useState(false);
   const [restoreError, setRestoreError] = useState('');
   const [relinkNotice, setRelinkNotice] = useState('');
   const [restoreAttempt, setRestoreAttempt] = useState(0);
@@ -36,7 +38,7 @@ function EmployeeApp() {
   const refreshInFlight = React.useRef<Promise<string> | null>(null);
   const expire = useCallback(async (code?: string) => {
     try { await clearEmployeeSession(SecureStore); }
-    finally { setSession(null); setSection('Home'); setRelinkNotice(relinkMessageFor(code)); }
+    finally { setSession(null); setIsLocked(false); setSection('Home'); setRelinkNotice(relinkMessageFor(code)); }
   }, []);
   const configured = useMemo(() => {
     try {
@@ -56,14 +58,34 @@ function EmployeeApp() {
   useEffect(() => {
     if (!api) { setLoading(false); return; }
     setLoading(true); setRestoreError('');
-    restoreEmployeeSession(api, SecureStore, setRelinkNotice).then(restored => setSession(restored)).catch(error => setRestoreError(error.message)).finally(() => setLoading(false));
+    restoreEmployeeSession(api, SecureStore, setRelinkNotice).then(async restored => {
+      setSession(restored);
+      if (restored) {
+        const lockConfigured = await isAppLockConfigured();
+        if (lockConfigured) setIsLocked(true);
+      }
+    }).catch(error => setRestoreError(error.message)).finally(() => setLoading(false));
   }, [api, restoreAttempt]);
+
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async nextState => {
+      if (appState.current && /inactive|background/.test(appState.current) && nextState === 'active') {
+        if (session) {
+          const lockConfigured = await isAppLockConfigured();
+          if (lockConfigured) setIsLocked(true);
+        }
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
+  }, [session]);
 
   const signOut = async () => {
     if (!api) return;
     try {
       await revokeEmployeeSession(api, SecureStore);
-      setSession(null); setSection('Home'); setRestoreError(''); setRelinkNotice('');
+      setSession(null); setIsLocked(false); setSection('Home'); setRestoreError(''); setRelinkNotice('');
     } catch (error) { Alert.alert('Could not sign out', error instanceof Error ? `${error.message} Try again when connected.` : 'Try again when connected.'); }
   };
 
@@ -83,10 +105,10 @@ function EmployeeApp() {
     return (
       <View style={[local.loading, { paddingTop: Math.max(insets.top, 24), paddingBottom: Math.max(insets.bottom, 24) }]} accessibilityRole="progressbar" accessibilityLabel="Opening UCB-HRMS">
         <View style={local.loadingLogoWrap}>
-          <Image source={require('./assets/banihal-round.png')} defaultSource={require('./assets/splash-icon.png')} style={local.loadingMark} resizeMode="contain" />
+          <Image source={require('./assets/icon.png')} style={local.loadingMark} resizeMode="contain" />
         </View>
-        <Text style={local.loadingBrand}>BANIHAL TECHNOLOGIES</Text>
-        <Text style={local.loadingTitle}>UCB-HRMS Solutions</Text>
+        <Text style={local.loadingBrand}>UCB-HRMS</Text>
+        <Text style={local.loadingTitle}>Cooperative Banking Solutions</Text>
         <Text style={[styles.muted, { textAlign: 'center' }]}>Restoring your secure banking session…</Text>
         <View style={{ width: '70%', marginTop: 8 }}><Loading rows={2} /></View>
       </View>
@@ -109,8 +131,27 @@ function EmployeeApp() {
   if (!session) {
     return (
       <View style={[local.shell, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <AuthScreen api={api} relinkNotice={relinkNotice} onAuthenticated={restored => { setRelinkNotice(''); setSession(restored); }} />
+        <AuthScreen
+          api={api}
+          relinkNotice={relinkNotice}
+          onAuthenticated={async restored => {
+            setRelinkNotice('');
+            setSession(restored);
+            const lockConfigured = await isAppLockConfigured();
+            if (lockConfigured) setIsLocked(true);
+          }}
+        />
       </View>
+    );
+  }
+
+  if (isLocked) {
+    return (
+      <LockScreen
+        session={session}
+        onUnlock={() => setIsLocked(false)}
+        onSignOut={signOut}
+      />
     );
   }
 
@@ -135,17 +176,13 @@ function EmployeeApp() {
       {/* Notch-Adaptive Dark Header */}
       <View style={[local.header, { paddingTop: Math.max(insets.top, 14), paddingLeft: Math.max(insets.left, 16), paddingRight: Math.max(insets.right, 16) }]}>
         {orgLogoUrl ? (
-          <Image source={{ uri: orgLogoUrl }} resizeMode="contain" style={local.logo} accessibilityLabel={`${organization} logo`} defaultSource={require('./assets/banihal-round.png')} />
+          <Image source={{ uri: orgLogoUrl }} resizeMode="contain" style={local.logo} accessibilityLabel={`${organization} logo`} defaultSource={require('./assets/icon.png')} />
         ) : (
-          <Image source={require('./assets/banihal-round.png')} resizeMode="contain" style={local.logo} accessibilityLabel="Banihal logo" />
+          <Image source={require('./assets/icon.png')} resizeMode="contain" style={local.logo} accessibilityLabel="Default logo" />
         )}
         <View style={local.identity}>
           <Text style={local.bank} numberOfLines={1}>{organization}</Text>
           <Text style={local.name} numberOfLines={1}>{employee}</Text>
-        </View>
-        <View style={local.securePill}>
-          <View style={local.secureDot} />
-          <Text style={local.secureText}>SECURE</Text>
         </View>
       </View>
 
@@ -186,6 +223,42 @@ function EmployeeApp() {
   );
 }
 
+function LockScreen({ session, onUnlock, onSignOut }: { session: EmployeeSession; onUnlock: () => void; onSignOut: () => void }) {
+  const insets = useSafeAreaInsets();
+  const organization = session.user.organization?.name || session.user.organizationName || 'Cooperative Bank';
+  const employee = session.context.employee?.name || session.user.name;
+  const [busy, setBusy] = useState(false);
+
+  const attemptUnlock = async () => {
+    setBusy(true);
+    const success = await promptAppUnlock();
+    setBusy(false);
+    if (success) onUnlock();
+  };
+
+  useEffect(() => {
+    attemptUnlock();
+  }, []);
+
+  return (
+    <View style={[local.lockContainer, { paddingTop: Math.max(insets.top, 32), paddingBottom: Math.max(insets.bottom, 24) }]}>
+      <StatusBar style="light" />
+      <View style={local.lockCard}>
+        <Image source={require('./assets/icon.png')} style={local.lockLogo} resizeMode="contain" />
+        <Text style={local.lockBank}>{organization}</Text>
+        <Text style={local.lockTitle}>Application Locked</Text>
+        <Text style={local.lockDesc}>
+          Verify your biometric identity or phone screen lock PIN to resume your session as {employee}.
+        </Text>
+        <View style={{ width: '100%', gap: 12, marginTop: 24 }}>
+          <Action title="Unlock with Biometrics" busy={busy} onPress={attemptUnlock} />
+          <Action title="Sign out" secondary onPress={onSignOut} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const local = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.paper },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, gap: 12, backgroundColor: colors.paper },
@@ -198,9 +271,12 @@ const local = StyleSheet.create({
   identity: { flex: 1, minWidth: 0 },
   bank: { color: '#b2d1ea', fontSize: 12, lineHeight: 16, fontWeight: '700', letterSpacing: 0.2 },
   name: { color: colors.white, fontSize: 17, lineHeight: 22, fontWeight: '800', marginTop: 1 },
-  securePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)' },
-  secureDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#34d399' },
-  secureText: { color: '#d8e8f5', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  lockContainer: { flex: 1, backgroundColor: colors.ink, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+  lockCard: { width: '100%', maxWidth: 380, backgroundColor: colors.white, borderRadius: radius.lg, padding: 24, alignItems: 'center', shadowColor: colors.shadow, shadowOpacity: 0.15, shadowRadius: 20, elevation: 8 },
+  lockLogo: { width: 64, height: 64, borderRadius: 16, marginBottom: 14 },
+  lockBank: { color: colors.blue, fontSize: 13, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 4 },
+  lockTitle: { color: colors.ink, fontSize: 22, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+  lockDesc: { color: colors.muted, fontSize: 13, lineHeight: 18, textAlign: 'center', paddingHorizontal: 8 },
   tabs: {
     flexDirection: 'row',
     width: '100%',

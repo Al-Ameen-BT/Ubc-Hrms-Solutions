@@ -39,13 +39,29 @@ export async function prepareBrandAssets({
   outputPath,
   maxBytes = DEFAULT_MAX_BYTES,
   certificatePath,
+  forceOrgCode,
 }) {
   let origin;
   try { origin = new URL(apiBaseUrl); }
   catch { throw new Error('EXPO_PUBLIC_API_BASE_URL must be a valid HTTPS origin.'); }
   if (origin.protocol !== 'https:') throw new Error('Platform branding requires an HTTPS HRMS origin.');
-  const url = new URL('/assets/platform/favicon', origin);
-  const response = await (fetchImpl || (requestUrl => request(requestUrl, certificatePath, maxBytes)))(url);
+  
+  const client = fetchImpl || (requestUrl => request(requestUrl, certificatePath, maxBytes));
+  let url = new URL('/assets/platform/favicon', origin);
+
+  if (forceOrgCode) {
+    const orgLogoUrl = new URL(`/assets/org/${encodeURIComponent(forceOrgCode)}/logo`, origin);
+    const orgRes = await client(orgLogoUrl).catch(() => null);
+    if (orgRes && orgRes.ok) {
+      url = orgLogoUrl;
+    } else {
+      const orgFaviconUrl = new URL(`/assets/org/${encodeURIComponent(forceOrgCode)}/favicon`, origin);
+      const orgFavRes = await client(orgFaviconUrl).catch(() => null);
+      if (orgFavRes && orgFavRes.ok) url = orgFaviconUrl;
+    }
+  }
+
+  const response = await client(url);
   if (!response.ok) throw new Error(`Platform favicon request failed with HTTP ${response.status}.`);
   const contentLength = Number(response.headers?.get?.('content-length') || 0);
   if (contentLength > maxBytes) throw new Error(`Platform favicon exceeds ${maxBytes} bytes.`);
@@ -68,7 +84,7 @@ export async function prepareBrandAssets({
     const png = await readFile(normalized);
     if (png.subarray(1, 4).toString() !== 'PNG') throw new Error('Normalized platform favicon is not a PNG image.');
     await rename(normalized, outputPath);
-    return { source: url.origin, sha256: createHash('sha256').update(png).digest('hex') };
+    return { source: url.href, sha256: createHash('sha256').update(png).digest('hex') };
   } catch (error) {
     throw new Error(`Platform favicon could not be decoded as an image: ${error instanceof Error ? error.message : 'invalid image'}`);
   } finally {
@@ -82,7 +98,9 @@ async function main() {
   const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || '';
   const certificatePath = apiBaseUrl === UAT_ORIGIN ? join(root, 'certs', 'uat-server.pem') : undefined;
   const outputPath = join(root, 'assets', 'generated', 'platform-icon.png');
-  const result = await prepareBrandAssets({ apiBaseUrl, outputPath, certificatePath });
+  const orgArgIndex = process.argv.indexOf('--org');
+  const forceOrgCode = (orgArgIndex >= 0 && process.argv[orgArgIndex + 1]) || process.env.FORCE_BRAND_ORG || process.env.EXPO_PUBLIC_ORG_CODE || '';
+  const result = await prepareBrandAssets({ apiBaseUrl, outputPath, certificatePath, forceOrgCode });
   console.log(`Prepared platform icon from ${result.source} (${result.sha256}).`);
 }
 

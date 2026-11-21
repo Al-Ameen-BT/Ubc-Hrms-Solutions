@@ -10,7 +10,7 @@
     },
     "android": {
       "package": "in.banihal.ucbemployee.uat",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#17324d",
         "foregroundImage": "./assets/splash-icon.png"
