@@ -124,6 +124,7 @@ const ROUTES = {
   payroll: [['payroll.view', 'payments.view'], PAYROLL_READERS], posts: [['compensation.view'], STAFF],
   'pay-scales': [['compensation.view'], STAFF], 'pay-revisions': [['compensation.view'], STAFF],
   leave: [['leave.view'], PAYROLL_READERS], allowances: [['compensation.view'], PAYROLL_READERS],
+  deductions: [['compensation.view', 'payroll.view'], PAYROLL_READERS],
   arrears: [['arrears.view'], PAYROLL_READERS], 'arrears-cases': [['arrears.view'], PAYROLL_READERS], 'da-revisions': [['arrears.view'], PAYROLL_READERS],
   'year-end': [['payroll.view'], PAYROLL_READERS],
   'government-orders': [['compensation.view'], STAFF], 'ksr-rules': [['compensation.view'], STAFF],
@@ -146,6 +147,7 @@ export const hasServiceAccess = (section, canPermission) => {
 const ROUTE_FEATURES = {
   payroll: 'payroll',
   'payroll-settings': 'payroll',
+  deductions: 'payroll',
   leave: 'leave',
   expenses: 'expenses',
   arrears: 'arrears',

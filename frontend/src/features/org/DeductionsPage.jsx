@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { deductionApi, overdraftSlabApi } from '../../api/extended';
-import { fmt } from '../../api/client';
+import { orgApi, fmt } from '../../api/client';
+import { compensationApi } from '../../api/compensation';
 import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
@@ -10,6 +11,14 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import {
+  SettingsIcon,
+  AlertTriangleIcon,
+  CheckCircleIcon,
+  UsersIcon,
+  UserIcon,
+  RefreshCwIcon,
+} from '../../components/ui/Icons';
 
 const CATEGORIES = [
   { value: 'ALL', label: 'All Categories' },
@@ -25,11 +34,15 @@ const CATEGORIES = [
 export function DeductionsPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState('deductions'); // 'deductions' | 'overdraft'
+  const [activeTab, setActiveTab] = useState('deductions'); // 'deductions' | 'employees' | 'overdraft'
+
+  // Welfare Fund interactive calculator test state
+  const [testBasicDa, setTestBasicDa] = useState('12500');
 
   // Deduction Types state
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingDeduction, setEditingDeduction] = useState(null);
   const [form, setForm] = useState({
     name: '',
     category: 'OTHER',
@@ -44,11 +57,10 @@ export function DeductionsPage() {
     remarks: '',
   });
   const [error, setError] = useState('');
-  const [statusTarget, setStatusTarget] = useState(null);
-  const [actionError, setActionError] = useState('');
 
   // Overdraft Slabs state
   const [slabModalOpen, setSlabModalOpen] = useState(false);
+  const [editingSlab, setEditingSlab] = useState(null);
   const [slabForm, setSlabForm] = useState({
     slabName: '',
     fromSalary: '0',
@@ -60,8 +72,37 @@ export function DeductionsPage() {
     remarks: '',
   });
   const [slabError, setSlabError] = useState('');
-  const [slabStatusTarget, setSlabStatusTarget] = useState(null);
-  const [slabActionError, setSlabActionError] = useState('');
+
+  // Employee Deductions state
+  const [empSearch, setEmpSearch] = useState('');
+  const [empWelfareFilter, setEmpWelfareFilter] = useState('ALL');
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [empForm, setEmpForm] = useState({
+    welfareFundOptIn: false,
+    welfareFundAmount: '',
+    vpfPercent: '',
+    gsliOptIn: null,
+    gsliAmount: '',
+    ptAmount: '',
+    taxRegime: 'NEW',
+    taxOtherDeductions: '',
+  });
+  const [empError, setEmpError] = useState('');
+
+  // Universal Double Confirmation State
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    title: '',
+    itemName: '',
+    details: {},
+    warningMessage: '',
+    confirmLabel: 'Confirm',
+    confirmVariant: 'primary',
+    requireVerification: false,
+    verificationText: '',
+    verificationLabel: '',
+    onConfirm: null,
+  });
 
   // Queries
   const { data: deductionsData, isLoading: loadingDeductions } = useQuery({
@@ -74,59 +115,84 @@ export function DeductionsPage() {
     queryFn: () => overdraftSlabApi.list(),
   });
 
-  // Deduction mutations
+  const { data: employeesData, isLoading: loadingEmployees } = useQuery({
+    queryKey: ['employees-for-deductions'],
+    queryFn: () => orgApi.employees({ status: 'ACTIVE' }),
+  });
+
+  const { data: payrollSettings } = useQuery({
+    queryKey: ['org-payroll-settings'],
+    queryFn: orgApi.payrollSettings,
+  });
+
+  const { data: adoptions } = useQuery({
+    queryKey: ['catalogue-adoptions'],
+    queryFn: compensationApi.adoptions,
+  });
+  const isCatalogueBank = adoptions?.history?.some((r) => r.status === 'APPROVED');
+
+  // Deduction Mutations
   const createMutation = useMutation({
     mutationFn: (payload) => deductionApi.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['deduction-types'] });
-      toast.add('Deduction type created.', 'success');
+      toast.add('Deduction type created successfully.', 'success');
       setModalOpen(false);
-      setForm({
-        name: '',
-        category: 'OTHER',
-        calculationType: 'FLAT',
-        percentageBase: 'BASIC',
-        percentageValue: '',
-        frequency: 'MONTHLY',
-        amount: '',
-        employerAmount: '',
-        month: '',
-        year: '',
-        remarks: '',
-      });
+      resetDeductionForm();
     },
     onError: (err) => setError(err.message || 'Could not create deduction type.'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }) => deductionApi.update(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deduction-types'] });
+      toast.add('Deduction type updated successfully.', 'success');
+      setModalOpen(false);
+      resetDeductionForm();
+    },
+    onError: (err) => setError(err.message || 'Could not update deduction type.'),
   });
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }) => deductionApi.setStatus(id, status),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['deduction-types'] });
-      toast.add(`Deduction ${vars.status === 'ACTIVE' ? 'activated' : 'deactivated'}.`, 'success');
-      setStatusTarget(null);
+      toast.add(`Deduction type ${vars.status === 'ACTIVE' ? 'activated' : 'deactivated'}.`, 'success');
     },
-    onError: (err) => setActionError(err.message || 'Could not change status.'),
+    onError: (err) => toast.add(err.message || 'Status change failed.', 'error'),
   });
 
-  // Slab mutations
+  const deleteMutation = useMutation({
+    mutationFn: (id) => deductionApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deduction-types'] });
+      toast.add('Deduction type permanently deleted.', 'success');
+    },
+    onError: (err) => toast.add(err.message || 'Could not delete deduction type.', 'error'),
+  });
+
+  // Slab Mutations
   const createSlabMutation = useMutation({
     mutationFn: (payload) => overdraftSlabApi.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['overdraft-slabs'] });
-      toast.add('Overdraft slab created.', 'success');
+      toast.add('Overdraft slab created successfully.', 'success');
       setSlabModalOpen(false);
-      setSlabForm({
-        slabName: '',
-        fromSalary: '0',
-        toSalary: '',
-        multiplier: '15',
-        maxLimit: '',
-        minLimit: '',
-        maxTenureMonths: '84',
-        remarks: '',
-      });
+      resetSlabForm();
     },
     onError: (err) => setSlabError(err.message || 'Could not create overdraft slab.'),
+  });
+
+  const updateSlabMutation = useMutation({
+    mutationFn: ({ id, payload }) => overdraftSlabApi.update(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['overdraft-slabs'] });
+      toast.add('Overdraft slab updated successfully.', 'success');
+      setSlabModalOpen(false);
+      resetSlabForm();
+    },
+    onError: (err) => setSlabError(err.message || 'Could not update overdraft slab.'),
   });
 
   const statusSlabMutation = useMutation({
@@ -134,24 +200,337 @@ export function DeductionsPage() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['overdraft-slabs'] });
       toast.add(`Overdraft slab ${vars.status === 'ACTIVE' ? 'activated' : 'deactivated'}.`, 'success');
-      setSlabStatusTarget(null);
     },
-    onError: (err) => setSlabActionError(err.message || 'Could not change slab status.'),
+    onError: (err) => toast.add(err.message || 'Status change failed.', 'error'),
   });
+
+  const deleteSlabMutation = useMutation({
+    mutationFn: (id) => overdraftSlabApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['overdraft-slabs'] });
+      toast.add('Overdraft slab deleted successfully.', 'success');
+    },
+    onError: (err) => toast.add(err.message || 'Could not delete overdraft slab.', 'error'),
+  });
+
+  // Employee Deductions Mutation
+  const updateEmpDeductionsMutation = useMutation({
+    mutationFn: async ({ employeeId, payload }) => {
+      if (isCatalogueBank) {
+        return compensationApi.proposeFinancialChange({
+          targetType: 'EMPLOYEE',
+          targetId: employeeId,
+          patch: payload,
+          effectiveDate: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
+          reason: 'Deduction values updated from Deductions Management',
+        });
+      }
+      return orgApi.updateEmployee(employeeId, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees-for-deductions'] });
+      toast.add(isCatalogueBank ? 'Deduction change proposal submitted for approval.' : 'Employee deduction values updated.', 'success');
+      setEditingEmployee(null);
+    },
+    onError: (err) => setEmpError(err.message || 'Failed to update employee deductions.'),
+  });
+
+  function resetDeductionForm() {
+    setEditingDeduction(null);
+    setForm({
+      name: '',
+      category: 'OTHER',
+      calculationType: 'FLAT',
+      percentageBase: 'BASIC',
+      percentageValue: '',
+      frequency: 'MONTHLY',
+      amount: '',
+      employerAmount: '',
+      month: '',
+      year: '',
+      remarks: '',
+    });
+    setError('');
+  }
+
+  function resetSlabForm() {
+    setEditingSlab(null);
+    setSlabForm({
+      slabName: '',
+      fromSalary: '0',
+      toSalary: '',
+      multiplier: '15',
+      maxLimit: '',
+      minLimit: '',
+      maxTenureMonths: '84',
+      remarks: '',
+    });
+    setSlabError('');
+  }
+
+  // Welfare Fund calculation helper matching payslip.js exactly
+  const welfareCalculation = useMemo(() => {
+    const val = Number(testBasicDa || 0);
+    const threshold = payrollSettings?.welfareFundThreshold != null ? Number(payrollSettings.welfareFundThreshold) : 10000;
+    const rule = payrollSettings?.welfareFundRule || 'SLAB';
+
+    if (rule === 'FLAT') {
+      const emp = payrollSettings?.welfareFundBaseEmployee ?? 45;
+      const empr = payrollSettings?.welfareFundBaseEmployer ?? 45;
+      return { employee: emp, employer: empr, slabDescription: 'Flat Base Rate Rule' };
+    }
+
+    if (val > threshold) {
+      const emp = payrollSettings?.welfareFundAboveEmployee ?? 300;
+      const empr = payrollSettings?.welfareFundAboveEmployer ?? 250;
+      return {
+        employee: emp,
+        employer: empr,
+        slabDescription: `Above Threshold (> ₹${threshold.toLocaleString()}): Emp ₹${emp} / Empr ₹${empr}`,
+      };
+    }
+    const emp = payrollSettings?.welfareFundBelowEmployee ?? 250;
+    const empr = payrollSettings?.welfareFundBelowEmployer ?? 200;
+    return {
+      employee: emp,
+      employer: empr,
+      slabDescription: `At / Below Threshold (≤ ₹${threshold.toLocaleString()}): Emp ₹${emp} / Empr ₹${empr}`,
+    };
+  }, [testBasicDa, payrollSettings]);
+
+  // Request double confirmation helper
+  function requestConfirmation({
+    title,
+    itemName,
+    details = {},
+    warningMessage = '',
+    confirmLabel = 'Confirm',
+    confirmVariant = 'primary',
+    requireVerification = false,
+    verificationText = '',
+    verificationLabel = '',
+    onConfirm,
+  }) {
+    setConfirmModal({
+      open: true,
+      title,
+      itemName,
+      details,
+      warningMessage,
+      confirmLabel,
+      confirmVariant,
+      requireVerification,
+      verificationText,
+      verificationLabel,
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, open: false }));
+        if (onConfirm) await onConfirm();
+      },
+    });
+  }
+
+  // --- Handlers with Double Confirmation ---
+
+  function handleSaveDeduction() {
+    if (!form.name.trim()) {
+      setError('Deduction name is required.');
+      return;
+    }
+    const isEdit = !!editingDeduction;
+    requestConfirmation({
+      title: isEdit ? 'Confirm Deduction Type Update' : 'Confirm New Deduction Type',
+      itemName: form.name,
+      details: {
+        'Category': form.category,
+        'Calculation': form.calculationType === 'PERCENTAGE' ? `${form.percentageValue}% of ${form.percentageBase}` : `₹${form.amount}`,
+        'Employer Share': form.employerAmount ? `₹${form.employerAmount}` : 'None',
+        'Frequency': form.frequency,
+      },
+      warningMessage: isEdit
+        ? 'Updating this deduction will apply the revised formula to upcoming monthly payroll calculations.'
+        : 'Creating this deduction makes it available for assignment across active posts and employee payroll.',
+      confirmLabel: isEdit ? 'Confirm & Update' : 'Confirm & Create',
+      confirmVariant: 'primary',
+      onConfirm: () => {
+        if (isEdit) {
+          updateMutation.mutate({ id: editingDeduction.id, payload: form });
+        } else {
+          createMutation.mutate(form);
+        }
+      },
+    });
+  }
+
+  function handleToggleDeductionStatus(item) {
+    const nextStatus = item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    const isDeactivate = nextStatus === 'INACTIVE';
+    requestConfirmation({
+      title: isDeactivate ? 'Deactivate Deduction Type' : 'Activate Deduction Type',
+      itemName: item.name,
+      details: {
+        'Category': item.category,
+        'Current Status': item.status,
+        'Target Status': nextStatus,
+      },
+      warningMessage: isDeactivate
+        ? 'Deactivating this deduction type will exclude it from upcoming monthly payroll runs.'
+        : 'Activating this deduction type will make it eligible for inclusion in upcoming payroll runs.',
+      confirmLabel: isDeactivate ? 'Confirm Deactivation' : 'Confirm Activation',
+      confirmVariant: isDeactivate ? 'danger' : 'primary',
+      requireVerification: isDeactivate,
+      verificationText: 'DEACTIVATE',
+      verificationLabel: isDeactivate ? `Type "DEACTIVATE" to confirm deactivating ${item.name}:` : '',
+      onConfirm: () => statusMutation.mutate({ id: item.id, status: nextStatus }),
+    });
+  }
+
+  function handleDeleteDeduction(item) {
+    requestConfirmation({
+      title: 'Delete Deduction Type Permanently',
+      itemName: item.name,
+      details: {
+        'Category': item.category,
+        'Type': item.calculationType,
+      },
+      warningMessage: 'This will permanently remove this deduction type. Ensure it is not required for past audit reconciliations.',
+      confirmLabel: 'Confirm & Delete',
+      confirmVariant: 'danger',
+      requireVerification: true,
+      verificationText: 'DELETE',
+      verificationLabel: `Type "DELETE" to confirm permanent deletion of ${item.name}:`,
+      onConfirm: () => deleteMutation.mutate(item.id),
+    });
+  }
+
+  function handleSaveSlab() {
+    if (!slabForm.slabName.trim()) {
+      setSlabError('Slab name is required.');
+      return;
+    }
+    const isEdit = !!editingSlab;
+    requestConfirmation({
+      title: isEdit ? 'Confirm Overdraft Slab Update' : 'Confirm New Overdraft Slab',
+      itemName: slabForm.slabName,
+      details: {
+        'Salary Range': `₹${Number(slabForm.fromSalary).toLocaleString()} – ${slabForm.toSalary ? `₹${Number(slabForm.toSalary).toLocaleString()}` : 'Unbounded'}`,
+        'Multiplier': `${slabForm.multiplier}x Basic+DA`,
+        'Max Cap': slabForm.maxLimit ? `₹${Number(slabForm.maxLimit).toLocaleString()}` : 'Uncapped',
+        'Max Tenure': `${slabForm.maxTenureMonths} months`,
+      },
+      warningMessage: isEdit
+        ? 'Updating this tier will affect the maximum allowable overdraft limit calculated for eligible staff.'
+        : 'Creating this overdraft slab establishes a new salary bracket limit for bank employees.',
+      confirmLabel: isEdit ? 'Confirm & Update Slab' : 'Confirm & Save Slab',
+      confirmVariant: 'primary',
+      onConfirm: () => {
+        if (isEdit) {
+          updateSlabMutation.mutate({ id: editingSlab.id, payload: slabForm });
+        } else {
+          createSlabMutation.mutate(slabForm);
+        }
+      },
+    });
+  }
+
+  function handleToggleSlabStatus(item) {
+    const nextStatus = item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    const isDeactivate = nextStatus === 'INACTIVE';
+    requestConfirmation({
+      title: isDeactivate ? 'Deactivate Overdraft Slab' : 'Activate Overdraft Slab',
+      itemName: item.slabName,
+      details: {
+        'Multiplier': `${item.multiplier}x`,
+        'Max Cap': item.maxLimit ? `₹${Number(item.maxLimit).toLocaleString()}` : 'No Cap',
+      },
+      warningMessage: isDeactivate
+        ? 'Deactivating this overdraft slab removes it from active evaluation when issuing new employee overdrafts.'
+        : 'Activating this overdraft slab restores it to active tier evaluation.',
+      confirmLabel: isDeactivate ? 'Confirm Deactivation' : 'Confirm Activation',
+      confirmVariant: isDeactivate ? 'danger' : 'primary',
+      requireVerification: isDeactivate,
+      verificationText: 'DEACTIVATE',
+      verificationLabel: isDeactivate ? `Type "DEACTIVATE" to confirm deactivating ${item.slabName}:` : '',
+      onConfirm: () => statusSlabMutation.mutate({ id: item.id, status: nextStatus }),
+    });
+  }
+
+  function handleDeleteSlab(item) {
+    requestConfirmation({
+      title: 'Delete Overdraft Slab Permanently',
+      itemName: item.slabName,
+      details: {
+        'Multiplier': `${item.multiplier}x`,
+        'Salary Bracket': `₹${Number(item.fromSalary).toLocaleString()} – ${item.toSalary ? `₹${Number(item.toSalary).toLocaleString()}` : 'Above'}`,
+      },
+      warningMessage: 'This permanently deletes this overdraft tier definition from the bank.',
+      confirmLabel: 'Confirm & Delete Slab',
+      confirmVariant: 'danger',
+      requireVerification: true,
+      verificationText: 'DELETE',
+      verificationLabel: `Type "DELETE" to confirm permanent deletion of ${item.slabName}:`,
+      onConfirm: () => deleteSlabMutation.mutate(item.id),
+    });
+  }
+
+  function handleSaveEmployeeDeductions() {
+    if (!editingEmployee) return;
+    const cleanPayload = {
+      welfareFundOptIn: !!empForm.welfareFundOptIn,
+      welfareFundAmount: empForm.welfareFundAmount ? Number(empForm.welfareFundAmount) : null,
+      vpfPercent: empForm.vpfPercent ? Number(empForm.vpfPercent) : null,
+      gsliOptIn: empForm.gsliOptIn,
+      gsliAmount: empForm.gsliAmount ? Number(empForm.gsliAmount) : null,
+      ptAmount: empForm.ptAmount ? Number(empForm.ptAmount) : null,
+      taxRegime: empForm.taxRegime || 'NEW',
+      taxOtherDeductions: empForm.taxOtherDeductions ? Number(empForm.taxOtherDeductions) : null,
+    };
+
+    requestConfirmation({
+      title: 'Confirm Employee Deduction Update',
+      itemName: `${editingEmployee.name} (${editingEmployee.empCode})`,
+      details: {
+        'Welfare Fund': cleanPayload.welfareFundOptIn
+          ? cleanPayload.welfareFundAmount ? `Custom Override ₹${cleanPayload.welfareFundAmount}` : 'Enrolled (Statutory Slab)'
+          : 'Not Enrolled',
+        'Voluntary PF (VPF)': cleanPayload.vpfPercent ? `${cleanPayload.vpfPercent}%` : 'None',
+        'Professional Tax (PT)': cleanPayload.ptAmount ? `₹${cleanPayload.ptAmount}` : 'Default',
+        'Tax Regime': cleanPayload.taxRegime,
+      },
+      warningMessage: isCatalogueBank
+        ? 'This change proposal will be sent to the Approving Authority before taking effect on live payslips.'
+        : 'These updated deduction variables will be applied directly to the employee’s upcoming payroll runs.',
+      confirmLabel: isCatalogueBank ? 'Submit for Financial Approval' : 'Confirm & Apply Deductions',
+      confirmVariant: 'primary',
+      onConfirm: () => updateEmpDeductionsMutation.mutate({ employeeId: editingEmployee.id, payload: cleanPayload }),
+    });
+  }
 
   const filteredDeductions = (deductionsData?.data || []).filter((d) => {
     if (selectedCategory === 'ALL') return true;
     return d.category === selectedCategory;
   });
 
+  const rawEmployees = employeesData?.rows || employeesData || [];
+  const filteredEmployees = rawEmployees.filter((emp) => {
+    const matchSearch =
+      !empSearch ||
+      emp.name?.toLowerCase().includes(empSearch.toLowerCase()) ||
+      emp.empCode?.toLowerCase().includes(empSearch.toLowerCase()) ||
+      emp.department?.toLowerCase().includes(empSearch.toLowerCase());
+    if (!matchSearch) return false;
+    if (empWelfareFilter === 'ENROLLED') return !!emp.welfareFundOptIn;
+    if (empWelfareFilter === 'NOT_ENROLLED') return !emp.welfareFundOptIn;
+    return true;
+  });
+
   const categoryBadgeVariant = (cat) => {
     switch (cat) {
       case 'STATUTORY': return 'warning';
       case 'WELFARE': return 'success';
-      case 'SOCIETY': return 'info';
-      case 'INSURANCE': return 'primary';
+      case 'SOCIETY': return 'primary';
+      case 'INSURANCE': return 'secondary';
       case 'LOAN': return 'danger';
-      default: return 'default';
+      default: return 'secondary';
     }
   };
 
@@ -164,7 +543,7 @@ export function DeductionsPage() {
     },
     {
       field: 'type',
-      label: 'Type',
+      label: 'Calculation Type',
       render: (r) => (
         <span>
           {r.calculationType === 'PERCENTAGE'
@@ -176,7 +555,7 @@ export function DeductionsPage() {
     {
       field: 'frequency',
       label: 'Frequency',
-      render: (r) => <Badge variant="info">{r.frequency?.replace(/_/g, ' ')}</Badge>,
+      render: (r) => <Badge variant="secondary">{r.frequency?.replace(/_/g, ' ')}</Badge>,
     },
     {
       field: 'amount',
@@ -193,30 +572,132 @@ export function DeductionsPage() {
       render: (r) => (r.employerAmount ? fmt.money(r.employerAmount) : '—'),
     },
     {
-      field: 'month',
-      label: 'Period',
-      mono: true,
-      render: (r) => (r.month ? `Month ${r.month}${r.year ? ` / ${r.year}` : ''}` : 'Every Month'),
-    },
-    {
       field: 'status',
       label: 'Status',
-      render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'default'}>{r.status}</Badge>,
+      render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'secondary'}>{r.status}</Badge>,
     },
     {
       field: 'actions',
-      label: '',
+      label: 'Actions',
+      sortable: false,
+      render: (r) => (
+        <div className="row-actions" style={{ display: 'flex', gap: '0.35rem' }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setEditingDeduction(r);
+              setForm({
+                name: r.name,
+                category: r.category,
+                calculationType: r.calculationType,
+                percentageBase: r.percentageBase || 'BASIC',
+                percentageValue: r.percentageValue || '',
+                frequency: r.frequency,
+                amount: r.amount || '',
+                employerAmount: r.employerAmount || '',
+                month: r.month || '',
+                year: r.year || '',
+                remarks: r.remarks || '',
+              });
+              setModalOpen(true);
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleToggleDeductionStatus(r)}
+          >
+            {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            style={{ color: '#dc2626' }}
+            onClick={() => handleDeleteDeduction(r)}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const employeeColumns = [
+    { field: 'empCode', label: 'Emp Code', mono: true },
+    {
+      field: 'name',
+      label: 'Employee Name',
+      render: (r) => (
+        <div>
+          <strong>{r.name}</strong>
+          <div className="text-muted" style={{ fontSize: '0.75rem' }}>{r.designation || r.department || 'Staff'}</div>
+        </div>
+      ),
+    },
+    {
+      field: 'currentBasicPay',
+      label: 'Basic Pay (₹)',
+      mono: true,
+      align: 'right',
+      render: (r) => fmt.money(r.currentBasicPay),
+    },
+    {
+      field: 'welfareFund',
+      label: 'Welfare Fund',
+      render: (r) => {
+        if (!r.welfareFundOptIn) return <Badge variant="secondary">Not Enrolled</Badge>;
+        if (r.welfareFundAmount && Number(r.welfareFundAmount) > 0) {
+          return <Badge variant="primary">Override ₹{Number(r.welfareFundAmount).toLocaleString()}</Badge>;
+        }
+        return <Badge variant="success">Enrolled (Statutory Slab)</Badge>;
+      },
+    },
+    {
+      field: 'vpfPercent',
+      label: 'VPF %',
+      mono: true,
+      align: 'right',
+      render: (r) => (r.vpfPercent ? `${r.vpfPercent}%` : '—'),
+    },
+    {
+      field: 'ptAmount',
+      label: 'PT (₹)',
+      mono: true,
+      align: 'right',
+      render: (r) => (r.ptAmount ? fmt.money(r.ptAmount) : 'Default'),
+    },
+    {
+      field: 'taxRegime',
+      label: 'Tax Regime',
+      render: (r) => <Badge variant={r.taxRegime === 'NEW' ? 'primary' : 'warning'}>{r.taxRegime || 'NEW'}</Badge>,
+    },
+    {
+      field: 'actions',
+      label: 'Actions',
       sortable: false,
       render: (r) => (
         <Button
           variant="secondary"
           size="sm"
           onClick={() => {
-            setActionError('');
-            setStatusTarget(r);
+            setEditingEmployee(r);
+            setEmpForm({
+              welfareFundOptIn: !!r.welfareFundOptIn,
+              welfareFundAmount: r.welfareFundAmount || '',
+              vpfPercent: r.vpfPercent || '',
+              gsliOptIn: r.gsliOptIn,
+              gsliAmount: r.gsliAmount || '',
+              ptAmount: r.ptAmount || '',
+              taxRegime: r.taxRegime || 'NEW',
+              taxOtherDeductions: r.taxOtherDeductions || '',
+            });
+            setEmpError('');
           }}
         >
-          {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+          Manage Deductions
         </Button>
       ),
     },
@@ -226,7 +707,7 @@ export function DeductionsPage() {
     { field: 'slabName', label: 'Slab / Tier Name' },
     {
       field: 'salaryRange',
-      label: 'Salary Range (Basic + DA)',
+      label: 'Salary Bracket (Basic + DA ₹)',
       mono: true,
       render: (r) => (
         <span>
@@ -258,23 +739,50 @@ export function DeductionsPage() {
     {
       field: 'status',
       label: 'Status',
-      render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'default'}>{r.status}</Badge>,
+      render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'secondary'}>{r.status}</Badge>,
     },
     {
       field: 'actions',
-      label: '',
+      label: 'Actions',
       sortable: false,
       render: (r) => (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            setSlabActionError('');
-            setSlabStatusTarget(r);
-          }}
-        >
-          {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-        </Button>
+        <div className="row-actions" style={{ display: 'flex', gap: '0.35rem' }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setEditingSlab(r);
+              setSlabForm({
+                slabName: r.slabName,
+                fromSalary: String(r.fromSalary || 0),
+                toSalary: r.toSalary ? String(r.toSalary) : '',
+                multiplier: String(r.multiplier || 15),
+                maxLimit: r.maxLimit ? String(r.maxLimit) : '',
+                minLimit: r.minLimit ? String(r.minLimit) : '',
+                maxTenureMonths: String(r.maxTenureMonths || 84),
+                remarks: r.remarks || '',
+              });
+              setSlabModalOpen(true);
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleToggleSlabStatus(r)}
+          >
+            {r.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            style={{ color: '#dc2626' }}
+            onClick={() => handleDeleteSlab(r)}
+          >
+            Delete
+          </Button>
+        </div>
       ),
     },
   ];
@@ -282,41 +790,99 @@ export function DeductionsPage() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>Deductions &amp; Overdraft Slabs</h1>
-        <p>Manage all deduction categories, variables, and strictly defined employee overdraft tiers</p>
+        <div className="page-header-row">
+          <div>
+            <h1>Deductions &amp; Overdraft Slabs</h1>
+            <p>
+              Manage all deduction categories, individual employee deduction values, statutory welfare fund rules, and strict overdraft tiers.
+            </p>
+          </div>
+        </div>
       </header>
 
-      {/* Welfare Fund Rules Overview Card */}
-      <Card title="Welfare Fund Statutory Rules &amp; Slabs">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '0.5rem' }}>
-          <div style={{ padding: '0.85rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.825rem', color: '#64748b', fontWeight: 600 }}>BASIC + DA &gt; ₹10,000</div>
-            <div style={{ marginTop: '0.35rem', fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>
-              Employee: ₹300 <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#64748b' }}>/ Employer: ₹250</span>
+      {/* Welfare Fund Statutory Rules & Interactive Verification */}
+      <Card title="Welfare Fund Statutory Rules &amp; Verification">
+        <p className="form-note">
+          Kerala statutory co-operative welfare fund deduction rules. Standard deduction is ₹45 each for employee and employer. When slab rules apply, amounts are determined by Basic + DA against the ₹10,000 threshold.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', margin: '1rem 0' }}>
+          <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>BASIC + DA &gt; ₹10,000 (SLAB TIER 1)</div>
+            <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              Employee: ₹{payrollSettings?.welfareFundAboveEmployee ?? 300}{' '}
+              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
+                / Employer: ₹{payrollSettings?.welfareFundAboveEmployer ?? 250}
+              </span>
             </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Statutory rate for higher earning tier</div>
           </div>
-          <div style={{ padding: '0.85rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.825rem', color: '#64748b', fontWeight: 600 }}>BASIC + DA ≤ ₹10,000</div>
-            <div style={{ marginTop: '0.35rem', fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>
-              Employee: ₹250 <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#64748b' }}>/ Employer: ₹200</span>
+
+          <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>BASIC + DA ≤ ₹10,000 (SLAB TIER 2)</div>
+            <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              Employee: ₹{payrollSettings?.welfareFundBelowEmployee ?? 250}{' '}
+              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
+                / Employer: ₹{payrollSettings?.welfareFundBelowEmployer ?? 200}
+              </span>
             </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Statutory rate for standard tier</div>
           </div>
-          <div style={{ padding: '0.85rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.825rem', color: '#64748b', fontWeight: 600 }}>STANDARD BASE / FLAT RATE</div>
-            <div style={{ marginTop: '0.35rem', fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>
-              Employee: ₹45 <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#64748b' }}>/ Employer: ₹45</span>
+
+          <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>FLAT STANDARD RATE / BASE</div>
+            <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              Employee: ₹{payrollSettings?.welfareFundBaseEmployee ?? 45}{' '}
+              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
+                / Employer: ₹{payrollSettings?.welfareFundBaseEmployer ?? 45}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Flat base rate when flat rule applies</div>
+          </div>
+        </div>
+
+        {/* Live Welfare Fund Simulator Tool */}
+        <div style={{ background: '#f1f5f9', padding: '1rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem', color: '#1e293b' }}>
+            Live Welfare Fund Verification Calculator:
+          </div>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ maxWidth: '200px' }}>
+              <Input
+                id="test-salary"
+                label="Test Basic + DA (₹)"
+                type="number"
+                step="100"
+                value={testBasicDa}
+                onChange={(e) => setTestBasicDa(e.target.value)}
+                mono
+              />
+            </div>
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <Badge variant="primary">Rule: {welfareCalculation.slabDescription}</Badge>
+              <div style={{ fontSize: '0.95rem' }}>
+                <strong>Calculated Employee:</strong> ₹{welfareCalculation.employee} |{' '}
+                <strong>Calculated Employer:</strong> ₹{welfareCalculation.employer}
+              </div>
             </div>
           </div>
         </div>
       </Card>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', margin: '1.25rem 0 1rem 0' }}>
         <Button
           variant={activeTab === 'deductions' ? 'primary' : 'secondary'}
           onClick={() => setActiveTab('deductions')}
         >
           Deduction Categories ({deductionsData?.data?.length || 0})
+        </Button>
+        <Button
+          variant={activeTab === 'employees' ? 'primary' : 'secondary'}
+          onClick={() => setActiveTab('employees')}
+        >
+          <UserIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+          Employee Deductions ({rawEmployees.length})
         </Button>
         <Button
           variant={activeTab === 'overdraft' ? 'primary' : 'secondary'}
@@ -326,11 +892,12 @@ export function DeductionsPage() {
         </Button>
       </div>
 
-      {activeTab === 'deductions' ? (
+      {/* TAB 1: DEDUCTION CATEGORIES */}
+      {activeTab === 'deductions' && (
         <Card noPadding>
-          <div className="table-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem' }}>
+          <div className="table-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <label htmlFor="cat-filter" style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Filter:</label>
+              <label htmlFor="cat-filter" style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Category:</label>
               <select
                 id="cat-filter"
                 className="input"
@@ -343,7 +910,14 @@ export function DeductionsPage() {
                 ))}
               </select>
             </div>
-            <Button onClick={() => setModalOpen(true)}>Add Deduction Type</Button>
+            <Button
+              onClick={() => {
+                resetDeductionForm();
+                setModalOpen(true);
+              }}
+            >
+              + Add Deduction Type
+            </Button>
           </div>
           <Table
             columns={deductionColumns}
@@ -353,15 +927,67 @@ export function DeductionsPage() {
             emptyMessage="No deduction types configured in this category."
           />
         </Card>
-      ) : (
+      )}
+
+      {/* TAB 2: EMPLOYEE DEDUCTIONS */}
+      {activeTab === 'employees' && (
         <Card noPadding>
-          <div className="table-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem' }}>
+          <div className="table-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <Input
+                id="emp-ded-search"
+                type="search"
+                placeholder="Search employee by name, code, or department"
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+                style={{ minWidth: '280px' }}
+              />
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <label htmlFor="welfare-filter" style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Welfare Fund:</label>
+                <select
+                  id="welfare-filter"
+                  className="input"
+                  style={{ width: 'auto', padding: '0.35rem 0.75rem' }}
+                  value={empWelfareFilter}
+                  onChange={(e) => setEmpWelfareFilter(e.target.value)}
+                >
+                  <option value="ALL">All Staff</option>
+                  <option value="ENROLLED">Enrolled Only</option>
+                  <option value="NOT_ENROLLED">Not Enrolled</option>
+                </select>
+              </div>
+            </div>
+            <div className="text-muted" style={{ fontSize: '0.8125rem' }}>
+              Showing {filteredEmployees.length} active employees
+            </div>
+          </div>
+          <Table
+            columns={employeeColumns}
+            data={filteredEmployees}
+            keyField="id"
+            loading={loadingEmployees}
+            emptyMessage="No employees matching the search filters."
+          />
+        </Card>
+      )}
+
+      {/* TAB 3: OVERDRAFT SLABS */}
+      {activeTab === 'overdraft' && (
+        <Card noPadding>
+          <div className="table-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div>
               <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
-                Strict salary brackets defining overdraft multipliers, caps, and tenures.
+                Strict salary brackets defining overdraft multipliers, caps, and tenures. Evaluated against an employee’s Basic + DA.
               </p>
             </div>
-            <Button onClick={() => setSlabModalOpen(true)}>Add Overdraft Slab</Button>
+            <Button
+              onClick={() => {
+                resetSlabForm();
+                setSlabModalOpen(true);
+              }}
+            >
+              + Add Overdraft Slab
+            </Button>
           </div>
           <Table
             columns={slabColumns}
@@ -373,22 +999,16 @@ export function DeductionsPage() {
         </Card>
       )}
 
-      {/* Add Deduction Type Modal */}
+      {/* Add / Edit Deduction Type Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Add Deduction Type"
+        title={editingDeduction ? `Edit Deduction Type: ${editingDeduction.name}` : 'Add Deduction Type'}
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button
-              loading={createMutation.isPending}
-              onClick={() => {
-                setError('');
-                createMutation.mutate(form);
-              }}
-            >
-              Create
+            <Button onClick={handleSaveDeduction}>
+              {editingDeduction ? 'Save Changes' : 'Create Deduction Type'}
             </Button>
           </>
         }
@@ -398,7 +1018,7 @@ export function DeductionsPage() {
           <Input
             id="ded-name"
             label="Deduction Name"
-            placeholder="e.g. Society Share, Staff Welfare Club"
+            placeholder="e.g. Society Share, Staff Welfare Club, Mutual Benefit Fund"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
@@ -535,22 +1155,16 @@ export function DeductionsPage() {
         </form>
       </Modal>
 
-      {/* Add Overdraft Slab Modal */}
+      {/* Add / Edit Overdraft Slab Modal */}
       <Modal
         open={slabModalOpen}
         onClose={() => setSlabModalOpen(false)}
-        title="Add Overdraft Slab"
+        title={editingSlab ? `Edit Overdraft Slab: ${editingSlab.slabName}` : 'Add Overdraft Slab'}
         footer={
           <>
             <Button variant="secondary" onClick={() => setSlabModalOpen(false)}>Cancel</Button>
-            <Button
-              loading={createSlabMutation.isPending}
-              onClick={() => {
-                setSlabError('');
-                createSlabMutation.mutate(slabForm);
-              }}
-            >
-              Save Slab
+            <Button onClick={handleSaveSlab}>
+              {editingSlab ? 'Save Changes' : 'Save Slab'}
             </Button>
           </>
         }
@@ -644,64 +1258,156 @@ export function DeductionsPage() {
         </form>
       </Modal>
 
-      {/* Double Verification Modal for Deduction Deactivation */}
-      <ConfirmationModal
-        open={statusTarget != null}
-        onClose={() => setStatusTarget(null)}
-        onConfirm={() => statusMutation.mutate({
-          id: statusTarget.id,
-          status: statusTarget.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
-        })}
-        title={statusTarget?.status === 'ACTIVE' ? 'Deactivate Deduction Type' : 'Activate Deduction Type'}
-        itemName={statusTarget?.name}
-        details={{
-          'Category': statusTarget?.category,
-          'Type': statusTarget?.calculationType === 'PERCENTAGE' ? `${statusTarget?.percentageValue}%` : fmt.money(statusTarget?.amount),
-          'Scheduled Period': statusTarget?.month ? `Month ${statusTarget.month}${statusTarget.year ? ` / ${statusTarget.year}` : ''}` : 'All Months',
-        }}
-        warningMessage={
-          statusTarget?.status === 'ACTIVE'
-            ? 'Deactivating this deduction type will exclude it from upcoming monthly payroll runs across the organisation.'
-            : 'Activating this deduction type will make it eligible for inclusion in upcoming payroll runs and live payslips.'
-        }
-        confirmLabel={statusTarget?.status === 'ACTIVE' ? 'Confirm Deactivation' : 'Confirm Activation'}
-        confirmVariant={statusTarget?.status === 'ACTIVE' ? 'danger' : 'primary'}
-        requireVerification={statusTarget?.status === 'ACTIVE'}
-        verificationText="DEACTIVATE"
-        verificationLabel={statusTarget?.status === 'ACTIVE' ? `Type "DEACTIVATE" to confirm deactivating ${statusTarget?.name}:` : ''}
-        loading={statusMutation.isPending}
-        error={actionError}
-      />
+      {/* Edit Employee Deductions Modal */}
+      {editingEmployee && (
+        <Modal
+          open={!!editingEmployee}
+          onClose={() => setEditingEmployee(null)}
+          title={`Manage Deductions: ${editingEmployee.name} (${editingEmployee.empCode})`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEditingEmployee(null)}>Cancel</Button>
+              <Button onClick={handleSaveEmployeeDeductions}>
+                Save Deductions
+              </Button>
+            </>
+          }
+        >
+          <form noValidate>
+            {empError && <div className="auth-error" role="alert">{empError}</div>}
 
-      {/* Double Verification Modal for Overdraft Slab Deactivation */}
+            <div style={{ background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Employee Salary Base:</div>
+              <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>
+                Basic Pay: ₹{Number(editingEmployee.currentBasicPay || 0).toLocaleString()} | Post: {editingEmployee.designation || 'Staff'}
+              </div>
+            </div>
+
+            <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+              <legend style={{ fontWeight: 600, fontSize: '0.875rem', padding: '0 0.5rem' }}>
+                Welfare Fund Enrollment &amp; Override
+              </legend>
+              <label className="checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                <input
+                  type="checkbox"
+                  checked={empForm.welfareFundOptIn}
+                  onChange={(e) => setEmpForm({ ...empForm, welfareFundOptIn: e.target.checked })}
+                />
+                <span style={{ fontWeight: 600 }}>Enroll in Statutory Welfare Fund</span>
+              </label>
+
+              {empForm.welfareFundOptIn && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <Input
+                    id="emp-wf-amt"
+                    label="Custom Welfare Override Amount (₹)"
+                    type="number"
+                    step="1"
+                    min="0"
+                    placeholder="Leave 0 or blank for statutory slab calculation"
+                    value={empForm.welfareFundAmount}
+                    onChange={(e) => setEmpForm({ ...empForm, welfareFundAmount: e.target.value })}
+                    mono
+                    hint="When blank or 0, the statutory Kerala co-operative slab rule (₹300/₹250 based on Basic+DA ₹10,000 threshold) is used automatically."
+                  />
+                </div>
+              )}
+            </fieldset>
+
+            <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+              <legend style={{ fontWeight: 600, fontSize: '0.875rem', padding: '0 0.5rem' }}>
+                Provident Fund &amp; Insurance
+              </legend>
+              <div className="form-grid">
+                <Input
+                  id="emp-vpf"
+                  label="Voluntary PF (VPF %)"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  max="100"
+                  placeholder="e.g. 5 (beyond mandatory PF)"
+                  value={empForm.vpfPercent}
+                  onChange={(e) => setEmpForm({ ...empForm, vpfPercent: e.target.value })}
+                  mono
+                />
+                <Input
+                  id="emp-pt"
+                  label="Professional Tax Amount (₹)"
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="Leave blank for org default"
+                  value={empForm.ptAmount}
+                  onChange={(e) => setEmpForm({ ...empForm, ptAmount: e.target.value })}
+                  mono
+                />
+              </div>
+            </fieldset>
+
+            <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.75rem 1rem' }}>
+              <legend style={{ fontWeight: 600, fontSize: '0.875rem', padding: '0 0.5rem' }}>
+                Income Tax Regime &amp; Declarations
+              </legend>
+              <div className="form-grid">
+                <div className="field">
+                  <label className="field-label" htmlFor="emp-tax-regime">Tax Regime</label>
+                  <select
+                    id="emp-tax-regime"
+                    className="input"
+                    value={empForm.taxRegime}
+                    onChange={(e) => setEmpForm({ ...empForm, taxRegime: e.target.value })}
+                  >
+                    <option value="NEW">New Tax Regime</option>
+                    <option value="OLD">Old Tax Regime</option>
+                  </select>
+                </div>
+                {empForm.taxRegime === 'OLD' && (
+                  <Input
+                    id="emp-tax-80c"
+                    label="80C / 80D Declared Deductions (₹)"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={empForm.taxOtherDeductions}
+                    onChange={(e) => setEmpForm({ ...empForm, taxOtherDeductions: e.target.value })}
+                    mono
+                  />
+                )}
+              </div>
+            </fieldset>
+          </form>
+        </Modal>
+      )}
+
+      {/* Universal Double Confirmation Modal */}
       <ConfirmationModal
-        open={slabStatusTarget != null}
-        onClose={() => setSlabStatusTarget(null)}
-        onConfirm={() => statusSlabMutation.mutate({
-          id: slabStatusTarget.id,
-          status: slabStatusTarget.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
-        })}
-        title={slabStatusTarget?.status === 'ACTIVE' ? 'Deactivate Overdraft Slab' : 'Activate Overdraft Slab'}
-        itemName={slabStatusTarget?.slabName}
-        details={{
-          'Multiplier': `${slabStatusTarget?.multiplier}x`,
-          'Max Cap': slabStatusTarget?.maxLimit ? fmt.money(slabStatusTarget.maxLimit) : 'No Cap',
-          'Max Tenure': `${slabStatusTarget?.maxTenureMonths || 84} months`,
-        }}
-        warningMessage={
-          slabStatusTarget?.status === 'ACTIVE'
-            ? 'Deactivating this overdraft slab will remove it from active evaluation when issuing new employee overdrafts.'
-            : 'Activating this overdraft slab will restore it to the active tier evaluation list for employee overdrafts.'
+        open={confirmModal.open}
+        onClose={() => setConfirmModal((prev) => ({ ...prev, open: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        itemName={confirmModal.itemName}
+        details={confirmModal.details}
+        warningMessage={confirmModal.warningMessage}
+        confirmLabel={confirmModal.confirmLabel}
+        confirmVariant={confirmModal.confirmVariant}
+        requireVerification={confirmModal.requireVerification}
+        verificationText={confirmModal.verificationText}
+        verificationLabel={confirmModal.verificationLabel}
+        loading={
+          createMutation.isPending ||
+          updateMutation.isPending ||
+          statusMutation.isPending ||
+          deleteMutation.isPending ||
+          createSlabMutation.isPending ||
+          updateSlabMutation.isPending ||
+          statusSlabMutation.isPending ||
+          deleteSlabMutation.isPending ||
+          updateEmpDeductionsMutation.isPending
         }
-        confirmLabel={slabStatusTarget?.status === 'ACTIVE' ? 'Confirm Deactivation' : 'Confirm Activation'}
-        confirmVariant={slabStatusTarget?.status === 'ACTIVE' ? 'danger' : 'primary'}
-        requireVerification={slabStatusTarget?.status === 'ACTIVE'}
-        verificationText="DEACTIVATE"
-        verificationLabel={slabStatusTarget?.status === 'ACTIVE' ? `Type "DEACTIVATE" to confirm deactivating ${slabStatusTarget?.slabName}:` : ''}
-        loading={statusSlabMutation.isPending}
-        error={slabActionError}
       />
     </div>
   );
 }
+
 export default DeductionsPage;
