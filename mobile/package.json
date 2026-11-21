@@ -26,8 +26,8 @@
     "brand:prepare": "node scripts/prepare-brand-assets.mjs",
     "eas-build-post-install": "npm run brand:prepare",
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "tsx --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit"

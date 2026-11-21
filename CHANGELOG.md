@@ -16,6 +16,9 @@ This project uses [Semantic Versioning](https://semver.org/). Record user-visibl
 - Data Protection Officer (DPO) governance dashboard, readiness blockers, breach/incident register, and response tracking.
 - Report-only data retention register with legal hold protection, preserving statutory payroll, service book, and audit trails.
 - Public, stable `/privacy` page rendering platform terms and privacy disclosures without authentication.
+- Mobile App UI/UX overhaul: safe area notch adaptability, custom vector navigation icons (zero emoji), dynamic welcoming dashboard, live IST punch clock, weekly attendance chart, employee avatar, and persistent Banihal Technologies branding.
+- Mobile direct in-app authentication (Bank Code, Email/EmpID, Password, TOTP MFA) alongside portal QR linking.
+- Mobile release UAT Android APK 0.3.0 (`versionCode` 5).
 - Play Store Data Safety inventory and pre-release submission checklist.
 
 ## 0.2.2 — 2026-11-11
