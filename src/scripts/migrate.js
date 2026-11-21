@@ -81,6 +81,65 @@ async function addColumnIfMissing(queryInterface, table, column, spec) {
 }
 
 /**
+ * On MySQL, repeated calls to Model.sync() create duplicate indexes for attributes
+ * marked with `unique: true` (e.g. `code_2`, `code_3`, `email_2`... up to 64), eventually
+ * causing ER_TOO_MANY_KEYS (max 64 keys allowed). This drops all duplicate numeric-suffixed
+ * indexes so tables never hit the 64-index ceiling.
+ */
+async function cleanDuplicateIndexes(seq = sequelize) {
+  if (seq.getDialect() !== 'mysql') return [];
+  try {
+    const [rows] = await seq.query(`
+      SELECT DISTINCT TABLE_NAME, INDEX_NAME
+      FROM information_schema.statistics
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND INDEX_NAME != 'PRIMARY'
+        AND INDEX_NAME REGEXP '_[0-9]+$'
+      ORDER BY TABLE_NAME, INDEX_NAME
+    `);
+    const dropped = [];
+    for (const row of rows) {
+      try {
+        await seq.query(`ALTER TABLE \`${row.TABLE_NAME}\` DROP INDEX \`${row.INDEX_NAME}\``);
+        dropped.push(`${row.TABLE_NAME}.${row.INDEX_NAME}`);
+      } catch (err) {
+        // Safe to ignore if index already gone
+      }
+    }
+    return dropped;
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Only sync tables that do not already exist in the database, avoiding running
+ * `sync()` against existing tables which would trigger duplicate index creation on MySQL.
+ */
+async function syncMissingTables(seq = sequelize) {
+  const qi = seq.getQueryInterface();
+  const rawTables = await qi.showAllTables();
+  const existingTables = new Set(
+    rawTables.map(t => {
+      if (typeof t === 'string') return t.toLowerCase();
+      if (t && typeof t === 'object') return (t.tableName || Object.values(t)[0] || '').toLowerCase();
+      return String(t).toLowerCase();
+    })
+  );
+  if (existingTables.size === 0) {
+    await seq.sync();
+    return;
+  }
+  for (const model of Object.values(seq.models)) {
+    const rawName = model.getTableName();
+    const tableName = (typeof rawName === 'string' ? rawName : rawName.tableName || '').toLowerCase();
+    if (tableName && !existingTables.has(tableName)) {
+      await model.sync();
+    }
+  }
+}
+
+/**
  * Column additions, in order. Run one at a time (not Promise.all): parallel
  * ALTER TABLEs against the same table can deadlock on MySQL and fail
  * outright on SQLite.
@@ -321,18 +380,13 @@ const ENUM_WIDEN_STEPS = [
 async function migrate() {
   const qi = sequelize.getQueryInterface();
   const added = [];
-  // Sync missing tables non-destructively
-  await EmployeeTransfer.sync();
-  await DpdpDocument.sync();
-  await DpdpAcknowledgement.sync();
-  await DpdpDataRequest.sync();
-  await DpdpIncident.sync();
-  await DpdpOrganizationProfile.sync();
-  await OrganizationFeature.sync();
-  await DeductionType.sync();
-  await DeductionTypePost.sync();
-  await OverdraftSlab.sync();
-  await OrgLeaveSetting.sync();
+  if (sequelize.getDialect() === 'mysql') {
+    const droppedIndexes = await cleanDuplicateIndexes(sequelize);
+    if (droppedIndexes.length) added.push(`cleaned_duplicate_indexes(${droppedIndexes.length})`);
+  }
+  // Sync missing tables non-destructively without re-adding indexes to existing tables
+  await syncMissingTables(sequelize);
+  await OrgLeaveSetting.sync().catch(() => {});
   await LeaveType.update({ includeHolidays: true }, { where: { code: ['EL', 'HPL', 'ML'], includeHolidays: false } }).catch(() => {});
   for (const [table, column, spec] of COLUMN_STEPS) {
     // eslint-disable-next-line no-await-in-loop
@@ -370,4 +424,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { migrate, migrateStageNumbers };
+module.exports = { migrate, migrateStageNumbers, cleanDuplicateIndexes, syncMissingTables };

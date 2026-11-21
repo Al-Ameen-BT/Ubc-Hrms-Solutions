@@ -288,7 +288,9 @@ app.get('/admin/setup/init-db', async (req, res) => {
     return res.status(403).json({ status: 'error', message: 'Invalid or missing token.' });
   }
   try {
-    await sequelize.sync(); // no force, no alter — additive only, same as npm run db:init
+    const { cleanDuplicateIndexes, syncMissingTables, migrate } = require('./scripts/migrate');
+    await cleanDuplicateIndexes(sequelize);
+    await syncMissingTables(sequelize);
     const added = await migrate(); // adds any columns a later slice introduced to an already-existing table
     res.json({
       status: 'ok',
@@ -443,8 +445,10 @@ async function prepareDatabase() {
     await sequelize.authenticate();
     let added = [];
     if (String(process.env.AUTO_MIGRATE).toLowerCase() !== 'false') {
-      await sequelize.sync();
-      added = await migrate();
+      const { cleanDuplicateIndexes, syncMissingTables, migrate: runMigrate } = require('./scripts/migrate');
+      await cleanDuplicateIndexes(sequelize);
+      await syncMissingTables(sequelize);
+      added = await runMigrate();
     }
     await assertSchemaCurrent(sequelize);
     schemaError = null;
