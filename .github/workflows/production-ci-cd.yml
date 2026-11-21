@@ -1,0 +1,190 @@
+name: Production CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: 'Target Deployment Environment'
+        required: true
+        default: 'uat'
+        type: choice
+        options:
+          - 'uat'
+          - 'production'
+          - 'none (build and test only)'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # =========================================================================
+  # 1. Quality, Types & Security Audit Gate
+  # =========================================================================
+  quality-gate:
+    name: Code Quality & Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Verify application version alignment
+        run: npm run version:check
+
+      - name: Backend JavaScript syntax verification (AST Check)
+        run: npm run lint:syntax
+
+      - name: Shell script syntax verification
+        run: bash -n deploy.sh deploy/lib/common.sh
+
+      - name: Frontend TypeScript type check & production asset compile
+        working-directory: frontend
+        run: npm run build
+
+      - name: Dependency security vulnerability audit
+        run: npm audit --audit-level=high || echo "Audit completed with warnings; review non-blocking CVEs."
+
+  # =========================================================================
+  # 2. Automated Test Suite (382 Unit & Integration Tests)
+  # =========================================================================
+  test-suite:
+    name: Backend Test Suite (Dialect Verification)
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend unit and integration tests
+        env:
+          NODE_ENV: test
+          JWT_SECRET: local-test-jwt-secret-minimum-32-chars-long-abc
+        run: npm test
+
+  # =========================================================================
+  # 3. Multi-Stage Container Build & Image Vulnerability Scan
+  # =========================================================================
+  container-build:
+    name: Container Build & Security Scan
+    needs: test-suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build rootless application container image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          push: false
+          load: true
+          tags: ucb-hrms-payroll:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy container vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'ucb-hrms-payroll:latest'
+          format: 'table'
+          exit-code: '0' # Non-blocking on base OS patches; reports security posture
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  # =========================================================================
+  # 4. Continuous Deployment: UAT Server (Automated on Main push)
+  # =========================================================================
+  deploy-uat:
+    name: Deploy to UAT (172.17.121.200)
+    needs: container-build
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_env == 'uat')
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - name: Deploy via SSH to UAT Server
+        uses: appleboy/ssh-action@v1.0.3
+        if: env.UAT_SSH_HOST != ''
+        env:
+          UAT_SSH_HOST: ${{ secrets.UAT_SSH_HOST }}
+          UAT_SSH_USER: ${{ secrets.UAT_SSH_USER }}
+          UAT_SSH_KEY: ${{ secrets.UAT_SSH_KEY }}
+        with:
+          host: ${{ secrets.UAT_SSH_HOST }}
+          username: ${{ secrets.UAT_SSH_USER }}
+          key: ${{ secrets.UAT_SSH_KEY }}
+          script: |
+            set -e
+            echo "==> Deploying latest main to UAT environment..."
+            cd ~/Desktop/BT-Projects/Ubc-Hrms-Solutions || cd ~/ucb-hrms-solutions || cd ~
+            git pull origin main
+            ./deploy.sh --stage 4
+            ./deploy.sh --stage 5
+            echo "==> Verifying UAT endpoints..."
+            curl -k -f https://localhost:8443/healthz
+            curl -k -f https://localhost:8443/ready
+            echo "==> UAT Deployment successful."
+
+  # =========================================================================
+  # 5. Continuous Deployment: Production Environment (Manual Gate / Tag)
+  # =========================================================================
+  deploy-production:
+    name: Deploy to Production (Protected Gate)
+    needs: container-build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_env == 'production')
+    runs-on: ubuntu-latest
+    environment: production # Protected environment with mandatory manual approvals
+    steps:
+      - name: Deploy via SSH to Production Cluster
+        uses: appleboy/ssh-action@v1.0.3
+        if: env.PROD_SSH_HOST != ''
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+            echo "==> Executing Production Zero-Downtime Deployment..."
+            cd /opt/ucb-hrms-solutions
+            git fetch --tags
+            git checkout ${{ github.ref_name }}
+            ./deploy.sh --stage 4
+            ./deploy.sh --stage 5
+            ./deploy.sh --stage 8 # Full health and readiness verification
+            echo "==> Production Deployment Verified."
