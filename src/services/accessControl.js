@@ -72,7 +72,8 @@ async function effectiveAccess(userId, at = todayIST(), transaction) {
       const departmentIds = unique(departmentScopes.filter(s => sameId(s.userRoleAssignmentId, assignment.id)).map(s => s.departmentId));
       if (assignment.scopeType === 'SELECTED_BRANCHES' && !branchIds.length || assignment.scopeType === 'DEPARTMENT' && !departmentIds.length) continue;
       for (const p of rolePermissions.filter(p => sameId(p.roleId, role.id))) {
-        if (!definition.permissionCodes.includes(p.permissionCode) || !permission(p.permissionCode)?.allowedScopes.includes(assignment.scopeType)) continue;
+        const permDef = permission(p.permissionCode);
+        if (!permDef || !permDef.allowedScopes.includes(assignment.scopeType)) continue;
         if (bootstrap && !bootstrapPermission(p.permissionCode)) continue;
         grant(p.permissionCode, assignment.scopeType, branchIds, departmentIds);
       }

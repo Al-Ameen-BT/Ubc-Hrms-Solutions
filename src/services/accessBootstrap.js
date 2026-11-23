@@ -145,22 +145,37 @@ async function accessReadiness(organizationId, { transaction, lock = false } = {
     const state = await inspect(organization.id, transaction);
     const blockers = [...state.unresolvedEmployees, ...state.unresolvedUsers];
     if (state.headOffices.length !== 1) blockers.push({ reason: 'EXACTLY_ONE_HEAD_OFFICE_REQUIRED' });
-    const protectedRoles = state.roles.filter(r => r.isProtected && r.status === 'ACTIVE' && template(r.code) && r.templateCode === r.code);
-    if (protectedRoles.length !== ROLE_TEMPLATES.length) blockers.push({ reason: 'PROTECTED_ROLES_REQUIRED' });
     const permissions = await OrganizationRolePermission.findAll({ where: { organizationId: organization.id }, transaction });
-    for (const role of state.roles.filter(r => !r.isProtected)) {
-      const definition = template(role.templateCode);
-      if (!definition || permissions.some(p => p.roleId === role.id && !definition.permissionCodes.includes(p.permissionCode))) blockers.push({ roleId: role.id, reason: 'TEMPLATE_CEILING_EXCEEDED' });
+    const orgAdminRole = state.roles.find(r => r.code === 'ORGANISATION_ADMIN' && r.status === 'ACTIVE');
+    if (!orgAdminRole) {
+      blockers.push({ reason: 'ORG_ADMIN_ROLE_REQUIRED' });
+    } else {
+      const expected = template('ORGANISATION_ADMIN').permissionCodes;
+      const actual = permissions.filter(p => p.roleId === orgAdminRole.id).map(p => p.permissionCode);
+      if (expected.some(code => !actual.includes(code))) blockers.push({ roleId: orgAdminRole.id, reason: 'PROTECTED_PERMISSIONS_REQUIRED' });
     }
-    for (const role of protectedRoles) {
-      const expected = template(role.templateCode).permissionCodes;
+    for (const role of state.roles.filter(r => r.isProtected)) {
+      const definition = template(role.templateCode);
+      if (!definition) continue;
       const actual = permissions.filter(p => p.roleId === role.id).map(p => p.permissionCode);
-      if (actual.some(code => !expected.includes(code))) blockers.push({ roleId: role.id, reason: 'TEMPLATE_CEILING_EXCEEDED' });
-      if (expected.some(code => !actual.includes(code))) blockers.push({ roleId: role.id, reason: 'PROTECTED_PERMISSIONS_REQUIRED' });
+      if (actual.some(code => !definition.permissionCodes.includes(code))) {
+        blockers.push({ roleId: role.id, reason: 'TEMPLATE_CEILING_EXCEEDED' });
+      }
+    }
+    const { PERMISSIONS } = require('./permissionCatalog');
+    const validCodes = new Set(PERMISSIONS.map(p => p.code));
+    for (const role of state.roles) {
+      const rolePerms = permissions.filter(p => p.roleId === role.id).map(p => p.permissionCode);
+      if (rolePerms.some(code => !validCodes.has(code))) {
+        blockers.push({ roleId: role.id, reason: 'INVALID_PERMISSION_ASSIGNED' });
+      }
+      if (role.code !== 'ORGANISATION_ADMIN' && rolePerms.includes('roles.manage')) {
+        blockers.push({ roleId: role.id, reason: 'ROLE_MANAGE_CANNOT_BE_DELEGATED' });
+      }
     }
     const at = today();
     const active = state.assignments.filter(a => a.status === 'ACTIVE' && a.effectiveFrom <= at && (!a.effectiveTo || a.effectiveTo >= at));
-    const hasAssignment = (userId, code, scopeType) => active.some(a => a.userId === userId && a.scopeType === scopeType && protectedRoles.some(r => r.id === a.roleId && r.code === code));
+    const hasAssignment = (userId, code, scopeType) => active.some(a => a.userId === userId && a.scopeType === scopeType && state.roles.some(r => r.id === a.roleId && (r.code === code || r.templateCode === code)));
     if (!state.eligible.some(e => !e.reason && hasAssignment(e.user.id, 'ORGANISATION_ADMIN', 'ORGANISATION'))) blockers.push({ reason: 'ORG_ADMIN_ASSIGNMENT_REQUIRED' });
     const branchScopes = await UserRoleBranch.findAll({ where: { organizationId: organization.id }, transaction });
     const departmentScopes = await UserRoleDepartment.findAll({ where: { organizationId: organization.id }, transaction });
@@ -170,7 +185,7 @@ async function accessReadiness(organizationId, { transaction, lock = false } = {
       const scopeType = template(entry.templateCode).allowedScopes[0];
       if (!hasAssignment(entry.user.id, entry.templateCode, scopeType)) blockers.push({ userId: entry.user.id, reason: 'LEGACY_ROLE_ASSIGNMENT_REQUIRED' });
       else if (['SELECTED_BRANCHES', 'DEPARTMENT'].includes(scopeType)) {
-        const scoped = active.filter(a => a.userId === entry.user.id && protectedRoles.some(r => r.id === a.roleId && r.code === entry.templateCode) && a.scopeType === scopeType);
+        const scoped = active.filter(a => a.userId === entry.user.id && state.roles.some(r => r.id === a.roleId && (r.code === entry.templateCode || r.templateCode === entry.templateCode)) && a.scopeType === scopeType);
         const hasScope = scoped.some(a => scopeType === 'SELECTED_BRANCHES'
           ? branchScopes.some(s => s.userRoleAssignmentId === a.id && s.branchId === entry.branch?.id)
           : departmentScopes.some(s => s.userRoleAssignmentId === a.id && s.departmentId === entry.department?.id));

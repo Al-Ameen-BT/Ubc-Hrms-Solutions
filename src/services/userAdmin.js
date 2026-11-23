@@ -400,21 +400,52 @@ async function writeRole(options) {
   return accessTransaction(options, async o => {
     const data = inputShape(o.data, o.id ? ['name', 'permissionCodes', 'status'] : ['sourceRoleId', 'code', 'name', 'permissionCodes']);
     const existing = o.id ? await tenantResource(OrganizationRole, o.id, o.organizationId, o.transaction) : null;
-    const source = existing || await tenantResource(OrganizationRole, data.sourceRoleId, o.organizationId, o.transaction, true);
+    const source = existing || (data.sourceRoleId ? await tenantResource(OrganizationRole, data.sourceRoleId, o.organizationId, o.transaction, true) : null);
     await authorizeAccess(o);
-    if (existing?.isProtected) bad('Protected templates are immutable');
-    if (!existing && !source.isProtected) bad('Copy a protected template');
-    const definition = template(source.templateCode); if (!definition) bad('Invalid source template');
+
+    const isOrgAdmin = (existing && (existing.code === 'ORGANISATION_ADMIN' || existing.templateCode === 'ORGANISATION_ADMIN')) ||
+                       (!existing && data.code === 'ORGANISATION_ADMIN');
+    if (existing?.isProtected && isOrgAdmin) bad('Organisation Admin role is protected and immutable');
+    if (!existing && !source) bad('A source role or template is required');
+
+    const templateCode = existing ? existing.templateCode : source.templateCode;
+    const definition = template(templateCode) || template('EMPLOYEE');
+    if (!definition) bad('Invalid source template');
     const before = existing ? await roleData(existing, o.transaction) : null;
-    const permissionCodes = subset(definition, data.permissionCodes === undefined ? before?.permissionCodes || definition.permissionCodes : data.permissionCodes);
+
+    let permissionCodes;
+    if (data.permissionCodes === undefined) {
+      permissionCodes = before?.permissionCodes || definition.permissionCodes;
+    } else {
+      if (!Array.isArray(data.permissionCodes)) bad('Permissions must be an array');
+      if (new Set(data.permissionCodes).size !== data.permissionCodes.length) bad('Duplicate permission codes');
+      const { PERMISSIONS } = require('./permissionCatalog');
+      const validMap = new Map(PERMISSIONS.map(p => [p.code, p]));
+      for (const code of data.permissionCodes) {
+        if (!validMap.has(code)) bad(`Unknown permission: ${code}`);
+        if (templateCode !== 'ORGANISATION_ADMIN' && code === 'roles.manage') {
+          bad('Administrative role management permission cannot be delegated');
+        }
+      }
+      permissionCodes = data.permissionCodes;
+    }
+
     const impact = existing ? await roleImpact(o, existing.id) : { userIds: [], affectedUserCount: 0 };
-    if (impact.userIds.some(id => sameId(id, o.actor.id)) && permissionCodes.some(code => !before.permissionCodes.includes(code))) bad('You cannot grant yourself additional access');
+    if (impact.userIds.some(id => sameId(id, o.actor.id)) && permissionCodes.some(code => !before?.permissionCodes.includes(code))) {
+      bad('You cannot grant yourself additional access');
+    }
     if (data.status !== undefined && !['ACTIVE', 'INACTIVE'].includes(data.status)) bad('Invalid status');
     if (data.status === 'INACTIVE' && impact.userIds.length) bad('End or replace active role assignments before deactivation', 409);
     const name = data.name === undefined ? existing?.name : data.name;
     if (typeof name !== 'string' || !name.trim() || name.trim().length > 255) bad('Name must contain 1–255 characters');
-    if (!existing && (typeof data.code !== 'string' || !/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(data.code))) bad('Code must contain 2–32 uppercase letters, digits, hyphens or underscores');
-    const role = existing ? await existing.update({ name: name.trim(), status: data.status || existing.status }, { transaction: o.transaction }) : await OrganizationRole.create({ organizationId: o.organizationId, code: data.code, name: name.trim(), templateCode: definition.code }, { transaction: o.transaction });
+    if (!existing && (typeof data.code !== 'string' || !/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(data.code))) {
+      bad('Code must contain 2–32 uppercase letters, digits, hyphens or underscores');
+    }
+
+    const role = existing
+      ? await existing.update({ name: name.trim(), status: data.status || existing.status, isProtected: false }, { transaction: o.transaction })
+      : await OrganizationRole.create({ organizationId: o.organizationId, code: data.code, name: name.trim(), templateCode: definition.code, isProtected: false }, { transaction: o.transaction });
+
     await OrganizationRolePermission.destroy({ where: { organizationId: o.organizationId, roleId: role.id }, transaction: o.transaction });
     await OrganizationRolePermission.bulkCreate(permissionCodes.map(permissionCode => ({ organizationId: o.organizationId, roleId: role.id, permissionCode })), { transaction: o.transaction });
     await invalidateUserAccess(impact.userIds, { transaction: o.transaction, actor: o.actor, reason: 'role.changed' });
@@ -426,8 +457,12 @@ async function writeRole(options) {
 async function validateAssignment(data, user, o) {
   inputShape(data, ['roleId', 'scopeType', 'branchIds', 'departmentIds', 'effectiveFrom', 'effectiveTo', 'status']);
   const role = await tenantResource(OrganizationRole, data.roleId, o.organizationId, o.transaction, true), definition = template(role.templateCode);
-  if (!definition || !definition.allowedScopes.includes(data.scopeType)) bad('Scope exceeds the role template');
-  const grants = (await roleData(role, o.transaction)).permissionCodes; subset(definition, grants);
+  const allowedScopes = definition?.allowedScopes || ['ORGANISATION', 'SELECTED_BRANCHES', 'DEPARTMENT', 'OWN'];
+  if (!allowedScopes.includes(data.scopeType)) bad('Scope exceeds the role template');
+  const grants = (await roleData(role, o.transaction)).permissionCodes;
+  if (role.code === 'ORGANISATION_ADMIN') {
+    subset(definition, grants);
+  }
   const ids = key => { if (data[key] !== undefined && !Array.isArray(data[key])) bad('Scope identifiers must be arrays'); const values = (data[key] || []).map(validId); if (new Set(values).size !== values.length) bad('Duplicate scope identifiers'); return values; };
   const branchIds = ids('branchIds'), departmentIds = ids('departmentIds');
   if (data.scopeType === 'SELECTED_BRANCHES' ? !branchIds.length || departmentIds.length : data.scopeType === 'DEPARTMENT' ? departmentIds.length !== 1 || branchIds.length : branchIds.length || departmentIds.length) bad('Scope requires exactly its selected branch or department identifiers');

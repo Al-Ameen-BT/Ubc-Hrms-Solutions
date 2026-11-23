@@ -34,8 +34,11 @@ async function fixture() {
 test('roles are protected; custom copies accept only their template ceiling and deny foreign IDs', async () => {
   const f = await fixture(), other = await fixture();
   const list = await f.request('/roles'); assert.equal(list.status, 200); assert.equal(list.body.data.length, 11);
-  for (const method of ['PUT', 'DELETE']) assert.equal((await f.request(`/roles/${f.role('HR_OFFICER').id}`, method, method === 'PUT' ? { name: 'Changed' } : undefined)).status, 400);
-  assert.equal((await f.request('/roles', 'POST', { sourceRoleId: f.role('HR_OFFICER').id, code: 'EVIL', name: 'Evil', permissionCodes: ['payroll.prepare'] })).status, 400);
+  for (const method of ['PUT', 'DELETE']) assert.equal((await f.request(`/roles/${f.role('ORGANISATION_ADMIN').id}`, method, method === 'PUT' ? { name: 'Changed' } : undefined)).status, 400);
+  const updatedHr = await f.request(`/roles/${f.role('HR_OFFICER').id}`, 'PUT', { name: 'HR Officer Updated', permissionCodes: ['people.view', 'payroll.prepare'] });
+  assert.equal(updatedHr.status, 200);
+  assert.equal(updatedHr.body.data.name, 'HR Officer Updated');
+  assert.ok(updatedHr.body.data.permissionCodes.includes('payroll.prepare'));
   assert.equal((await f.request('/roles', 'POST', { sourceRoleId: f.role('HR_OFFICER').id, code: 'UNKNOWN', name: 'Unknown', permissionCodes: ['invented.manage'] })).status, 400);
   assert.equal((await f.request('/roles', 'POST', { sourceRoleId: other.role('HR_OFFICER').id, code: 'FOREIGN', name: 'Foreign' })).status, 404);
   const custom = await f.request('/roles', 'POST', { sourceRoleId: f.role('HR_OFFICER').id, code: 'READ_HR', name: 'HR view', permissionCodes: ['people.view'] });

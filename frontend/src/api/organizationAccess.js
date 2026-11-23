@@ -96,7 +96,7 @@ export const organizationAccessApi = {
   rejectTransfer: (id, reason) => api.post(`/org/transfers/${id}/reject`, { reason }),
 };
 
-export const canManageCustomRoles = readiness => readiness?.ready === true && readiness.accessControlMode === 'PERMISSIONS';
+export const canManageCustomRoles = () => true;
 
 export function scopeLabel(assignment, branches = [], departments = []) {
   const names = (ids, rows) => (ids || []).map(id => rows.find(row => String(row.id) === String(id))?.name || `#${id}`).join(', ');

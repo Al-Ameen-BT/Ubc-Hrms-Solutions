@@ -35,15 +35,207 @@ const title = value => (value || '').replace(/_/g, ' ').replace(/([a-z])([A-Z])/
 const dateToday = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const scopeNames = { OWN: 'Own record', DEPARTMENT: 'Department', SELECTED_BRANCHES: 'Selected branches (one or more)', ORGANISATION: 'Entire organisation' };
 
+const FEATURE_GROUPS = [
+  {
+    id: 'payroll',
+    title: 'Payroll Management',
+    icon: '💰',
+    description: 'Salary register, batch preparation, approvals and payment export advice.',
+    permissions: [
+      { code: 'payroll.view', name: 'View Payroll', desc: 'Inspect monthly payroll sheets, salary registers and reports', risk: 'READ' },
+      { code: 'payroll.prepare', name: 'Prepare Payroll', desc: 'Calculate monthly wages, generate payroll batches and adjustments', risk: 'FINANCIAL' },
+      { code: 'payroll.approve', name: 'Approve Payroll', desc: 'Authorize and sanction prepared payroll batches (Checker guard)', risk: 'FINANCIAL' },
+      { code: 'payroll.export', name: 'Export Payroll', desc: 'Export payroll register, salary bank advice and CSV summaries', risk: 'WRITE' },
+    ]
+  },
+  {
+    id: 'arrears',
+    title: 'DA Arrears & Pay Revisions',
+    icon: '📑',
+    description: 'Dearness allowance arrears, installment planning, approvals and disbursement.',
+    permissions: [
+      { code: 'arrears.view', name: 'View Arrears', desc: 'Inspect arrears calculations and installment schedules', risk: 'READ' },
+      { code: 'arrears.prepare', name: 'Prepare Arrears', desc: 'Calculate arrears cases, pay revisions and installment schedules', risk: 'FINANCIAL' },
+      { code: 'arrears.approve', name: 'Approve Arrears', desc: 'Approve calculation batches and installment schedules (Checker guard)', risk: 'FINANCIAL' },
+      { code: 'arrears.pay', name: 'Disburse Arrears', desc: 'Execute and record disbursement of arrears installments (Payer guard)', risk: 'FINANCIAL' },
+    ]
+  },
+  {
+    id: 'compensation',
+    title: 'Compensation & Financial Changes',
+    icon: '📊',
+    description: 'Pay scale rules, allowance configurations and individual salary adjustments.',
+    permissions: [
+      { code: 'compensation.view', name: 'View Compensation', desc: 'View employee compensation packages and pay scales', risk: 'READ' },
+      { code: 'compensation.prepare', name: 'Prepare Compensation', desc: 'Draft salary changes, allowances and welfare fund rules', risk: 'FINANCIAL' },
+      { code: 'compensation.approve', name: 'Approve Compensation', desc: 'Approve employee compensation revisions (Checker guard)', risk: 'FINANCIAL' },
+      { code: 'financialChanges.view', name: 'View Financial Changes', desc: 'View pending and historical financial change requests', risk: 'READ' },
+      { code: 'financialChanges.prepare', name: 'Prepare Financial Changes', desc: 'Initiate employee pay scale adjustments and grade increments', risk: 'FINANCIAL' },
+      { code: 'financialChanges.approve', name: 'Approve Financial Changes', desc: 'Authorize employee pay scale adjustments (Checker guard)', risk: 'FINANCIAL' },
+    ]
+  },
+  {
+    id: 'leave',
+    title: 'Leave Management',
+    icon: '🏖️',
+    description: 'Staff leave applications, balance administration and manager approvals.',
+    permissions: [
+      { code: 'leave.view', name: 'View Leave Records', desc: 'View staff leave balances, applications and calendars', risk: 'READ' },
+      { code: 'leave.manage', name: 'Manage Leave', desc: 'Record leave entries and adjust balances on behalf of staff', risk: 'WRITE' },
+      { code: 'leave.approve', name: 'Approve Leave', desc: 'Sanction or reject submitted employee leave applications', risk: 'WRITE' },
+    ]
+  },
+  {
+    id: 'attendance',
+    title: 'Attendance, Shifts & Geofencing',
+    icon: '⏱️',
+    description: 'Daily biometric/punch logs, shift timings, manual adjustments and geofences.',
+    permissions: [
+      { code: 'attendance.view', name: 'View Attendance', desc: 'Inspect daily shift logs, punch times and presence records', risk: 'READ' },
+      { code: 'attendance.manage', name: 'Manage Attendance', desc: 'Mark manual punches, correct timings and approve overtime', risk: 'WRITE' },
+      { code: 'geofence.view', name: 'View Geofences', desc: 'View branch geofencing coordinates and mobile radius', risk: 'READ' },
+      { code: 'geofence.manage', name: 'Manage Geofences', desc: 'Configure branch geofence boundary coordinates and tolerances', risk: 'WRITE' },
+      { code: 'chart.view', name: 'View Org Chart', desc: 'View bank hierarchy, reporting lines and organizational chart', risk: 'READ' },
+    ]
+  },
+  {
+    id: 'people',
+    title: 'People & Staff Directory',
+    icon: '👥',
+    description: 'Employee onboarding, profile maintenance, cadre definitions and exports.',
+    permissions: [
+      { code: 'people.view', name: 'View Directory', desc: 'Access employee directory, profiles and contact info', risk: 'READ' },
+      { code: 'people.create', name: 'Onboard Staff', desc: 'Create new employee service records and profiles', risk: 'WRITE' },
+      { code: 'people.edit', name: 'Edit Employee Records', desc: 'Update staff personal details, qualifications and service history', risk: 'WRITE' },
+      { code: 'people.export', name: 'Export Staff Data', desc: 'Export staff rosters, demographics and service registers', risk: 'WRITE' },
+      { code: 'hr.view', name: 'View HR Cadres', desc: 'View cadre designations and post classifications', risk: 'READ' },
+      { code: 'hr.manage', name: 'Manage HR Policy', desc: 'Configure designations, post cadres and service rule bands', risk: 'WRITE' },
+    ]
+  },
+  {
+    id: 'documents',
+    title: 'Employee Documents',
+    icon: '📁',
+    description: 'KYC documents, appointment letters, service books and certificates.',
+    permissions: [
+      { code: 'documents.view', name: 'View Documents', desc: 'Inspect uploaded employee identification and service proofs', risk: 'READ' },
+      { code: 'documents.manage', name: 'Manage Documents', desc: 'Upload, verify and organize staff compliance documentation', risk: 'WRITE' },
+    ]
+  },
+  {
+    id: 'structure',
+    title: 'Organisation Structure & Transfers',
+    icon: '🏛️',
+    description: 'Branches, departments, post cadration, assignments and inter-branch transfers.',
+    permissions: [
+      { code: 'structure.view', name: 'View Structure', desc: 'Inspect head office, branches, departments and cadres', risk: 'READ' },
+      { code: 'structure.manage', name: 'Manage Structure', desc: 'Configure organizational units and head office settings', risk: 'WRITE' },
+      { code: 'branches.view', name: 'View Branches', desc: 'View bank branch directory, codes and operational status', risk: 'READ' },
+      { code: 'branches.manage', name: 'Manage Branches', desc: 'Add new branches and update branch metadata', risk: 'WRITE' },
+      { code: 'departments.view', name: 'View Departments', desc: 'View bank department divisions within branches', risk: 'READ' },
+      { code: 'departments.manage', name: 'Manage Departments', desc: 'Create and update bank department structures', risk: 'WRITE' },
+      { code: 'positions.view', name: 'View Positions', desc: 'View sanctioned positions and vacancies across units', risk: 'READ' },
+      { code: 'positions.manage', name: 'Manage Positions', desc: 'Configure sanctioned position allocations per cadre', risk: 'WRITE' },
+      { code: 'assignments.view', name: 'View Staff Postings', desc: 'Inspect employee branch and department postings', risk: 'READ' },
+      { code: 'assignments.manage', name: 'Manage Staff Postings', desc: 'Assign employees to designated branch or department posts', risk: 'WRITE' },
+      { code: 'transfers.view', name: 'View Transfers', desc: 'Track employee transfer requests and transition orders', risk: 'READ' },
+      { code: 'transfers.manage', name: 'Manage Transfers', desc: 'Initiate, approve or execute employee branch transfers', risk: 'WRITE' },
+    ]
+  },
+  {
+    id: 'expenses',
+    title: 'Expenses & Reimbursements',
+    icon: '💸',
+    description: 'Employee travel vouchers, petty cash claims, verification and sign-off.',
+    permissions: [
+      { code: 'expenses.view', name: 'View Claims', desc: 'Inspect expense submissions and supporting vouchers', risk: 'READ' },
+      { code: 'expenses.verify', name: 'Verify Expenses', desc: 'Audit and check claimed receipts and billings (Checker guard)', risk: 'WRITE' },
+      { code: 'expenses.approve', name: 'Approve Reimbursements', desc: 'Sanction verified expense reimbursements for payment', risk: 'FINANCIAL' },
+    ]
+  },
+  {
+    id: 'payments',
+    title: 'Disbursements & Staff Advances',
+    icon: '💳',
+    description: 'Payment execution, festival advances, staff loan ledgers and banking exports.',
+    permissions: [
+      { code: 'payments.view', name: 'View Payments', desc: 'View payment queues, disburse history and transaction status', risk: 'READ' },
+      { code: 'payments.pay', name: 'Process Payments', desc: 'Execute disbursements to bank accounts (Payer guard)', risk: 'FINANCIAL' },
+      { code: 'payments.export', name: 'Export Payment Advice', desc: 'Generate NEFT/RTGS payment files and bank advice sheets', risk: 'WRITE' },
+      { code: 'advances.view', name: 'View Advances & Loans', desc: 'Inspect staff festival advances, loan balances and recovery', risk: 'READ' },
+      { code: 'advances.prepare', name: 'Prepare Advance Requests', desc: 'Draft loan and festival advance applications for staff', risk: 'FINANCIAL' },
+      { code: 'advances.approve', name: 'Approve Advance Requests', desc: 'Authorize staff loan and advance applications (Checker guard)', risk: 'FINANCIAL' },
+    ]
+  },
+  {
+    id: 'yearend',
+    title: 'Year-End Closing',
+    icon: '📅',
+    description: 'Financial year & calendar year balance carry-forwards and statutory roll-over.',
+    permissions: [
+      { code: 'yearend.view', name: 'View Year-End', desc: 'Inspect year-end closing checklist, accruals and status', risk: 'READ' },
+      { code: 'yearend.close', name: 'Execute Year-End Close', desc: 'Execute statutory financial and calendar year close', risk: 'FINANCIAL' },
+    ]
+  },
+  {
+    id: 'audit',
+    title: 'Audit & Compliance Inspection',
+    icon: '🛡️',
+    description: 'Immutable transaction trails, system event logs and regulatory review.',
+    permissions: [
+      { code: 'audit.view', name: 'View Audit Logs', desc: 'Inspect immutable system audit trails, access and security logs', risk: 'READ' },
+    ]
+  },
+  {
+    id: 'dpdp',
+    title: 'DPDP Compliance & Data Privacy',
+    icon: '🔒',
+    description: 'Data protection officer workspace, subject access requests and sensitive records.',
+    permissions: [
+      { code: 'dpdp.view', name: 'View DPDP Governance', desc: 'Inspect DPDP compliance checklist, privacy notice and log', risk: 'READ' },
+      { code: 'dpdp.manage', name: 'Manage DPDP Requests', desc: 'Process employee data correction, deletion and grievance requests', risk: 'WRITE' },
+      { code: 'dpdp.sensitive.view', name: 'View Sensitive Personal Data', desc: 'View masked Aadhaar, PAN and sensitive biometric data', risk: 'READ' },
+    ]
+  },
+  {
+    id: 'self',
+    title: 'Employee Self-Service (ESS)',
+    icon: '📱',
+    description: 'Personal profile, payslip downloads, leave requests and device linking.',
+    permissions: [
+      { code: 'self.profile', name: 'My Profile', desc: 'View and update personal address and emergency contacts', risk: 'READ' },
+      { code: 'self.payslips', name: 'My Payslips', desc: 'Download monthly payslips and tax deduction summaries', risk: 'READ' },
+      { code: 'self.leave', name: 'My Leave', desc: 'Apply for leave and track personal leave balance ledger', risk: 'READ' },
+      { code: 'self.attendance', name: 'My Attendance', desc: 'Mobile check-in/out and personal attendance history', risk: 'READ' },
+      { code: 'self.policies', name: 'Bank Policies', desc: 'View published service rules, holiday lists and circulars', risk: 'READ' },
+      { code: 'self.claims', name: 'My Claims', desc: 'Submit personal reimbursement and travel expense vouchers', risk: 'READ' },
+      { code: 'self.documents', name: 'My Documents', desc: 'Upload KYC certificates and access official bank letters', risk: 'READ' },
+      { code: 'self.devices', name: 'Linked Devices', desc: 'Pair and revoke registered mobile devices for QR login', risk: 'READ' },
+    ]
+  },
+  {
+    id: 'admin',
+    title: 'System Administration & Settings',
+    icon: '⚙️',
+    description: 'Bank general settings, user management and system access configuration.',
+    permissions: [
+      { code: 'settings.view', name: 'View Settings', desc: 'Inspect bank parameters and operational rules', risk: 'READ' },
+      { code: 'settings.configure', name: 'Configure Settings', desc: 'Update bank rules, general options and notification templates', risk: 'WRITE' },
+      { code: 'users.manage', name: 'Manage User Accounts', desc: 'Provision bank user logins, passwords and account status', risk: 'WRITE' },
+      { code: 'roles.manage', name: 'Manage Roles & Access', desc: 'Root administrative privilege to configure roles and permissions', risk: 'WRITE' },
+    ]
+  }
+];
+
 function categorizeBlockers(blockers = [], bootstrapUserId, users = []) {
   const categories = {
     roles: {
       id: 'roles',
-      title: 'Protected System Roles & Baselines',
+      title: 'System Roles & Baselines',
       icon: <ShieldIcon size={16} />,
       description: 'System roles, baseline permissions, and administrative access assignments',
       items: [],
-      canAutoFix: true,
+      canManualSeed: true,
     },
     identity: {
       id: 'identity',
@@ -336,8 +528,8 @@ export function RolesPermissionsPage() {
                 <div className="roles-hero-actions">
                   {hasAutoFixableBlockers && (
                     <Button variant="primary" size="sm" loading={busy} onClick={handleAutoBootstrap}>
-                      <ZapIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
-                      Auto-Provision Roles &amp; Baselines
+                      <ShieldIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+                      Provision Standard Baseline Roles
                     </Button>
                   )}
                   <Button size="sm" variant="secondary" loading={readinessQuery.isFetching} onClick={() => readinessQuery.refetch()}>
@@ -362,10 +554,10 @@ export function RolesPermissionsPage() {
                           <span>{category.title}</span>
                           <Badge variant="warning">{category.items.length}</Badge>
                         </div>
-                        {category.canAutoFix && (
+                        {category.canManualSeed && (
                           <Button size="sm" variant="secondary" loading={busy} onClick={handleAutoBootstrap}>
-                            <ZapIcon size={13} style={{ marginRight: '0.3rem', verticalAlign: '-1px' }} />
-                            Auto-Provision
+                            <ShieldIcon size={13} style={{ marginRight: '0.3rem', verticalAlign: '-1px' }} />
+                            Provision Baselines
                           </Button>
                         )}
                       </div>
@@ -387,11 +579,11 @@ export function RolesPermissionsPage() {
                                   {item.actionLabel || 'Resolve'}
                                   <ArrowRightIcon size={13} style={{ marginLeft: '0.3rem', verticalAlign: '-1px' }} />
                                 </Link>
-                              ) : item.isAutoFixable ? (
+                              ) : (
                                 <Button size="sm" variant="secondary" loading={busy} onClick={handleAutoBootstrap}>
-                                  Auto-Fix
+                                  Provision Baseline
                                 </Button>
-                              ) : null}
+                              )}
                             </div>
                           </div>
                         ))}
@@ -745,15 +937,19 @@ export function RolesPermissionsPage() {
                   onClick={() => { setSelectedRoleId(String(role.id)); setCopying(false); setError(''); }}
                 >
                   <strong>{role.name}</strong>
-                  <span>{role.isProtected ? 'Protected template' : `${role.status} · ${role.activeAssigneeCount ?? 0} assignees`}</span>
+                  <span>
+                    {role.code === 'ORGANISATION_ADMIN'
+                      ? 'Protected Root Admin'
+                      : `${(role.permissionCodes || []).length} features · ${role.status} · ${role.activeAssigneeCount ?? 0} assignees`}
+                  </span>
                 </button>
               ))}
               {!roles.length && !rolesQuery.isLoading && (
                 <div className="roles-list-empty">
                   <p>No roles are currently configured in this bank.</p>
                   <Button variant="primary" size="sm" loading={busy} onClick={handleAutoBootstrap} style={{ marginTop: '0.5rem' }}>
-                    <ZapIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
-                    Auto-Provision Protected Roles
+                    <ShieldIcon size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />
+                    Provision Baseline Roles (Manual)
                   </Button>
                 </div>
               )}
@@ -778,7 +974,7 @@ export function RolesPermissionsPage() {
             />
           ) : (
             <Card title="Role Overview">
-              <p className="text-muted">No role is selected. Auto-provision protected templates or choose a role on the left.</p>
+              <p className="text-muted">No role is selected. Choose a role on the left to configure features, or initialize baseline roles.</p>
             </Card>
           )}
         </div>
@@ -844,34 +1040,112 @@ export function RolesPermissionsPage() {
 function RoleEditor({ role, copying, permissions, templates, enabled, busy, onCopy, onCancel, onSave, onDeactivate }) {
   const [name, setName] = useState(copying ? `${role.name} copy` : role.name);
   const [code, setCode] = useState('');
-  const [codes, setCodes] = useState(role.permissionCodes);
+  const [codes, setCodes] = useState(role.permissionCodes || []);
+  const [viewMode, setViewMode] = useState('features'); // 'features' or 'matrix'
+  const [searchFilter, setSearchFilter] = useState('');
+
   const source = templates.find(template => template.code === role.templateCode);
-  const locked = role.isProtected && !copying;
-  const dirty = name !== role.name || codes.length !== role.permissionCodes.length || codes.some(value => !role.permissionCodes.includes(value));
+  const isOrgAdmin = role.code === 'ORGANISATION_ADMIN' || (role.templateCode === 'ORGANISATION_ADMIN' && role.isProtected);
+  const locked = isOrgAdmin && !copying;
+  const dirty = name !== role.name || codes.length !== (role.permissionCodes || []).length || codes.some(value => !(role.permissionCodes || []).includes(value));
   const actions = [...new Set(permissions.map(permission => permission.action))];
   const modules = [...new Set(permissions.map(permission => permission.module))];
 
+  const togglePermission = permCode => {
+    if (locked) return;
+    setCodes(prev => prev.includes(permCode) ? prev.filter(c => c !== permCode) : [...prev, permCode]);
+  };
+
+  const toggleGroup = (groupPerms, select) => {
+    if (locked) return;
+    const groupCodes = groupPerms
+      .map(p => p.code)
+      .filter(c => c !== 'roles.manage' || role.templateCode === 'ORGANISATION_ADMIN');
+    if (select) {
+      setCodes(prev => [...new Set([...prev, ...groupCodes])]);
+    } else {
+      setCodes(prev => prev.filter(c => !groupCodes.includes(c)));
+    }
+  };
+
+  const selectAllFeatures = () => {
+    if (locked) return;
+    const all = permissions
+      .map(p => p.code)
+      .filter(c => c !== 'roles.manage' || role.templateCode === 'ORGANISATION_ADMIN');
+    setCodes(all);
+  };
+
+  const clearAllFeatures = () => {
+    if (locked) return;
+    setCodes([]);
+  };
+
+  const query = searchFilter.trim().toLowerCase();
+  const filteredGroups = FEATURE_GROUPS.map(group => {
+    const matchesGroup = group.title.toLowerCase().includes(query) || group.description.toLowerCase().includes(query);
+    const filteredPerms = group.permissions.filter(p =>
+      matchesGroup || p.name.toLowerCase().includes(query) || p.code.toLowerCase().includes(query) || p.desc.toLowerCase().includes(query)
+    );
+    return { ...group, filteredPerms };
+  }).filter(group => group.filteredPerms.length > 0);
+
   return (
     <Card
-      title={copying ? 'Copy protected template' : role.name}
-      actions={locked ? <Button size="sm" variant="secondary" disabled={!enabled || busy} onClick={onCopy}>Copy template</Button> : null}
+      title={copying ? 'Create Custom Role' : role.name}
+      actions={
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {locked ? (
+            <Button size="sm" variant="secondary" disabled={!enabled || busy} onClick={onCopy}>
+              Copy Template
+            </Button>
+          ) : (
+            <Badge variant="primary">{codes.length} Features Active</Badge>
+          )}
+        </div>
+      }
     >
       <p>{source?.description || role.description}</p>
       <p className="form-note">
-        Source: {source?.name || role.templateCode} · Scope ceiling: {(role.allowedScopes || []).map(scope => scopeNames[scope]).join(', ')} · {role.activeAssigneeCount ?? 0} active assignees
+        Base Template: {source?.name || role.templateCode} · Scope ceiling: {(role.allowedScopes || []).map(scope => scopeNames[scope]).join(', ')} · {role.activeAssigneeCount ?? 0} active assignees
       </p>
 
       {locked ? (
-        <p id="protected-role-note" className="form-note">
-          Protected template: all cells are locked to maintain statutory banking standards. Click "Copy template" above to select a subset; platform ceilings cannot be increased.
-        </p>
+        <div className="roles-protected-banner" id="protected-role-note">
+          <LockIcon size={18} style={{ flexShrink: 0 }} />
+          <div>
+            <strong>Organisation Admin is Protected and Immutable</strong>
+            <p style={{ margin: 0, fontSize: '0.8125rem' }}>
+              Root administrative access and security invariants cannot be modified. For other staff roles (HR, Payroll, Branch Manager, etc.), you can freely add or remove features by selecting them on the left.
+            </p>
+          </div>
+        </div>
       ) : (
-        <div className="form-grid">
-          <Input id="role-name" label="Role name" maxLength={255} disabled={!enabled || busy} value={name} onChange={event => setName(event.target.value)} />
+        <div className="roles-editable-banner">
+          <ShieldIcon size={18} style={{ flexShrink: 0 }} />
+          <div>
+            <strong>Configurable Role Features &amp; Permissions</strong>
+            <p style={{ margin: 0, fontSize: '0.8125rem' }}>
+              Select the specific features and action permissions needed for this role. Only administrative role management (<code>roles.manage</code>) is reserved for Organisation Admins.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!locked && (
+        <div className="form-grid" style={{ marginBottom: '1rem' }}>
+          <Input
+            id="role-name"
+            label="Role Name"
+            maxLength={255}
+            disabled={!enabled || busy}
+            value={name}
+            onChange={event => setName(event.target.value)}
+          />
           {copying && (
             <Input
               id="role-code"
-              label="Role code"
+              label="Role Code"
               hint="2–32 uppercase letters, digits, hyphens or underscores"
               maxLength={32}
               value={code}
@@ -882,43 +1156,172 @@ function RoleEditor({ role, copying, permissions, templates, enabled, busy, onCo
         </div>
       )}
 
-      <div className="roles-matrix-scroll">
-        <table className="table roles-matrix">
-          <caption>Function matrix — cells outside the source template are unavailable</caption>
-          <thead>
-            <tr>
-              <th scope="col">Module</th>
-              {actions.map(action => (
-                <th scope="col" key={action}>{title(action)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {modules.map(module => (
-              <tr key={module}>
-                <th scope="row">{title(module)}</th>
-                {actions.map(action => {
-                  const permission = permissions.find(item => item.module === module && item.action === action);
-                  if (!permission) return <td key={action}>—</td>;
-                  const withinCeiling = source?.permissionCodes.includes(permission.code);
-                  return (
-                    <td key={action}>
-                      <input
-                        type="checkbox"
-                        aria-label={permission.code}
-                        aria-describedby={locked ? 'protected-role-note' : undefined}
-                        title={!withinCeiling ? 'Outside the source template ceiling' : permission.requiresFeature ? `Requires feature: ${permission.requiresFeature}` : permission.guardrails.map(title).join('; ')}
-                        checked={codes.includes(permission.code)}
-                        disabled={role.isProtected && !copying || !withinCeiling || !enabled || busy || !!permission.requiresFeature}
-                        onChange={event => setCodes(previous => event.target.checked ? [...previous, permission.code] : previous.filter(value => value !== permission.code))}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Feature Selection Toolbar */}
+      <div className="roles-feature-controls">
+        <div className="roles-feature-toolbar">
+          <div className="roles-feature-search">
+            <Input
+              id="feature-search"
+              placeholder="Search features (e.g., payroll, leave, export)..."
+              value={searchFilter}
+              onChange={e => setSearchFilter(e.target.value)}
+            />
+          </div>
+
+          <div className="roles-feature-quick-actions">
+            {!locked && (
+              <>
+                <Button size="sm" variant="secondary" disabled={busy} onClick={selectAllFeatures}>
+                  Select All Permitted
+                </Button>
+                <Button size="sm" variant="secondary" disabled={busy} onClick={clearAllFeatures}>
+                  Clear All
+                </Button>
+              </>
+            )}
+
+            <div className="roles-feature-view-toggle">
+              <button
+                type="button"
+                className={viewMode === 'features' ? 'active' : ''}
+                onClick={() => setViewMode('features')}
+              >
+                Feature Cards
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'matrix' ? 'active' : ''}
+                onClick={() => setViewMode('matrix')}
+              >
+                Matrix Grid
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {viewMode === 'features' ? (
+          <div className="roles-features-grid">
+            {filteredGroups.map(group => {
+              const activeCount = group.permissions.filter(p => codes.includes(p.code)).length;
+              const allChecked = group.permissions.length > 0 && activeCount === group.permissions.length;
+
+              return (
+                <div key={group.id} className="roles-feature-card">
+                  <div className="roles-feature-card-header">
+                    <div>
+                      <div className="roles-feature-card-title-wrap">
+                        <span className="roles-feature-card-icon">{group.icon}</span>
+                        <h4 className="roles-feature-card-title">{group.title}</h4>
+                      </div>
+                      <p className="roles-feature-card-desc">{group.description}</p>
+                    </div>
+
+                    <div className="roles-feature-card-actions">
+                      <Badge variant={activeCount > 0 ? 'primary' : 'secondary'} style={{ fontSize: '0.7rem' }}>
+                        {activeCount} / {group.permissions.length}
+                      </Badge>
+                      {!locked && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '0.2rem 0.45rem', fontSize: '0.7rem' }}
+                          onClick={() => toggleGroup(group.permissions, !allChecked)}
+                        >
+                          {allChecked ? 'Clear' : 'Select'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="roles-feature-items">
+                    {group.filteredPerms.map(perm => {
+                      const isChecked = codes.includes(perm.code);
+                      const isRoleManageRestricted = perm.code === 'roles.manage' && role.templateCode !== 'ORGANISATION_ADMIN';
+                      const isDisabled = locked || isRoleManageRestricted || !enabled || busy;
+
+                      return (
+                        <label
+                          key={perm.code}
+                          className={`roles-feature-item ${isChecked ? 'is-checked' : ''} ${isDisabled ? 'is-disabled' : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={isDisabled}
+                            onChange={() => togglePermission(perm.code)}
+                          />
+                          <div className="roles-feature-item-content">
+                            <div className="roles-feature-item-header">
+                              <div>
+                                <span className="roles-feature-item-name">{perm.name}</span>
+                                <span className="roles-feature-item-code">{perm.code}</span>
+                              </div>
+                              <div className="roles-feature-item-badges">
+                                <span className={`roles-risk-badge roles-risk-${perm.risk.toLowerCase()}`}>
+                                  {perm.risk}
+                                </span>
+                                {perm.desc?.includes('Checker') && (
+                                  <span className="roles-guardrail-tag">Checker</span>
+                                )}
+                                {perm.desc?.includes('Payer') && (
+                                  <span className="roles-guardrail-tag">Payer</span>
+                                )}
+                              </div>
+                            </div>
+                            <p className="roles-feature-item-desc">
+                              {isRoleManageRestricted
+                                ? 'Reserved for root Organisation Admin; cannot be delegated.'
+                                : perm.desc}
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="roles-matrix-scroll">
+            <table className="table roles-matrix">
+              <caption>Function matrix — select granular actions per module</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Module</th>
+                  {actions.map(action => (
+                    <th scope="col" key={action}>{title(action)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {modules.map(module => (
+                  <tr key={module}>
+                    <th scope="row">{title(module)}</th>
+                    {actions.map(action => {
+                      const permission = permissions.find(item => item.module === module && item.action === action);
+                      if (!permission) return <td key={action}>—</td>;
+                      const isRoleManageRestricted = permission.code === 'roles.manage' && role.templateCode !== 'ORGANISATION_ADMIN';
+                      const isDisabled = locked || isRoleManageRestricted || !enabled || busy || !!permission.requiresFeature;
+                      return (
+                        <td key={action}>
+                          <input
+                            type="checkbox"
+                            aria-label={permission.code}
+                            title={isRoleManageRestricted ? 'Reserved for Organisation Admin' : permission.guardrails.map(title).join('; ')}
+                            checked={codes.includes(permission.code)}
+                            disabled={isDisabled}
+                            onChange={() => togglePermission(permission.code)}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <details style={{ marginBlock: '1rem' }}>
@@ -944,14 +1347,14 @@ function RoleEditor({ role, copying, permissions, templates, enabled, busy, onCo
             disabled={!enabled || busy || !name.trim() || (!copying && !dirty) || (copying && !/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(code))}
             onClick={() => onSave({ name: name.trim(), permissionCodes: codes, ...(copying ? { sourceRoleId: role.id, code } : {}) })}
           >
-            {copying ? 'Create custom role' : 'Preview & save changes'}
+            {copying ? 'Create Custom Role' : 'Save Role Features & Permissions'}
           </Button>
           {copying ? (
-            <Button variant="secondary" onClick={onCancel}>Cancel copy</Button>
+            <Button variant="secondary" onClick={onCancel}>Cancel Copy</Button>
           ) : role.status === 'ACTIVE' && (
-            <Button variant="secondary" disabled={!enabled || busy} onClick={onDeactivate}>Preview deactivation</Button>
+            <Button variant="secondary" disabled={!enabled || busy} onClick={onDeactivate}>Deactivate Role</Button>
           )}
-          {!copying && dirty && <span role="status" className="text-muted" style={{ fontSize: '0.875rem' }}>Unsaved changes</span>}
+          {!copying && dirty && <span role="status" className="text-muted" style={{ fontSize: '0.875rem' }}>Unsaved changes ({codes.length} features selected)</span>}
         </div>
       )}
     </Card>
