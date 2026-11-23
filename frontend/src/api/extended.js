@@ -5,7 +5,7 @@
  * { data } and normalises bare arrays into { rows }.
  */
 
-import { api } from './client';
+import { api, downloadFile } from './client';
 
 /* ---------------------------------------------------------------- Leave */
 /* routes/leave.js — leave types, applications, per-employee balances. */
@@ -184,3 +184,30 @@ export const serviceBookApi = {
   updateVehicleLoan: (employeeId, id, data) => api.put(`/employees/${employeeId}/vehicle-loans/${id}`, data),
   deleteVehicleLoan: (employeeId, id) => api.delete(`/employees/${employeeId}/vehicle-loans/${id}`),
 };
+
+/* ------------------------------------------------------------- Reports */
+/* routes/reports.js — Loan Portfolio, Insurance & Policies, Master Salary Data */
+export const reportsApi = {
+  summary: (orgId, params) =>
+    api.get(`/organizations/${orgId}/reports/summary${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null))}` : ''}`),
+  loans: (orgId, params) =>
+    api.get(`/organizations/${orgId}/reports/loans${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null))}` : ''}`),
+  insurance: (orgId, params) =>
+    api.get(`/organizations/${orgId}/reports/insurance-policies${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null))}` : ''}`),
+  salaryData: (orgId, params) =>
+    api.get(`/organizations/${orgId}/reports/salary-data${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null))}` : ''}`),
+
+  downloadLoans: (orgId, params, filename) => {
+    const q = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== '' && v != null));
+    return downloadFile(`/organizations/${orgId}/reports/loans/export?${q}`, filename);
+  },
+  downloadInsurance: (orgId, params, filename) => {
+    const q = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== '' && v != null));
+    return downloadFile(`/organizations/${orgId}/reports/insurance-policies/export?${q}`, filename);
+  },
+  downloadSalaryData: (orgId, params, filename) => {
+    const q = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== '' && v != null));
+    return downloadFile(`/organizations/${orgId}/reports/salary-data/export?${q}`, filename);
+  },
+};
+

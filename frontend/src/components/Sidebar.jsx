@@ -44,6 +44,7 @@ const NAV = {
         { to: '/deductions', label: 'Deductions & Slabs', icon: 'payroll' },
         { to: '/arrears', label: 'DA Arrears', icon: 'scales' },
         { to: '/year-end', label: 'Year-End', icon: 'go' },
+        { to: '/reports', label: 'Reports', icon: 'audit' },
       ],
     },
     {

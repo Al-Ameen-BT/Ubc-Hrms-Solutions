@@ -88,6 +88,7 @@ router.use('/employees', serviceBook.employeeCrud);
 
 router.use('/organizations/:orgId/payroll-runs', require('./payroll'));
 router.use('/organizations/:orgId/year-end', require('./yearEnd'));
+router.use('/organizations/:orgId/reports', require('./reports'));
 
 // DA Arrears Management — see routes/arrears.js
 const arrearsRoutes = require('./arrears');
