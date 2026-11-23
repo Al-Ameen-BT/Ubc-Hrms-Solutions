@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { deductionApi, overdraftSlabApi } from '../../api/extended';
 import { orgApi, fmt } from '../../api/client';
@@ -38,6 +38,19 @@ export function DeductionsPage() {
 
   // Welfare Fund interactive calculator test state
   const [testBasicDa, setTestBasicDa] = useState('12500');
+
+  // Welfare Fund edit and DB persistence state
+  const [welfareEditOpen, setWelfareEditOpen] = useState(false);
+  const [welfareForm, setWelfareForm] = useState({
+    welfareFundRule: 'SLAB',
+    welfareFundThreshold: '10000',
+    welfareFundAboveEmployee: '300',
+    welfareFundAboveEmployer: '250',
+    welfareFundBelowEmployee: '250',
+    welfareFundBelowEmployer: '200',
+    welfareFundBaseEmployee: '45',
+    welfareFundBaseEmployer: '45',
+  });
 
   // Deduction Types state
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -130,6 +143,42 @@ export function DeductionsPage() {
     queryFn: compensationApi.adoptions,
   });
   const isCatalogueBank = adoptions?.history?.some((r) => r.status === 'APPROVED');
+
+  useEffect(() => {
+    if (payrollSettings) {
+      setWelfareForm({
+        welfareFundRule: payrollSettings.welfareFundRule || 'SLAB',
+        welfareFundThreshold: String(payrollSettings.welfareFundThreshold ?? 10000),
+        welfareFundAboveEmployee: String(payrollSettings.welfareFundAboveEmployee ?? 300),
+        welfareFundAboveEmployer: String(payrollSettings.welfareFundAboveEmployer ?? 250),
+        welfareFundBelowEmployee: String(payrollSettings.welfareFundBelowEmployee ?? 250),
+        welfareFundBelowEmployer: String(payrollSettings.welfareFundBelowEmployer ?? 200),
+        welfareFundBaseEmployee: String(payrollSettings.welfareFundBaseEmployee ?? 45),
+        welfareFundBaseEmployer: String(payrollSettings.welfareFundBaseEmployer ?? 45),
+      });
+    }
+  }, [payrollSettings]);
+
+  const updateWelfareMutation = useMutation({
+    mutationFn: async (payload) => {
+      if (isCatalogueBank) {
+        return compensationApi.proposeFinancialChange({
+          targetType: 'ORG_SETTINGS',
+          patch: payload,
+          effectiveDate: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
+          reason: 'Updated statutory Welfare Fund rules from Deductions Management',
+        });
+      }
+      return orgApi.updatePayrollSettings(payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-payroll-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['financial-changes'] });
+      toast.add(isCatalogueBank ? 'Welfare fund rules submitted for financial approval.' : 'Welfare fund statutory rules saved to DB successfully.', 'success');
+      setWelfareEditOpen(false);
+    },
+    onError: (err) => toast.add(err.message || 'Failed to update welfare fund rules.', 'error'),
+  });
 
   // Deduction Mutations
   const createMutation = useMutation({
@@ -268,35 +317,36 @@ export function DeductionsPage() {
     setSlabError('');
   }
 
-  // Welfare Fund calculation helper matching payslip.js exactly
+  // Welfare Fund calculation helper matching payslip.js exactly (with live preview during editing)
+  const activeWelfareSettings = welfareEditOpen ? welfareForm : payrollSettings;
   const welfareCalculation = useMemo(() => {
     const val = Number(testBasicDa || 0);
-    const threshold = payrollSettings?.welfareFundThreshold != null ? Number(payrollSettings.welfareFundThreshold) : 10000;
-    const rule = payrollSettings?.welfareFundRule || 'SLAB';
+    const threshold = activeWelfareSettings?.welfareFundThreshold != null ? Number(activeWelfareSettings.welfareFundThreshold) : 10000;
+    const rule = activeWelfareSettings?.welfareFundRule || 'SLAB';
 
     if (rule === 'FLAT') {
-      const emp = payrollSettings?.welfareFundBaseEmployee ?? 45;
-      const empr = payrollSettings?.welfareFundBaseEmployer ?? 45;
+      const emp = Number(activeWelfareSettings?.welfareFundBaseEmployee ?? 45);
+      const empr = Number(activeWelfareSettings?.welfareFundBaseEmployer ?? 45);
       return { employee: emp, employer: empr, slabDescription: 'Flat Base Rate Rule' };
     }
 
     if (val > threshold) {
-      const emp = payrollSettings?.welfareFundAboveEmployee ?? 300;
-      const empr = payrollSettings?.welfareFundAboveEmployer ?? 250;
+      const emp = Number(activeWelfareSettings?.welfareFundAboveEmployee ?? 300);
+      const empr = Number(activeWelfareSettings?.welfareFundAboveEmployer ?? 250);
       return {
         employee: emp,
         employer: empr,
         slabDescription: `Above Threshold (> ₹${threshold.toLocaleString()}): Emp ₹${emp} / Empr ₹${empr}`,
       };
     }
-    const emp = payrollSettings?.welfareFundBelowEmployee ?? 250;
-    const empr = payrollSettings?.welfareFundBelowEmployer ?? 200;
+    const emp = Number(activeWelfareSettings?.welfareFundBelowEmployee ?? 250);
+    const empr = Number(activeWelfareSettings?.welfareFundBelowEmployer ?? 200);
     return {
       employee: emp,
       employer: empr,
       slabDescription: `At / Below Threshold (≤ ₹${threshold.toLocaleString()}): Emp ₹${emp} / Empr ₹${empr}`,
     };
-  }, [testBasicDa, payrollSettings]);
+  }, [testBasicDa, activeWelfareSettings]);
 
   // Request double confirmation helper
   function requestConfirmation({
@@ -330,6 +380,37 @@ export function DeductionsPage() {
   }
 
   // --- Handlers with Double Confirmation ---
+
+  function handleSaveWelfareFund() {
+    const cleanPayload = {
+      welfareFundRule: welfareForm.welfareFundRule || 'SLAB',
+      welfareFundThreshold: Number(welfareForm.welfareFundThreshold || 10000),
+      welfareFundAboveEmployee: Number(welfareForm.welfareFundAboveEmployee || 0),
+      welfareFundAboveEmployer: Number(welfareForm.welfareFundAboveEmployer || 0),
+      welfareFundBelowEmployee: Number(welfareForm.welfareFundBelowEmployee || 0),
+      welfareFundBelowEmployer: Number(welfareForm.welfareFundBelowEmployer || 0),
+      welfareFundBaseEmployee: Number(welfareForm.welfareFundBaseEmployee || 0),
+      welfareFundBaseEmployer: Number(welfareForm.welfareFundBaseEmployer || 0),
+    };
+
+    requestConfirmation({
+      title: 'Confirm Statutory Welfare Fund Rule Changes',
+      itemName: 'Kerala Co-operative Welfare Fund Statutory Rules',
+      details: {
+        'Rule Type': cleanPayload.welfareFundRule === 'FLAT' ? 'Flat Standard Amount' : 'Salary Slabs (Basic + DA)',
+        'Basic + DA Threshold': `₹${cleanPayload.welfareFundThreshold.toLocaleString()}`,
+        'Above Threshold': `Employee: ₹${cleanPayload.welfareFundAboveEmployee} / Employer: ₹${cleanPayload.welfareFundAboveEmployer}`,
+        'Below/At Threshold': `Employee: ₹${cleanPayload.welfareFundBelowEmployee} / Employer: ₹${cleanPayload.welfareFundBelowEmployer}`,
+        'Flat Standard Base': `Employee: ₹${cleanPayload.welfareFundBaseEmployee} / Employer: ₹${cleanPayload.welfareFundBaseEmployer}`,
+      },
+      warningMessage: isCatalogueBank
+        ? 'Changes to statutory deductions will be submitted to the Approving Authority before taking effect on live payslips.'
+        : 'These statutory welfare fund values will be committed directly to the database and will govern all payroll calculations and accounting entries across the bank.',
+      confirmLabel: isCatalogueBank ? 'Submit for Approval' : 'Confirm & Save to DB',
+      confirmVariant: 'primary',
+      onConfirm: () => updateWelfareMutation.mutate(cleanPayload),
+    });
+  }
 
   function handleSaveDeduction() {
     if (!form.name.trim()) {
@@ -638,6 +719,17 @@ export function DeductionsPage() {
       ),
     },
     {
+      field: 'salaryStage',
+      label: 'Salary Stage',
+      render: (r) => {
+        const stageNo = r.CurrentPayStage?.stage_no ?? r.currentStageNo ?? r.CurrentPayStage?.stageNo;
+        if (stageNo != null) {
+          return <Badge variant="primary">Stage {stageNo}</Badge>;
+        }
+        return <Badge variant="secondary">Direct Pay</Badge>;
+      },
+    },
+    {
       field: 'currentBasicPay',
       label: 'Basic Pay (₹)',
       mono: true,
@@ -801,50 +893,218 @@ export function DeductionsPage() {
       </header>
 
       {/* Welfare Fund Statutory Rules & Interactive Verification */}
-      <Card title="Welfare Fund Statutory Rules &amp; Verification">
+      <Card
+        title="Welfare Fund Statutory Rules & Verification"
+        headerAction={
+          <Button
+            variant={welfareEditOpen ? 'secondary' : 'primary'}
+            size="sm"
+            onClick={() => {
+              if (welfareEditOpen) {
+                // reset to current payrollSettings
+                if (payrollSettings) {
+                  setWelfareForm({
+                    welfareFundRule: payrollSettings.welfareFundRule || 'SLAB',
+                    welfareFundThreshold: String(payrollSettings.welfareFundThreshold ?? 10000),
+                    welfareFundAboveEmployee: String(payrollSettings.welfareFundAboveEmployee ?? 300),
+                    welfareFundAboveEmployer: String(payrollSettings.welfareFundAboveEmployer ?? 250),
+                    welfareFundBelowEmployee: String(payrollSettings.welfareFundBelowEmployee ?? 250),
+                    welfareFundBelowEmployer: String(payrollSettings.welfareFundBelowEmployer ?? 200),
+                    welfareFundBaseEmployee: String(payrollSettings.welfareFundBaseEmployee ?? 45),
+                    welfareFundBaseEmployer: String(payrollSettings.welfareFundBaseEmployer ?? 45),
+                  });
+                }
+                setWelfareEditOpen(false);
+              } else {
+                setWelfareEditOpen(true);
+              }
+            }}
+          >
+            {welfareEditOpen ? 'Cancel Edit' : 'Edit Statutory Rules & Thresholds'}
+          </Button>
+        }
+      >
         <p className="form-note">
-          Kerala statutory co-operative welfare fund deduction rules. Standard deduction is ₹45 each for employee and employer. When slab rules apply, amounts are determined by Basic + DA against the ₹10,000 threshold.
+          Kerala statutory co-operative welfare fund deduction rules. Standard deduction is ₹45 each for employee and employer. When slab rules apply, amounts are determined by Basic + DA against the threshold (statutory ₹10,000).
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', margin: '1rem 0' }}>
-          <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>BASIC + DA &gt; ₹10,000 (SLAB TIER 1)</div>
-            <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
-              Employee: ₹{payrollSettings?.welfareFundAboveEmployee ?? 300}{' '}
-              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
-                / Employer: ₹{payrollSettings?.welfareFundAboveEmployer ?? 250}
-              </span>
+        {welfareEditOpen ? (
+          <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '8px', border: '1px solid #cbd5e1', margin: '1rem 0' }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9375rem', marginBottom: '1rem', color: '#0f172a' }}>
+              Edit Statutory Welfare Fund Rules &amp; Slabs
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Statutory rate for higher earning tier</div>
-          </div>
+            <div className="form-grid">
+              <div className="field">
+                <label className="field-label" htmlFor="wf-edit-rule">Welfare Fund Rule</label>
+                <select
+                  id="wf-edit-rule"
+                  className="input"
+                  value={welfareForm.welfareFundRule}
+                  onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundRule: e.target.value })}
+                >
+                  <option value="SLAB">Salary Slabs (Basic + DA Threshold)</option>
+                  <option value="FLAT">Flat Standard Amount Only</option>
+                </select>
+              </div>
 
-          <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>BASIC + DA ≤ ₹10,000 (SLAB TIER 2)</div>
-            <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
-              Employee: ₹{payrollSettings?.welfareFundBelowEmployee ?? 250}{' '}
-              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
-                / Employer: ₹{payrollSettings?.welfareFundBelowEmployer ?? 200}
-              </span>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Statutory rate for standard tier</div>
-          </div>
+              <Input
+                id="wf-edit-thresh"
+                label="Slab Threshold (Basic + DA ₹)"
+                type="number"
+                step="100"
+                min="0"
+                value={welfareForm.welfareFundThreshold}
+                onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundThreshold: e.target.value })}
+                mono
+                required
+                hint="Statutory ₹10,000"
+              />
 
-          <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>FLAT STANDARD RATE / BASE</div>
-            <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
-              Employee: ₹{payrollSettings?.welfareFundBaseEmployee ?? 45}{' '}
-              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
-                / Employer: ₹{payrollSettings?.welfareFundBaseEmployer ?? 45}
-              </span>
+              <Input
+                id="wf-edit-above-emp"
+                label="Above Threshold: Employee (₹)"
+                type="number"
+                step="1"
+                min="0"
+                value={welfareForm.welfareFundAboveEmployee}
+                onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundAboveEmployee: e.target.value })}
+                mono
+                required
+                hint="Statutory ₹300 for higher tier"
+              />
+
+              <Input
+                id="wf-edit-above-empr"
+                label="Above Threshold: Employer (₹)"
+                type="number"
+                step="1"
+                min="0"
+                value={welfareForm.welfareFundAboveEmployer}
+                onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundAboveEmployer: e.target.value })}
+                mono
+                required
+                hint="Statutory ₹250 for higher tier"
+              />
+
+              <Input
+                id="wf-edit-below-emp"
+                label="Below / At Threshold: Employee (₹)"
+                type="number"
+                step="1"
+                min="0"
+                value={welfareForm.welfareFundBelowEmployee}
+                onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundBelowEmployee: e.target.value })}
+                mono
+                required
+                hint="Statutory ₹250 for standard tier"
+              />
+
+              <Input
+                id="wf-edit-below-empr"
+                label="Below / At Threshold: Employer (₹)"
+                type="number"
+                step="1"
+                min="0"
+                value={welfareForm.welfareFundBelowEmployer}
+                onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundBelowEmployer: e.target.value })}
+                mono
+                required
+                hint="Statutory ₹200 for standard tier"
+              />
+
+              <Input
+                id="wf-edit-base-emp"
+                label="Flat Base Rate: Employee (₹)"
+                type="number"
+                step="1"
+                min="0"
+                value={welfareForm.welfareFundBaseEmployee}
+                onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundBaseEmployee: e.target.value })}
+                mono
+                required
+                hint="Statutory ₹45 flat rate"
+              />
+
+              <Input
+                id="wf-edit-base-empr"
+                label="Flat Base Rate: Employer (₹)"
+                type="number"
+                step="1"
+                min="0"
+                value={welfareForm.welfareFundBaseEmployer}
+                onChange={(e) => setWelfareForm({ ...welfareForm, welfareFundBaseEmployer: e.target.value })}
+                mono
+                required
+                hint="Statutory ₹45 flat rate"
+              />
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Flat base rate when flat rule applies</div>
+
+            <div style={{ marginTop: '1.25rem', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
+              <Button
+                variant="secondary"
+                onClick={() => setWelfareEditOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                loading={updateWelfareMutation.isPending}
+                onClick={handleSaveWelfareFund}
+              >
+                Save Welfare Fund Rules to DB
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', margin: '1rem 0' }}>
+            <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
+                BASIC + DA &gt; ₹{Number(payrollSettings?.welfareFundThreshold ?? 10000).toLocaleString()} (TIER 1)
+              </div>
+              <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+                Employee: ₹{payrollSettings?.welfareFundAboveEmployee ?? 300}{' '}
+                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
+                  / Employer: ₹{payrollSettings?.welfareFundAboveEmployer ?? 250}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Statutory rate for higher earning tier</div>
+            </div>
+
+            <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
+                BASIC + DA ≤ ₹{Number(payrollSettings?.welfareFundThreshold ?? 10000).toLocaleString()} (TIER 2)
+              </div>
+              <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+                Employee: ₹{payrollSettings?.welfareFundBelowEmployee ?? 250}{' '}
+                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
+                  / Employer: ₹{payrollSettings?.welfareFundBelowEmployer ?? 200}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Statutory rate for standard tier</div>
+            </div>
+
+            <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>FLAT STANDARD RATE / BASE</div>
+              <div style={{ marginTop: '0.35rem', fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+                Employee: ₹{payrollSettings?.welfareFundBaseEmployee ?? 45}{' '}
+                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#64748b' }}>
+                  / Employer: ₹{payrollSettings?.welfareFundBaseEmployer ?? 45}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Flat base rate when flat rule applies</div>
+            </div>
+          </div>
+        )}
 
         {/* Live Welfare Fund Simulator Tool */}
         <div style={{ background: '#f1f5f9', padding: '1rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-          <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem', color: '#1e293b' }}>
-            Live Welfare Fund Verification Calculator:
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#1e293b' }}>
+              Live Welfare Fund Verification Calculator:
+            </div>
+            {welfareEditOpen && (
+              <Badge variant="warning">Testing uncommitted form inputs in real-time</Badge>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ maxWidth: '200px' }}>
@@ -1277,9 +1537,21 @@ export function DeductionsPage() {
             {empError && <div className="auth-error" role="alert">{empError}</div>}
 
             <div style={{ background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Employee Salary Base:</div>
-              <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-                Basic Pay: ₹{Number(editingEmployee.currentBasicPay || 0).toLocaleString()} | Post: {editingEmployee.designation || 'Staff'}
+              <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Employee Salary &amp; Pay Scale Information:</div>
+              <div style={{ fontSize: '0.8125rem', color: '#64748b', marginTop: '0.25rem' }}>
+                Salary Stage:{' '}
+                <strong style={{ color: '#0f172a' }}>
+                  {editingEmployee.CurrentPayStage?.stage_no != null
+                    ? `Stage ${editingEmployee.CurrentPayStage.stage_no}`
+                    : editingEmployee.currentStageNo != null
+                    ? `Stage ${editingEmployee.currentStageNo}`
+                    : 'Direct Pay'}
+                </strong>{' '}
+                | Basic Pay: <strong style={{ color: '#0f172a' }}>₹{Number(editingEmployee.currentBasicPay || 0).toLocaleString()}</strong>
+                {editingEmployee.CurrentPayScale?.scaleName && (
+                  <span> | Scale: {editingEmployee.CurrentPayScale.scaleName}</span>
+                )}
+                {' '}| Post: {editingEmployee.designation || editingEmployee.department || 'Staff'}
               </div>
             </div>
 
@@ -1395,6 +1667,7 @@ export function DeductionsPage() {
         verificationText={confirmModal.verificationText}
         verificationLabel={confirmModal.verificationLabel}
         loading={
+          updateWelfareMutation.isPending ||
           createMutation.isPending ||
           updateMutation.isPending ||
           statusMutation.isPending ||

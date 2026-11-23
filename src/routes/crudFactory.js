@@ -118,7 +118,11 @@ function crudRouter(model, options) {
           where[orgFilterField] = req.user.organizationId;
         }
       }
-      const rows = await model.findAll({ where: req.access ? { ...where, ...scopedWhere(req.access, readPermission, model.name) } : where, order: [['id', 'ASC']] });
+      const rows = await model.findAll({
+        where: req.access ? { ...where, ...scopedWhere(req.access, readPermission, model.name) } : where,
+        include: options.include || undefined,
+        order: [['id', 'ASC']],
+      });
       res.json({ data: rows.map(serialize) });
     } catch (err) {
       res.status(500).json({ status: 'error', message: err.message });
@@ -128,7 +132,9 @@ function crudRouter(model, options) {
   // GET /:id
   router.get('/:id', ...guard('get', true), async (req, res) => {
     try {
-      const row = await model.findByPk(req.params.id);
+      const row = await model.findByPk(req.params.id, {
+        include: options.include || undefined,
+      });
       if (!row) return res.status(404).json({ status: 'error', message: 'Not found' });
       if (isTenantScoped() && req.user.role !== 'SUPER_ADMIN' && String(row[orgFilterField]) !== String(req.user.organizationId)) {
         return res.status(404).json({ status: 'error', message: 'Not found' });

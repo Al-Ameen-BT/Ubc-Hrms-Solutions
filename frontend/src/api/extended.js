@@ -101,6 +101,12 @@ export const yearEndApi = {
   close: (orgId, year, remarks) =>
     api.post(`/organizations/${orgId}/year-end/${year}/close`, { remarks }),
   reopen: (orgId, year) => api.post(`/organizations/${orgId}/year-end/${year}/reopen`, {}),
+  previewLeaveRollover: (orgId, fromYear) =>
+    api.get(`/organizations/${orgId}/year-end/leave-rollover/preview?fromYear=${fromYear}`),
+  executeLeaveRollover: (orgId, fromYear, remarks) =>
+    api.post(`/organizations/${orgId}/year-end/leave-rollover/execute`, { fromYear, remarks }),
+  leaveRolloverHistory: (orgId) =>
+    api.get(`/organizations/${orgId}/year-end/leave-rollover/history`),
 };
 
 /* ------------------------------------------- Organisation profile (Org Admin) */

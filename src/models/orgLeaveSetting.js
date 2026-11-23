@@ -30,6 +30,15 @@ const OrgLeaveSetting = sequelize.define('OrgLeaveSetting', {
     field: 'weekend_policy',
   },
 
+  // Leave entitlement year cycle: CALENDAR (1 Jan - 31 Dec, standard under KSR)
+  // or FINANCIAL (1 Apr - 31 Mar, if overridden by bank bylaws).
+  leaveYearCycle: {
+    type: DataTypes.ENUM('CALENDAR', 'FINANCIAL'),
+    allowNull: false,
+    defaultValue: 'CALENDAR',
+    field: 'leave_year_cycle',
+  },
+
   remarks: { type: DataTypes.STRING(500), allowNull: true },
 }, {
   tableName: 'org_leave_setting',

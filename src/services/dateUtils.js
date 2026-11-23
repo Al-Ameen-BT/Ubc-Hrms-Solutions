@@ -79,7 +79,12 @@ function yearLabelFor(yearType, calendarYear, calendarMonth) {
   return calendarYear;
 }
 
+/** Which leave cycle year label a given date or calendar year/month falls in. Defaults to CALENDAR for KSR compliance. */
+function leaveYearLabelFor(cycleType, calendarYear, calendarMonth) {
+  return yearLabelFor(cycleType || 'CALENDAR', calendarYear, calendarMonth);
+}
+
 module.exports = {
   toDate, fmt, isDateOnly, addMonths, addDays, diffInDays, nextOccurrenceOfMMDD, nextAnniversary,
-  yearBounds, yearLabelFor,
+  yearBounds, yearLabelFor, leaveYearLabelFor,
 };

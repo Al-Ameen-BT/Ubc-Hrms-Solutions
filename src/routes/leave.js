@@ -132,6 +132,9 @@ async function loadAppOr404(req, res) {
 applications.post('/:id/decide', requireFeaturePermission('leave.approve', APPROVERS, resource('LeaveApplication')), async (req, res) => {
   try {
     const row = await loadAppOr404(req, res); if (!row) return;
+    if (String(row.employeeId) === String(req.user.employeeId) || (row.appliedBy && String(row.appliedBy) === String(req.user.id))) {
+      return res.status(403).json({ status: 'error', message: 'Self-approval is not permitted. Leave applications must be approved by a separate authority.' });
+    }
     const { decision, reason } = req.body || {};
     const updated = await leave.decideLeave(row, decision, req.user.id, reason);
     await audit(req, 'leave_application.decide', { organizationId: row.Employee.organizationId, targetType: 'leave_application', targetId: row.id, details: { decision } });

@@ -33,7 +33,7 @@ async function fixture() {
 
 test('roles are protected; custom copies accept only their template ceiling and deny foreign IDs', async () => {
   const f = await fixture(), other = await fixture();
-  const list = await f.request('/roles'); assert.equal(list.status, 200); assert.equal(list.body.data.length, 10);
+  const list = await f.request('/roles'); assert.equal(list.status, 200); assert.equal(list.body.data.length, 11);
   for (const method of ['PUT', 'DELETE']) assert.equal((await f.request(`/roles/${f.role('HR_OFFICER').id}`, method, method === 'PUT' ? { name: 'Changed' } : undefined)).status, 400);
   assert.equal((await f.request('/roles', 'POST', { sourceRoleId: f.role('HR_OFFICER').id, code: 'EVIL', name: 'Evil', permissionCodes: ['payroll.prepare'] })).status, 400);
   assert.equal((await f.request('/roles', 'POST', { sourceRoleId: f.role('HR_OFFICER').id, code: 'UNKNOWN', name: 'Unknown', permissionCodes: ['invented.manage'] })).status, 400);
@@ -244,7 +244,7 @@ test('role catalogue exposes only immutable platform metadata and role lists inc
   const f = await fixture();
   const result = await f.request('/roles/catalogue');
   assert.equal(result.status, 200);
-  assert.equal(result.body.data.templates.length, 10);
+  assert.equal(result.body.data.templates.length, 11);
   assert.ok(result.body.data.templates.every(role => role.description && role.isProtected));
   assert.ok(result.body.data.permissions.every(permission => permission.allowedScopes && permission.guardrails && permission.risk));
   const list = (await f.request('/roles')).body.data;
@@ -252,6 +252,37 @@ test('role catalogue exposes only immutable platform metadata and role lists inc
   const employee = await f.account();
   assert.equal((await f.request('/roles/catalogue', 'GET', undefined, employee)).status, 403);
   assert.equal(JSON.stringify(result.body).includes('passwordHash'), false);
+});
+
+test('mutually exclusive role assignments are rejected at assignment time', async () => {
+  const f = await fixture(), target = await f.account();
+  // Assign PAYROLL_OFFICER
+  const assignPayroll = await f.request('/role-assignments', 'POST', {
+    userId: target.id,
+    roleId: f.role('PAYROLL_OFFICER').id,
+    scopeType: 'ORGANISATION',
+    effectiveFrom: todayIST(),
+  });
+  assert.equal(assignPayroll.status, 201);
+
+  // Attempt to assign APPROVING_AUTHORITY to same user -> 409 SoD conflict
+  const assignApprover = await f.request('/role-assignments', 'POST', {
+    userId: target.id,
+    roleId: f.role('APPROVING_AUTHORITY').id,
+    scopeType: 'ORGANISATION',
+    effectiveFrom: todayIST(),
+  });
+  assert.equal(assignApprover.status, 409);
+  assert.ok(assignApprover.body.message.includes('mutually exclusive') || assignApprover.body.message.includes('Separation of duties'));
+
+  // Attempt to assign ACCOUNTS_OFFICER to same user -> 409 SoD conflict
+  const assignAccounts = await f.request('/role-assignments', 'POST', {
+    userId: target.id,
+    roleId: f.role('ACCOUNTS_OFFICER').id,
+    scopeType: 'ORGANISATION',
+    effectiveFrom: todayIST(),
+  });
+  assert.equal(assignAccounts.status, 409);
 });
 
 test('auth me gives the client safe access mode and bootstrap restriction without expanding effective grants', async () => {

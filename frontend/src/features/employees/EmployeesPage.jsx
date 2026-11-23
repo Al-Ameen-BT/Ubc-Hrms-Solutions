@@ -35,7 +35,7 @@ export function EmployeesPage({ embedded = false }) {
     const dojMonth = params.get('dojMonth');
     const confirmationMonth = params.get('confirmationMonth');
     return all.filter((e) => (
-      (!q || `${e.name} ${e.empCode} ${e.department || ''}`.toLowerCase().includes(q))
+      (!q || `${e.name} ${e.empCode} ${e.department || ''} stage ${e.CurrentPayStage?.stageNo ?? e.currentStageId ?? ''}`.toLowerCase().includes(q))
       && (!branchId || String(e.branchId || '') === branchId)
       && (!departmentId || (departmentId === 'unassigned' ? !e.departmentId : String(e.departmentId || '') === departmentId))
       && (!dojMonth || String(e.doj || '').startsWith(dojMonth))
@@ -47,6 +47,17 @@ export function EmployeesPage({ embedded = false }) {
     { field: 'empCode', label: 'Code', mono: true },
     { field: 'name', label: 'Name' },
     { field: 'postCadreId', label: 'Post', render: (row) => postName(row.postCadreId) },
+    {
+      field: 'salaryStage',
+      label: 'Salary Stage',
+      render: (row) => {
+        if (row.directPay) return <Badge variant="secondary">Direct Pay</Badge>;
+        const stageNo = row.CurrentPayStage?.stageNo;
+        if (stageNo != null) return <Badge variant="primary">Stage {stageNo}</Badge>;
+        if (row.currentStageId != null) return <Badge variant="primary">Stage #{row.currentStageId}</Badge>;
+        return <span className="text-muted">—</span>;
+      },
+    },
     { field: 'department', label: 'Department', render: (row) => row.department || '—' },
     { field: 'currentBasicPay', label: 'Basic Pay', mono: true, align: 'right', render: (row) => fmt.money(row.currentBasicPay) },
     { field: 'status', label: 'Status', render: (row) => <Badge variant={row.status === 'ACTIVE' ? 'success' : 'default'}>{row.status}</Badge> },

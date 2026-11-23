@@ -132,8 +132,19 @@ async function createAccount(req, { organizationId, email, name, role, employeeI
   };
   const user = await sequelize.transaction(async transaction => {
     const organization = organizationId && await Organization.findByPk(organizationId, { transaction, lock: transaction.LOCK.UPDATE });
-    if (employeeId) await tenantResource(Employee, employeeId, organizationId, transaction, true);
-    if (Array.isArray(assignments)) for (const data of assignments) await validateAssignment(data, { id: null, employeeId, role }, { organizationId, transaction });
+    if (Array.isArray(assignments)) {
+      const { areRolesMutuallyExclusive } = require('./permissionCatalog');
+      for (const data of assignments) await validateAssignment(data, { id: null, employeeId, role }, { organizationId, transaction });
+      for (let i = 0; i < assignments.length; i++) {
+        for (let j = i + 1; j < assignments.length; j++) {
+          const roleA = await tenantResource(OrganizationRole, assignments[i].roleId, organizationId, transaction);
+          const roleB = await tenantResource(OrganizationRole, assignments[j].roleId, organizationId, transaction);
+          if (areRolesMutuallyExclusive(roleA.templateCode, roleB.templateCode)) {
+            bad(`Separation of duties violation: Cannot assign both '${roleA.name}' and '${roleB.name}' to the same user`, 409);
+          }
+        }
+      }
+    }
     if (organization && req.user && req.user.role !== 'SUPER_ADMIN') {
       await authorizeAccess({ organizationId, transaction, actor: req.user }, 'users.manage');
       if (assignments !== undefined) await authorizeAccess({ organizationId, transaction, actor: req.user });
@@ -432,6 +443,29 @@ async function validateAssignment(data, user, o) {
     if (!(role.isProtected && role.code === 'ORGANISATION_ADMIN' && user.role === 'ORG_ADMIN') || history.some(a => a.roleId === baseline?.id)) bad('An active employee link is required');
     if (await User.count({ where: { organizationId: o.organizationId, role: 'ORG_ADMIN', employeeId: null, status: 'ACTIVE', id: { [Op.ne]: user.id } }, transaction: o.transaction })) bad('Only one unlinked bootstrap administrator is allowed');
   }
+  if (data.status !== 'INACTIVE' && user.id) {
+    const { areRolesMutuallyExclusive } = require('./permissionCatalog');
+    const otherAssignments = await UserRoleAssignment.findAll({
+      where: {
+        organizationId: o.organizationId,
+        userId: user.id,
+        status: 'ACTIVE',
+        ...(o.id ? { id: { [Op.ne]: o.id } } : {}),
+      },
+      transaction: o.transaction,
+    });
+    if (otherAssignments.length) {
+      const otherRoles = await OrganizationRole.findAll({
+        where: { organizationId: o.organizationId, id: otherAssignments.map(a => a.roleId) },
+        transaction: o.transaction,
+      });
+      for (const assigned of otherRoles) {
+        if (areRolesMutuallyExclusive(role.templateCode, assigned.templateCode)) {
+          bad(`Separation of duties violation: Role '${role.name}' is mutually exclusive with actively assigned role '${assigned.name}'`, 409);
+        }
+      }
+    }
+  }
   return { role, branchIds, departmentIds, values: { roleId: role.id, scopeType: data.scopeType, effectiveFrom: data.effectiveFrom, effectiveTo: data.effectiveTo || null, status: data.status || 'ACTIVE' } };
 }
 async function endUserAssignments(user, o) {
@@ -530,6 +564,36 @@ async function permissionModeReadiness(o) {
   if (pendingLeave) blockers.push({ reason: 'PENDING_LEAVE_APPROVER_REQUIRED', count: pendingLeave });
   const legacyArrears = await ArrearsCase.count({ where: { organizationId: o.organizationId, [Op.or]: [{ calculatedBy: null }, { planApprovedBy: null }, { totalAdjustedAmount: { [Op.ne]: null }, adjustedBy: null }] }, include: [{ model: ArrearsInstallment, required: true, attributes: [], where: { status: 'PENDING' } }], distinct: true, transaction: o.transaction });
   if (legacyArrears) blockers.push({ reason: 'LEGACY_ARREARS_ACTOR_HISTORY_REQUIRED', count: legacyArrears });
+  const { areRolesMutuallyExclusive } = require('./permissionCatalog');
+  const allAssignments = await UserRoleAssignment.findAll({
+    where: { organizationId: o.organizationId, status: 'ACTIVE' },
+    transaction: o.transaction,
+  });
+  if (allAssignments.length) {
+    const allRoles = await OrganizationRole.findAll({
+      where: { organizationId: o.organizationId, id: allAssignments.map(a => a.roleId) },
+      transaction: o.transaction,
+    });
+    const userRoleMap = new Map();
+    for (const a of allAssignments) {
+      if (!userRoleMap.has(a.userId)) userRoleMap.set(a.userId, []);
+      const role = allRoles.find(r => sameId(r.id, a.roleId));
+      if (role) userRoleMap.get(a.userId).push(role);
+    }
+    for (const [userId, userRoles] of userRoleMap.entries()) {
+      for (let i = 0; i < userRoles.length; i++) {
+        for (let j = i + 1; j < userRoles.length; j++) {
+          if (areRolesMutuallyExclusive(userRoles[i].templateCode, userRoles[j].templateCode)) {
+            blockers.push({
+              userId,
+              reason: 'MUTUALLY_EXCLUSIVE_ROLES_DETECTED',
+              conflict: `${userRoles[i].code} vs ${userRoles[j].code}`,
+            });
+          }
+        }
+      }
+    }
+  }
   return { ...readiness, ready: readiness.ready && !blockers.length, blockers };
 }
 

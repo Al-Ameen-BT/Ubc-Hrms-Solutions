@@ -371,6 +371,11 @@ function validatePeopleFields(req, org, employee) {
 }
 const employeeCrud = crudRouter(Employee, {
     serialize: maskEmployeeSensitive,
+    include: [
+      { model: PostCadre },
+      { model: PayScale, as: 'CurrentPayScale' },
+      { model: PayStage, as: 'CurrentPayStage' },
+    ],
     fields: [
       'organizationId', 'empCode', 'name', 'dob', 'doj', 'doa', 'postCadreId', 'grade', 'category',
       'currentPayScaleId', 'currentStageId', 'currentBasicPay', 'incrementPolicyId', 'payFixationPolicyId',
@@ -851,13 +856,23 @@ router.put('/:id/salary-credit-account', authenticate, requireFeaturePermission(
   try {
     const employee = await loadOwnEmployee(req, res); if (!employee) return;
     const accountId = req.body && req.body.accountId;
+    const previousAccountId = employee.salaryCreditAccountId;
     if (accountId) {
       const acct = await EmployeeBankAccount.findOne({ where: { id: accountId, employeeId: employee.id } });
       if (!acct) return res.status(400).json({ status: 'error', message: 'accountId: no such account for this employee.' });
     }
     employee.salaryCreditAccountId = accountId || null;
     await employee.save();
-    await require('../services/audit').audit(req, 'employee.salary_credit_account.update', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { accountId: accountId || null } });
+    await require('../services/audit').audit(req, 'employee.salary_credit_account.update', {
+      organizationId: employee.organizationId,
+      targetType: 'employee',
+      targetId: employee.id,
+      details: {
+        previousAccountId,
+        newAccountId: accountId || null,
+        securityAlert: 'CRITICAL_PAYROLL_DISBURSEMENT_ACCOUNT_CHANGE',
+      },
+    });
     res.json({ data: employee });
   } catch (err) { res.status(400).json({ status: 'error', message: err.message }); }
 });

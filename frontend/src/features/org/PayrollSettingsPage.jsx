@@ -9,6 +9,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { SettingsIcon, AlertTriangleIcon, CheckCircleIcon, RefreshCwIcon } from '../../components/ui/Icons';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -27,6 +28,42 @@ function Select({ id, label, value, onChange, options, hint, emptyLabel = 'Selec
   );
 }
 
+const FIELD_LABELS = {
+  daPercent: 'Dearness Allowance (DA %)',
+  hraType: 'HRA Basis',
+  hraPercent: 'HRA %',
+  hraFixedAmount: 'Fixed HRA (₹)',
+  hraMaxAmount: 'HRA Max Limit (₹)',
+  ccaAmount: 'City Compensatory Allowance (₹)',
+  conveyanceAmount: 'Conveyance Allowance (₹)',
+  retirementAge: 'Retirement Age',
+  pfEmployeePercent: 'PF Employee %',
+  pfEmployerPercent: 'PF Employer %',
+  pfCalculationBase: 'PF Calculation Base',
+  gsliAmount: 'GSLI Amount (₹)',
+  gsliCutoffDate: 'GSLI Cutoff Date',
+  ptSchedule: 'PT Schedule',
+  ptMonth1: 'PT Month 1',
+  ptMonth2: 'PT Month 2',
+  welfareFundRule: 'Welfare Fund Rule',
+  welfareFundThreshold: 'Welfare Fund Threshold (Basic + DA ₹)',
+  welfareFundAboveEmployee: 'Welfare Fund Above: Employee (₹)',
+  welfareFundAboveEmployer: 'Welfare Fund Above: Employer (₹)',
+  welfareFundBelowEmployee: 'Welfare Fund Below/At: Employee (₹)',
+  welfareFundBelowEmployer: 'Welfare Fund Below/At: Employer (₹)',
+  welfareFundBaseEmployee: 'Welfare Fund Flat Base: Employee (₹)',
+  welfareFundBaseEmployer: 'Welfare Fund Flat Base: Employer (₹)',
+  festivalAdvanceRepayMonths: 'Festival Advance Repay Months',
+  medicalAllowanceAmount: 'Medical Allowance (₹)',
+  medicalAllowanceMonth: 'Medical Allowance Month',
+  stagnationYears: 'Stagnation Years',
+  stagnationExtraStages: 'Stagnation Extra Stages',
+  bonusMonth: 'Bonus Month',
+  bonusResult: 'Bonus Result',
+  yearType: 'Year Type',
+  vehicleLoanAllowMultiple: 'Multiple Vehicle Loans Allowed',
+};
+
 export function PayrollSettingsPage() {
   const { canPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -34,6 +71,16 @@ export function PayrollSettingsPage() {
   const [form, setForm] = useState(null);
   const [effectiveDate, setEffectiveDate] = useState('');
   const [reason, setReason] = useState('');
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    title: '',
+    itemName: '',
+    details: {},
+    warningMessage: '',
+    confirmLabel: 'Confirm & Save',
+    confirmVariant: 'primary',
+    onConfirm: null,
+  });
 
   const canView = canPermission('compensation.view', ['ORG_ADMIN']) || canPermission('settings.view', ['ORG_ADMIN']);
   const canEdit = canPermission('compensation.prepare', ['ORG_ADMIN']) || canPermission('settings.configure', ['ORG_ADMIN']);
@@ -131,7 +178,90 @@ export function PayrollSettingsPage() {
         ([key, value]) => Object.hasOwn(data, key) && String(value ?? '') !== String(data[key] ?? '')
       )
     );
-  const submit = () => save.mutate(adopted ? changed() : form);
+
+  const submitWithConfirmation = () => {
+    const diff = changed();
+    const diffKeys = Object.keys(diff);
+    if (diffKeys.length === 0) {
+      toast.add('No changes detected in payroll settings.', 'info');
+      return;
+    }
+
+    const details = {};
+    for (const key of diffKeys) {
+      const label = FIELD_LABELS[key] || key;
+      const oldVal = data?.[key] != null && data[key] !== '' ? String(data[key]) : 'None';
+      const newVal = diff[key] != null && diff[key] !== '' ? String(diff[key]) : 'None';
+      details[label] = `${oldVal} → ${newVal}`;
+    }
+
+    setConfirmModal({
+      open: true,
+      title: 'Confirm Payroll Variables Update',
+      itemName: `${diffKeys.length} Setting(s) Modified`,
+      details,
+      warningMessage: adopted
+        ? 'These changes will be submitted to the Approving Authority as a proposed financial modification.'
+        : 'Updating these payroll variables will persist changes directly to the database and govern live payslip generation, statutory deduction calculations, and bank financial accounts.',
+      confirmLabel: adopted ? 'Submit for Approval' : 'Confirm & Save to DB',
+      confirmVariant: 'primary',
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, open: false }));
+        save.mutate(adopted ? diff : form);
+      },
+    });
+  };
+
+  const handleSaveWelfareFund = () => {
+    const welfareKeys = [
+      'welfareFundRule',
+      'welfareFundThreshold',
+      'welfareFundAboveEmployee',
+      'welfareFundAboveEmployer',
+      'welfareFundBelowEmployee',
+      'welfareFundBelowEmployer',
+      'welfareFundBaseEmployee',
+      'welfareFundBaseEmployer',
+    ];
+    const welfarePayload = Object.fromEntries(
+      welfareKeys.map((k) => [k, form[k]])
+    );
+    const welfareChanged = Object.fromEntries(
+      Object.entries(welfarePayload).filter(
+        ([key, value]) => String(value ?? '') !== String(data?.[key] ?? '')
+      )
+    );
+
+    const details = {
+      'Rule Type': form.welfareFundRule === 'FLAT' ? 'Flat Standard Amount' : 'Salary Slabs (Basic + DA)',
+      'Basic + DA Threshold': `₹${Number(form.welfareFundThreshold || 10000).toLocaleString()}`,
+      'Above Threshold': `Employee: ₹${form.welfareFundAboveEmployee ?? 300} / Employer: ₹${form.welfareFundAboveEmployer ?? 250}`,
+      'Below/At Threshold': `Employee: ₹${form.welfareFundBelowEmployee ?? 250} / Employer: ₹${form.welfareFundBelowEmployer ?? 200}`,
+      'Flat Base Rate': `Employee: ₹${form.welfareFundBaseEmployee ?? 45} / Employer: ₹${form.welfareFundBaseEmployer ?? 45}`,
+    };
+
+    if (Object.keys(welfareChanged).length > 0) {
+      details['Modified Fields'] = Object.keys(welfareChanged)
+        .map((k) => `${FIELD_LABELS[k] || k}: ${data?.[k] ?? '—'} → ${welfareChanged[k]}`)
+        .join(', ');
+    }
+
+    setConfirmModal({
+      open: true,
+      title: 'Confirm Statutory Welfare Fund Settings',
+      itemName: 'Welfare Fund (Basic + DA Rules & Thresholds)',
+      details,
+      warningMessage: adopted
+        ? 'Changes to statutory deductions will be submitted to the Approving Authority before taking effect on live payslips.'
+        : 'Saving these statutory welfare fund values to the database ensures data integrity, compliance with Kerala co-operative norms, and accurate accounting ledger postings.',
+      confirmLabel: adopted ? 'Submit for Approval' : 'Confirm & Save to DB',
+      confirmVariant: 'primary',
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, open: false }));
+        save.mutate(adopted ? welfarePayload : { ...form, ...welfarePayload });
+      },
+    });
+  };
 
   return (
     <div className="page">
@@ -148,7 +278,7 @@ export function PayrollSettingsPage() {
             <Button
               loading={save.isPending}
               disabled={!canEdit || (adopted && (!effectiveDate || !reason.trim() || !Object.keys(changed()).length))}
-              onClick={submit}
+              onClick={submitWithConfirmation}
             >
               {adopted ? 'Send for Approval' : 'Save Settings'}
             </Button>
@@ -264,7 +394,19 @@ export function PayrollSettingsPage() {
         </div>
       </Card>
 
-      <Card title="Welfare Fund (Statutory Deductions)">
+      <Card
+        title="Welfare Fund (Statutory Deductions)"
+        headerAction={
+          <Button
+            size="sm"
+            disabled={!canEdit}
+            loading={save.isPending}
+            onClick={handleSaveWelfareFund}
+          >
+            Save Welfare Fund Settings
+          </Button>
+        }
+      >
         <p className="form-note">
           Kerala statutory co-operative welfare fund rules. Standard deduction is ₹45 each for employee and employer. Slab rules apply based on Basic + DA (threshold ₹10,000).
         </p>
@@ -374,11 +516,24 @@ export function PayrollSettingsPage() {
         <Button
           loading={save.isPending}
           disabled={!canEdit || (adopted && (!effectiveDate || !reason.trim() || !Object.keys(changed()).length))}
-          onClick={submit}
+          onClick={submitWithConfirmation}
         >
           {adopted ? 'Send for Approval' : 'Save Settings'}
         </Button>
       </div>
+
+      <ConfirmationModal
+        open={confirmModal.open}
+        onClose={() => setConfirmModal((prev) => ({ ...prev, open: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        itemName={confirmModal.itemName}
+        details={confirmModal.details}
+        warningMessage={confirmModal.warningMessage}
+        confirmLabel={confirmModal.confirmLabel}
+        confirmVariant={confirmModal.confirmVariant}
+        loading={save.isPending}
+      />
     </div>
   );
 }

@@ -150,8 +150,8 @@ router.get('/settings/payroll', requireFeaturePermission(['compensation.view', '
 
 router.put('/settings/payroll', requireFeaturePermission(['compensation.prepare', 'settings.configure'], ['ORG_ADMIN']), async (req, res) => {
   try {
-    if (await require('../models').OrganizationCatalogueAdoption.count({ where: { organizationId: req.user.organizationId, status: 'APPROVED' } })) {
-      return res.status(409).json({ status: 'error', message: 'Propose payroll setting changes for a separate financial approval.' });
+    if (req.user.accessControlMode === 'PERMISSIONS' || await require('../models').OrganizationCatalogueAdoption.count({ where: { organizationId: req.user.organizationId, status: 'APPROVED' } })) {
+      return res.status(409).json({ status: 'error', message: 'Direct modification of statutory payroll settings is disabled in permission mode. Submit a financial change proposal for maker-checker approval.' });
     }
     const row = await payrollSettings.updateSettings(req.user.organizationId, req.body);
     await audit(req, 'org.payroll_settings.update', { targetType: 'organization', targetId: req.user.organizationId });

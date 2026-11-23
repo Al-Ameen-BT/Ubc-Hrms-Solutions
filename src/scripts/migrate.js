@@ -312,7 +312,8 @@ const COLUMN_STEPS = [
   // employee_bank_account are all brand-new tables — no column steps
   // needed for their own columns. These are the new columns added to
   // ALREADY-EXISTING tables.
-  ['org_payroll_setting', 'year_type', { type: DataTypes.ENUM('CALENDAR', 'FINANCIAL'), allowNull: false, defaultValue: 'CALENDAR' }],
+  ['org_payroll_setting', 'year_type', { type: DataTypes.ENUM('CALENDAR', 'FINANCIAL'), allowNull: false, defaultValue: 'FINANCIAL' }],
+  ['org_leave_setting', 'leave_year_cycle', { type: DataTypes.ENUM('CALENDAR', 'FINANCIAL'), allowNull: false, defaultValue: 'CALENDAR' }],
   ['employee', 'salary_credit_account_id', { type: DataTypes.INTEGER.UNSIGNED, allowNull: true }],
   ['employee_overdraft', 'account_id', { type: DataTypes.INTEGER.UNSIGNED, allowNull: true }],
   ['employee_recurring_deposit', 'account_id', { type: DataTypes.INTEGER.UNSIGNED, allowNull: true }],

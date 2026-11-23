@@ -108,7 +108,7 @@ const OrgPayrollSetting = sequelize.define('OrgPayrollSetting', {
   // its "year" for year-end closing/reporting — CALENDAR (1 Jan-31 Dec) or
   // FINANCIAL (1 Apr-31 Mar, the common Indian financial year). See
   // services/yearEnd.js yearBounds()/yearLabelFor().
-  yearType: { type: DataTypes.ENUM('CALENDAR', 'FINANCIAL'), allowNull: false, defaultValue: 'CALENDAR', field: 'year_type' },
+  yearType: { type: DataTypes.ENUM('CALENDAR', 'FINANCIAL'), allowNull: false, defaultValue: 'FINANCIAL', field: 'year_type' },
 }, {
   tableName: 'org_payroll_setting',
 });

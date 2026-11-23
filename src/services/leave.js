@@ -19,12 +19,12 @@
  * figure is editable per organisation once created.
  */
 
-const { sequelize, LeaveType, OrgLeaveSetting, OrganizationHoliday, EmployeeLeaveBalance, LeaveApplication, Employee, OrgPayrollSetting, Organization, User, OrganizationBranch, EmployeeOrganizationAssignment, OrganizationResponsibilityAssignment } = require('../models');
+const { sequelize, LeaveType, OrgLeaveSetting, OrganizationHoliday, EmployeeLeaveBalance, LeaveApplication, Employee, OrgPayrollSetting, Organization, User, OrganizationBranch, EmployeeOrganizationAssignment, OrganizationResponsibilityAssignment, LeaveYearEndSnapshot } = require('../models');
 const { Op } = require('sequelize');
 const { todayIST } = require('./orgAccess');
 const { effectiveAccess, can, scopedWhere } = require('./accessControl');
 const { getSettings } = require('./payrollSettings');
-const { yearLabelFor } = require('./dateUtils');
+const { yearLabelFor, leaveYearLabelFor } = require('./dateUtils');
 
 class LeaveError extends Error {
   constructor(message, status) { super(message); this.status = status || 400; }
@@ -92,11 +92,12 @@ async function updateType(row, body) {
   return row;
 }
 
-/** Current org "year" label for a given date, per the org's yearType. */
+/** Current org leave cycle "year" label for a given date, per OrgLeaveSetting.leaveYearCycle (defaults to CALENDAR under KSR). */
 async function currentYearLabel(organizationId, onDate, transaction) {
-  const settings = transaction ? await OrgPayrollSetting.findOne({ where: { organizationId }, transaction }) || await OrgPayrollSetting.create({ organizationId }, { transaction }) : await getSettings(organizationId);
+  const settings = await getLeaveSettings(organizationId, transaction);
+  const cycleType = settings?.leaveYearCycle || 'CALENDAR';
   const d = onDate ? new Date(onDate) : new Date();
-  return yearLabelFor(settings.yearType, d.getUTCFullYear(), d.getUTCMonth() + 1);
+  return leaveYearLabelFor(cycleType, d.getUTCFullYear(), d.getUTCMonth() + 1);
 }
 
 async function getOrCreateBalance(employeeId, leaveTypeId, year, t) {
@@ -168,6 +169,9 @@ async function updateLeaveSettings(organizationId, body, transaction) {
   if (body.countSundaysAsHolidays !== undefined) payload.countSundaysAsHolidays = Boolean(body.countSundaysAsHolidays);
   if (body.weekendPolicy && ['SUNDAY_ONLY', 'SATURDAY_SUNDAY', 'SECOND_FOURTH_SATURDAY_SUNDAY'].includes(body.weekendPolicy)) {
     payload.weekendPolicy = body.weekendPolicy;
+  }
+  if (body.leaveYearCycle && ['CALENDAR', 'FINANCIAL'].includes(body.leaveYearCycle)) {
+    payload.leaveYearCycle = body.leaveYearCycle;
   }
   if (body.remarks !== undefined) payload.remarks = body.remarks ? String(body.remarks).slice(0, 500) : null;
   await row.update(payload, { transaction });
@@ -422,10 +426,186 @@ async function balancesFor(employeeId, year) {
   });
 }
 
+/**
+ * Previews leave year-end rollover from `fromYear` to `fromYear + 1`.
+ * Under KSR:
+ * - Casual Leave (CL, carryForward=false) lapses on 31 Dec (unavailed -> 0), new 20-day quota credited.
+ * - Earned Leave (EL, carryForward=true) rolls over closing balance, capped at maxAccumulation (300 days).
+ */
+async function previewLeaveYearEndRollover(organizationId, fromYear) {
+  const fromY = Number(fromYear);
+  const toY = fromY + 1;
+  const leaveSettings = await getLeaveSettings(organizationId);
+  const cycleType = leaveSettings?.leaveYearCycle || 'CALENDAR';
+  const employees = await Employee.findAll({
+    where: { organizationId, status: 'ACTIVE' },
+    order: [['empCode', 'ASC']],
+  });
+  const leaveTypes = await LeaveType.findAll({
+    where: { organizationId, status: 'ACTIVE' },
+    order: [['code', 'ASC']],
+  });
+
+  const preview = [];
+  let totalLapsed = 0;
+  let totalCarried = 0;
+  let totalCapped = 0;
+
+  for (const emp of employees) {
+    for (const lt of leaveTypes) {
+      if (lt.accrualMethod === 'NONE') continue;
+      // eslint-disable-next-line no-await-in-loop
+      const prevBal = await EmployeeLeaveBalance.findOne({
+        where: { employeeId: emp.id, leaveTypeId: lt.id, year: fromY },
+      });
+      const rawClosing = prevBal ? Number(prevBal.closingBalance) : 0;
+      let lapsed = 0;
+      let carried = 0;
+      let capped = 0;
+      let newOpening = 0;
+
+      if (!lt.carryForward) {
+        // Non-cumulative (e.g. Casual Leave): strictly lapses at year end
+        lapsed = Math.max(0, rawClosing);
+        carried = 0;
+        newOpening = 0;
+      } else {
+        // Cumulative (e.g. Earned Leave): carries forward subject to statutory cap
+        const maxAccumulation = lt.maxAccumulation != null ? Number(lt.maxAccumulation) : Infinity;
+        if (rawClosing > maxAccumulation) {
+          carried = maxAccumulation;
+          capped = round1(rawClosing - maxAccumulation);
+        } else {
+          carried = Math.max(0, rawClosing);
+        }
+        newOpening = carried;
+      }
+
+      const initialAccrual = lt.accrualMethod === 'FIXED_ANNUAL' ? Number(lt.annualDays) : 0;
+      const projectedClosing = round1(newOpening + initialAccrual);
+
+      totalLapsed = round1(totalLapsed + lapsed);
+      totalCarried = round1(totalCarried + carried);
+      totalCapped = round1(totalCapped + capped);
+
+      preview.push({
+        employeeId: emp.id,
+        empCode: emp.empCode,
+        employeeName: emp.name,
+        leaveTypeId: lt.id,
+        leaveTypeCode: lt.code,
+        leaveTypeName: lt.name,
+        carryForward: lt.carryForward,
+        accrualMethod: lt.accrualMethod,
+        maxAccumulation: lt.maxAccumulation,
+        previousOpening: prevBal ? Number(prevBal.openingBalance) : 0,
+        previousAccrued: prevBal ? Number(prevBal.accrued) : 0,
+        previousAvailed: prevBal ? Number(prevBal.availed) : 0,
+        previousClosing: rawClosing,
+        lapsedDays: lapsed,
+        carriedForwardDays: carried,
+        cappedDays: capped,
+        newOpeningBalance: newOpening,
+        initialAccrual,
+        projectedClosing,
+      });
+    }
+  }
+
+  return {
+    organizationId,
+    fromYear: fromY,
+    toYear: toY,
+    cycleType,
+    employeesCount: employees.length,
+    totalLapsedDays: totalLapsed,
+    totalCarriedForwardDays: totalCarried,
+    totalCappedDays: totalCapped,
+    records: preview,
+  };
+}
+
+/**
+ * Executes leave rollover from `fromYear` to `fromYear + 1` in an atomic transaction.
+ * Persists EmployeeLeaveBalance records for next year and creates an immutable LeaveYearEndSnapshot.
+ */
+async function executeLeaveYearEndRollover(organizationId, fromYear, executedByUserId, remarks) {
+  const fromY = Number(fromYear);
+  const toY = fromY + 1;
+  const existing = await LeaveYearEndSnapshot.findOne({
+    where: { organizationId, fromYear: fromY, toYear: toY },
+  });
+  if (existing) {
+    throw new LeaveError(`Leave rollover for ${fromY} -> ${toY} has already been executed on ${existing.executedAt}.`, 409);
+  }
+
+  const p = await previewLeaveYearEndRollover(organizationId, fromYear);
+
+  return sequelize.transaction(async (t) => {
+    for (const r of p.records) {
+      // eslint-disable-next-line no-await-in-loop
+      const [bal] = await EmployeeLeaveBalance.findOrCreate({
+        where: { employeeId: r.employeeId, leaveTypeId: r.leaveTypeId, year: toY },
+        defaults: {
+          employeeId: r.employeeId,
+          leaveTypeId: r.leaveTypeId,
+          year: toY,
+          openingBalance: r.newOpeningBalance,
+          accrued: r.initialAccrual,
+          availed: 0,
+          closingBalance: r.projectedClosing,
+          lastAccrualMonth: r.accrualMethod === 'FIXED_ANNUAL' ? 1 : null,
+        },
+        transaction: t,
+      });
+
+      // eslint-disable-next-line no-await-in-loop
+      await bal.update({
+        openingBalance: r.newOpeningBalance,
+        accrued: r.initialAccrual,
+        closingBalance: round1(r.newOpeningBalance + r.initialAccrual - Number(bal.availed || 0)),
+        lastAccrualMonth: r.accrualMethod === 'FIXED_ANNUAL' ? 1 : bal.lastAccrualMonth,
+      }, { transaction: t });
+    }
+
+    const snapshot = await LeaveYearEndSnapshot.create({
+      organizationId,
+      fromYear: fromY,
+      toYear: toY,
+      cycleType: p.cycleType,
+      employeesCount: p.employeesCount,
+      totalLapsedDays: p.totalLapsedDays,
+      totalCarriedForwardDays: p.totalCarriedForwardDays,
+      totalCappedDays: p.totalCappedDays,
+      executedAt: new Date(),
+      executedBy: executedByUserId || null,
+      summaryJson: JSON.stringify({
+        totalLapsedDays: p.totalLapsedDays,
+        totalCarriedForwardDays: p.totalCarriedForwardDays,
+        totalCappedDays: p.totalCappedDays,
+        recordsCount: p.records.length,
+      }),
+      remarks: remarks ? String(remarks).slice(0, 500) : null,
+    }, { transaction: t });
+
+    return snapshot;
+  });
+}
+
+async function listLeaveYearEndSnapshots(organizationId) {
+  return LeaveYearEndSnapshot.findAll({
+    where: { organizationId },
+    include: [{ model: User, as: 'ExecutedByUser', attributes: ['id', 'name', 'email'] }],
+    order: [['toYear', 'DESC']],
+  });
+}
+
 module.exports = {
   LeaveError, DEFAULT_LEAVE_TYPES, seedDefaultLeaveTypes,
   createType, updateType, currentYearLabel,
   accrueForMonth, applyLeave, decideLeave, cancelLeave, balancesFor,
   inclusiveDays,
   getLeaveSettings, updateLeaveSettings, calculateLeaveBreakdown, isWeekendDay,
+  previewLeaveYearEndRollover, executeLeaveYearEndRollover, listLeaveYearEndSnapshots,
 };
+

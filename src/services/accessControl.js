@@ -121,12 +121,24 @@ function guardFields(permissionCode, resourceType) {
     else if (resourceType === 'ExpenseClaim') fields.push('decidedBy');
     else return null;
   }
-  if (resourceType === 'ExpenseClaim' && ['expenses.prepare', 'expenses.approve', 'payments.pay'].includes(permissionCode)) fields.push('submittedBy');
+  if (guardrails.includes('SELF_APPROVAL_BLOCKED')) {
+    if (resourceType === 'LeaveApplication') fields.push('appliedBy', 'employeeId');
+    else if (resourceType === 'ExpenseClaim') fields.push('submittedBy');
+  }
+  if (resourceType === 'ExpenseClaim' && ['expenses.prepare', 'expenses.verify', 'expenses.approve', 'payments.pay'].includes(permissionCode)) fields.push('submittedBy');
   return fields;
 }
-function hasProtectedConflict(permissionCode, resource, actorId) {
+function hasProtectedConflict(permissionCode, resource, actorId, actorEmployeeId) {
   const fields = guardFields(permissionCode, typeOf(resource));
-  return !actorId || !fields || fields.some(field => !Object.hasOwn(resource.dataValues || resource, field) || sameId(resource[field], actorId));
+  if (!actorId || !fields) return true;
+  return fields.some(field => {
+    if (!Object.hasOwn(resource.dataValues || resource, field)) return false;
+    const val = resource[field];
+    if (val == null) return false;
+    if (sameId(val, actorId)) return true;
+    if (actorEmployeeId && field === 'employeeId' && sameId(val, actorEmployeeId)) return true;
+    return false;
+  });
 }
 function can(access, permissionCode, resource) {
   const grants = access?.grants?.filter(g => g.action === permissionCode) || [];
@@ -136,7 +148,7 @@ function can(access, permissionCode, resource) {
   const resourceType = typeOf(resource);
   const model = resourceModel(resourceType);
   if (!validResource(access, resource, model)) return false;
-  if (hasProtectedConflict(permissionCode, resource, access.userId)) return false;
+  if (hasProtectedConflict(permissionCode, resource, access.userId, access.employeeId)) return false;
   if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY') && (resourceType === 'ArrearsCase' ? resource.paymentMode === 'NONE' || !resource.planApprovedBy : resource.status !== 'APPROVED')) return false;
   const employeeId = model === Employee ? resource.id : model.rawAttributes.employeeId ? resource.employeeId : null;
   const scoped = { id: employeeId, branchId: model === OrganizationBranch ? resource.id : resource.branchId, departmentId: model === OrganizationDepartment ? resource.id : resource.departmentId };
@@ -204,7 +216,13 @@ function scopedWhere(access, permissionCode, resourceType) {
   }
   const fields = guardFields(permissionCode, resourceType);
   if (!fields) return deny;
-  for (const field of fields) clauses.push({ [Op.or]: [{ [field]: null }, { [field]: { [Op.ne]: access.userId } }] });
+  for (const field of fields) {
+    if (field === 'employeeId' && access.employeeId) {
+      clauses.push({ [Op.or]: [{ [field]: null }, { [field]: { [Op.ne]: access.employeeId } }] });
+    } else {
+      clauses.push({ [Op.or]: [{ [field]: null }, { [field]: { [Op.ne]: access.userId } }] });
+    }
+  }
   if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY')) clauses.push(resourceType === 'ArrearsCase' ? { paymentMode: { [Op.ne]: 'NONE' }, planApprovedBy: { [Op.ne]: null } } : { status: 'APPROVED' });
   return { [Op.and]: clauses };
 }

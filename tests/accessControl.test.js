@@ -222,6 +222,17 @@ test('payment guardrails deny preparer, approver and unapproved runs in SQL and 
   assert.deepEqual(await ids(access, 'payments.pay', 'PayrollRun'), [runs[3].id]);
 });
 
+test('self-approval guardrails block approving user own leave application', async () => {
+  const b = await fixture();
+  await assign(b, 'HR_ADMIN', ['leave.approve'], 'ORGANISATION');
+  const access = await effectiveAccess(b.user.id, at);
+  // b.employees[0] is linked to b.user
+  const ownApp = { resourceType: 'LeaveApplication', organizationId: b.org.id, employeeId: b.employees[0].id, appliedBy: b.user.id };
+  const otherApp = { resourceType: 'LeaveApplication', organizationId: b.org.id, employeeId: b.employees[1].id, appliedBy: 999 };
+  assert.equal(can(access, 'leave.approve', ownApp), false);
+  assert.equal(can(access, 'leave.approve', otherApp), true);
+});
+
 test('ending a legacy bootstrap assignment cannot restore unrestricted legacy admin access', async () => {
   const b = await fixture('LEGACY', 'ORG_ADMIN');
   await b.user.update({ employeeId: null });

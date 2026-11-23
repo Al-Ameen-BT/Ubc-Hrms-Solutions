@@ -62,3 +62,7 @@ docs/**/*-task-details.md
 AGENTS.md
 AGENTS.override.md
 CLAUDE.md
+
+# --- Demo Data (sample spreadsheets & generated seed files) ---------------
+demoData/
+
