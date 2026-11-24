@@ -122,40 +122,44 @@ test('today actions are ordered by priority and then employee name', () => {
   ]).map((row) => row.id), [3, 2, 1]);
 });
 
-test('organisation overview exposes the operational HR command-centre landmarks', () => {
+test('organisation dashboard composes the approved operational sections in priority order', () => {
   const source = fs.readFileSync(new URL('../src/features/org/OrgDashboard.jsx', import.meta.url), 'utf8');
-  const appSource = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  for (const label of [
-    "Today’s HR Actions",
-    'Approvals & Alerts',
-    'Attendance Exceptions',
-    'Pending Approvals',
-    'Payroll Blockers',
-    'Onboarding & Offboarding',
-    'Compliance Alerts',
-    'Branch Readiness',
-  ]) assert.match(source, new RegExp(label.replace('&', '\\&')));
-  assert.doesNotMatch(source, /WorkplacePieChart/);
-  assert.doesNotMatch(source, /Absent or unmarked/i);
-  assert.match(appSource, /canPermission\('hr\.view'/);
+  const filterIndex = source.indexOf('<DashboardFilterBar');
+  const overviewIndex = source.indexOf('<OrganisationOverview');
+  const branchIndex = source.indexOf('<BranchHealth');
+  const summaryIndex = source.indexOf('<OperationalSummary');
+  assert.ok(filterIndex > 0 && filterIndex < overviewIndex && overviewIndex < branchIndex && branchIndex < summaryIndex);
+  assert.match(source, /useSearchParams/);
+  assert.match(source, /commandCentreParams/);
+  assert.doesNotMatch(source, /Today’s HR Actions|Approvals & Alerts|dashboard-workspace/);
+  assert.equal(fs.existsSync(new URL('../src/features/dashboard/WorkforceInsights.jsx', import.meta.url)), false);
 });
 
-test('workforce insights expose compact drill-down charts with top 3 hero donuts directly above the action table', () => {
-  const dashboard = fs.readFileSync(new URL('../src/features/org/OrgDashboard.jsx', import.meta.url), 'utf8');
-  const insights = fs.readFileSync(new URL('../src/features/dashboard/WorkforceInsights.jsx', import.meta.url), 'utf8');
-  const employees = fs.readFileSync(new URL('../src/features/employees/EmployeesPage.jsx', import.meta.url), 'utf8');
-  assert.ok(dashboard.indexOf('<WorkforceInsights') < dashboard.indexOf('Today’s HR Actions'));
-  for (const label of ['Workforce Insights', 'Attendance Status Today', 'Attendance Exceptions', 'Workforce by Branch', 'Workforce by Department', 'Leave Distribution', 'Employee Lifecycle', 'Seven-Day Attendance Trend', 'Late Arrival Trend', 'Leave Trend by Type', 'Payroll Readiness']) assert.match(insights, new RegExp(label));
-  assert.match(insights, /PieChart/);
-  assert.match(insights, /LineChart/);
-  assert.match(insights, /BarChart/);
-  assert.match(insights, /aria-label=.*count.*percent/i);
-  assert.match(insights, /No data available/);
-  assert.doesNotMatch(insights, /142|168 Staff|20 Exceptions/);
-  assert.match(dashboard, /asOfTime=\{currentTime\(now\)\}/);
-  assert.match(employees, /useSearchParams/);
-  assert.match(employees, /branchId/);
-  assert.match(employees, /departmentId/);
-  assert.match(employees, /dojMonth/);
-  assert.match(employees, /confirmationMonth/);
+test('organisation overview uses six drill-down KPIs, horizontal distribution, segmented attendance and one trend line', () => {
+  const source = fs.readFileSync(new URL('../src/features/dashboard/OrganisationOverview.jsx', import.meta.url), 'utf8');
+  for (const label of ['Total Workforce', 'Present Today', 'On Leave', 'Open Positions', 'Payroll Readiness', 'HR Actions']) assert.match(source, new RegExp(label));
+  assert.match(source, /BarChart/);
+  assert.match(source, /layout="vertical"/);
+  assert.match(source, /LineChart/);
+  assert.match(source, /Present|Late|On Leave|Unmarked|Absent/);
+  assert.match(source, /No workforce data matches this scope|Shift analytics are unavailable/);
+  assert.doesNotMatch(source, /PieChart|Donut|radial/i);
+});
+
+test('branch health and secondary summaries expose text status, mobile actions and contextual empty states', () => {
+  const branches = fs.readFileSync(new URL('../src/features/dashboard/BranchHealth.jsx', import.meta.url), 'utf8');
+  const summary = fs.readFileSync(new URL('../src/features/dashboard/OperationalSummary.jsx', import.meta.url), 'utf8');
+  for (const label of ['Healthy', 'Watch', 'Needs attention', 'Critical', 'No branches configured yet']) assert.match(branches, new RegExp(label, 'i'));
+  assert.match(branches, /aria-label=.*Open.*branch dashboard/i);
+  assert.match(branches, /command-branch-cards/);
+  for (const label of ['Employee Movement', 'Payroll Readiness', 'Organisation Setup Issues']) assert.match(summary, new RegExp(label));
+  assert.match(summary, /unavailable/i);
+});
+
+test('command-centre styling uses solid surfaces, responsive cards and visible focus states', () => {
+  const styles = fs.readFileSync(new URL('../src/features/dashboard/Dashboard.css', import.meta.url), 'utf8');
+  assert.match(styles, /command-surface/);
+  assert.match(styles, /focus-visible/);
+  assert.match(styles, /@media \(max-width: 560px\)/);
+  assert.doesNotMatch(styles, /linear-gradient|radial-gradient|backdrop-filter/);
 });
