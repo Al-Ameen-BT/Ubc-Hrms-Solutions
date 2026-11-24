@@ -6,10 +6,11 @@ const source = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url)
 
 test('organisation navigation uses the eight approved functional groups without generic More truncation', () => {
   const sidebar = source('components/Sidebar.jsx');
-  for (const label of ['Overview', 'Workforce', 'Time & Attendance', 'Pay & Benefits', 'Governance', 'Analytics', 'My Workspace', 'Administration']) {
+  for (const label of ['Overview', 'Workforce', 'Time & Attendance', 'Pay & Benefits', 'Governance', 'Reports', 'My Workspace', 'Administration']) {
     assert.match(sidebar, new RegExp(`label: '${label.replace('&', '\\&')}'`));
   }
-  assert.match(sidebar, /Reports & Analytics/);
+  assert.match(sidebar, /to: '\/reports', label: 'Reports'/);
+  assert.doesNotMatch(sidebar, /Reports & Analytics|label: 'Analytics'/);
   assert.doesNotMatch(sidebar, /sidebar-more-btn|>More<|TOP_LIMIT/);
   assert.doesNotMatch(sidebar, /Recruitment|Performance/);
   assert.match(sidebar, /if \(!authorizedItems\.length\) return null/);

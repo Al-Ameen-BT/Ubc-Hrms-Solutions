@@ -66,7 +66,7 @@ const NAV = {
         { to: '/audit', label: 'Audit Log', icon: 'audit' },
       ],
     },
-    { label: 'Analytics', items: [{ to: '/reports', label: 'Reports & Analytics', icon: 'audit' }] },
+    { label: 'Reports', items: [{ to: '/reports', label: 'Reports', icon: 'audit' }] },
     {
       label: 'My Workspace',
       items: [

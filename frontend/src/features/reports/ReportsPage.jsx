@@ -25,6 +25,12 @@ const MONTH_OPTIONS = [
   { value: 12, label: 'December' },
 ];
 
+const REPORTS = [
+  { id: 'loans', label: 'Loans & Advances', shortLabel: 'Loans', description: 'Employee advances, repayment demand and outstanding balances.' },
+  { id: 'insurance', label: 'Insurance & Policies', shortLabel: 'Insurance', description: 'Staff policy coverage, deductions and maturity records.' },
+  { id: 'salary', label: 'Master Salary Register', shortLabel: 'Salary register', description: 'Approved payroll earnings, deductions, arrears and net pay.' },
+];
+
 export function ReportsPage() {
   const { user } = useAuth();
   const orgId = user?.organizationId;
@@ -49,6 +55,7 @@ export function ReportsPage() {
   const [salaryYear, setSalaryYear] = useState(currentYear);
   const [salaryMonth, setSalaryMonth] = useState(currentMonth);
   const [salaryStatus, setSalaryStatus] = useState('ALL');
+  const activeReport = REPORTS.find((report) => report.id === activeTab) || REPORTS[0];
 
   // Fetch branches for filter
   const { data: branchesData } = useQuery({
@@ -62,6 +69,8 @@ export function ReportsPage() {
   const {
     data: loansData,
     isLoading: isLoadingLoans,
+    isError: isLoansError,
+    error: loansError,
     refetch: refetchLoans,
   } = useQuery({
     queryKey: ['reports-loans', orgId, selectedBranch, loanType, loanStatus],
@@ -78,6 +87,8 @@ export function ReportsPage() {
   const {
     data: insuranceData,
     isLoading: isLoadingInsurance,
+    isError: isInsuranceError,
+    error: insuranceError,
     refetch: refetchInsurance,
   } = useQuery({
     queryKey: ['reports-insurance', orgId, selectedBranch, policyType, policyStatus],
@@ -94,6 +105,8 @@ export function ReportsPage() {
   const {
     data: salaryData,
     isLoading: isLoadingSalary,
+    isError: isSalaryError,
+    error: salaryError,
     refetch: refetchSalary,
   } = useQuery({
     queryKey: ['reports-salary', orgId, selectedBranch, salaryYear, salaryMonth, salaryStatus],
@@ -199,85 +212,96 @@ export function ReportsPage() {
     );
   }, [salaryData, searchTerm]);
 
+  const activeQuery = activeTab === 'loans'
+    ? { isLoading: isLoadingLoans, isError: isLoansError, error: loansError, refetch: refetchLoans }
+    : activeTab === 'insurance'
+      ? { isLoading: isLoadingInsurance, isError: isInsuranceError, error: insuranceError, refetch: refetchInsurance }
+      : { isLoading: isLoadingSalary, isError: isSalaryError, error: salaryError, refetch: refetchSalary };
+  const activeRows = activeTab === 'loans' ? filteredLoanRows : activeTab === 'insurance' ? filteredInsuranceRows : filteredSalaryRows;
+  const reportCounts = {
+    loans: loansData?.summary?.activeAccountsCount,
+    insurance: insuranceData?.summary?.totalActivePolicies,
+    salary: salaryData?.summary?.employeeCount,
+  };
+
+  const resetActiveFilters = () => {
+    setSelectedBranch('');
+    setSearchTerm('');
+    if (activeTab === 'loans') {
+      setLoanType('ALL');
+      setLoanStatus('ACTIVE');
+    } else if (activeTab === 'insurance') {
+      setPolicyType('ALL');
+      setPolicyStatus('ACTIVE');
+    } else {
+      setSalaryYear(currentYear);
+      setSalaryMonth(currentMonth);
+      setSalaryStatus('ALL');
+    }
+  };
+
   return (
     <div className="reports-page page">
       {/* Page Header */}
       <div className="reports-header-row">
         <div>
-          <h1 className="reports-title">Audit & Operational Reports</h1>
+          <h1 className="reports-title">Reports</h1>
           <p className="reports-subtitle text-muted">
-            Auditable registers and formatted Excel / CSV exports for loans, insurance policies, and salary disbursements with arrears.
+            Review controlled employee financial registers and export the current scope for audit or reconciliation.
           </p>
         </div>
         <div className="reports-export-actions">
           <Button
             variant="secondary"
             loading={isExporting === 'csv'}
-            disabled={!!isExporting}
+            disabled={!!isExporting || activeQuery.isLoading || activeQuery.isError || activeRows.length === 0}
             onClick={() => handleExport('csv')}
           >
-            Export CSV
+            Export {activeReport.shortLabel} as CSV
           </Button>
           <Button
             variant="primary"
             loading={isExporting === 'xlsx'}
-            disabled={!!isExporting}
+            disabled={!!isExporting || activeQuery.isLoading || activeQuery.isError || activeRows.length === 0}
             onClick={() => handleExport('xlsx')}
           >
-            Export Excel (.xlsx)
+            Export {activeReport.shortLabel} as Excel
           </Button>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="reports-tabs-bar">
-        <button
-          className={`reports-tab-btn ${activeTab === 'loans' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('loans');
-            setSearchTerm('');
-          }}
-        >
-          <span className="reports-tab-label">Loans & Advances</span>
-          {loansData?.summary && (
-            <span className="reports-tab-pill">{loansData.summary.activeAccountsCount}</span>
-          )}
-        </button>
-
-        <button
-          className={`reports-tab-btn ${activeTab === 'insurance' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('insurance');
-            setSearchTerm('');
-          }}
-        >
-          <span className="reports-tab-label">Insurance & Policies</span>
-          {insuranceData?.summary && (
-            <span className="reports-tab-pill">{insuranceData.summary.totalActivePolicies}</span>
-          )}
-        </button>
-
-        <button
-          className={`reports-tab-btn ${activeTab === 'salary' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('salary');
-            setSearchTerm('');
-          }}
-        >
-          <span className="reports-tab-label">Master Salary Register</span>
-          {salaryData?.summary && (
-            <span className="reports-tab-pill">{salaryData.summary.employeeCount}</span>
-          )}
-        </button>
+      <div className="reports-tabs-bar" role="tablist" aria-label="Available reports">
+        {REPORTS.map((report) => (
+          <button
+            key={report.id}
+            id={`report-tab-${report.id}`}
+            type="button"
+            role="tab"
+            className={`reports-tab-btn ${activeTab === report.id ? 'active' : ''}`}
+            aria-selected={activeTab === report.id}
+            aria-controls={`report-panel-${report.id}`}
+            tabIndex={activeTab === report.id ? 0 : -1}
+            onClick={() => {
+              setActiveTab(report.id);
+              setSearchTerm('');
+            }}
+          >
+            <span className="reports-tab-copy"><span className="reports-tab-label">{report.label}</span><small>{report.description}</small></span>
+            {reportCounts[report.id] != null && <span className="reports-tab-pill">{reportCounts[report.id]}</span>}
+          </button>
+        ))}
       </div>
 
       {/* Filter Toolbar */}
-      <div className="reports-filters-card card">
+      <section className="reports-filters-card card" aria-labelledby="reports-filter-title">
+        <div className="reports-filter-heading"><div><h2 id="reports-filter-title">Report scope</h2><p>{activeReport.description}</p></div><Button variant="secondary" size="sm" onClick={resetActiveFilters}>Reset</Button></div>
         <div className="reports-filters-grid">
           {/* Universal Branch Selector */}
           <div className="filter-group">
-            <label className="filter-label">Branch</label>
+            <label className="filter-label" htmlFor="reports-branch">Branch</label>
             <select
+              id="reports-branch"
               className="form-control"
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
@@ -295,8 +319,9 @@ export function ReportsPage() {
           {activeTab === 'loans' && (
             <>
               <div className="filter-group">
-                <label className="filter-label">Loan Type</label>
+                <label className="filter-label" htmlFor="reports-loan-type">Loan type</label>
                 <select
+                  id="reports-loan-type"
                   className="form-control"
                   value={loanType}
                   onChange={(e) => setLoanType(e.target.value)}
@@ -311,8 +336,9 @@ export function ReportsPage() {
               </div>
 
               <div className="filter-group">
-                <label className="filter-label">Status</label>
+                <label className="filter-label" htmlFor="reports-loan-status">Status</label>
                 <select
+                  id="reports-loan-status"
                   className="form-control"
                   value={loanStatus}
                   onChange={(e) => setLoanStatus(e.target.value)}
@@ -328,8 +354,9 @@ export function ReportsPage() {
           {activeTab === 'insurance' && (
             <>
               <div className="filter-group">
-                <label className="filter-label">Policy Type</label>
+                <label className="filter-label" htmlFor="reports-policy-type">Policy type</label>
                 <select
+                  id="reports-policy-type"
                   className="form-control"
                   value={policyType}
                   onChange={(e) => setPolicyType(e.target.value)}
@@ -342,8 +369,9 @@ export function ReportsPage() {
               </div>
 
               <div className="filter-group">
-                <label className="filter-label">Status</label>
+                <label className="filter-label" htmlFor="reports-policy-status">Status</label>
                 <select
+                  id="reports-policy-status"
                   className="form-control"
                   value={policyStatus}
                   onChange={(e) => setPolicyStatus(e.target.value)}
@@ -359,8 +387,9 @@ export function ReportsPage() {
           {activeTab === 'salary' && (
             <>
               <div className="filter-group">
-                <label className="filter-label">Year</label>
+                <label className="filter-label" htmlFor="reports-salary-year">Year</label>
                 <select
+                  id="reports-salary-year"
                   className="form-control"
                   value={salaryYear}
                   onChange={(e) => setSalaryYear(Number(e.target.value))}
@@ -374,8 +403,9 @@ export function ReportsPage() {
               </div>
 
               <div className="filter-group">
-                <label className="filter-label">Month</label>
+                <label className="filter-label" htmlFor="reports-salary-month">Month</label>
                 <select
+                  id="reports-salary-month"
                   className="form-control"
                   value={salaryMonth}
                   onChange={(e) => setSalaryMonth(Number(e.target.value))}
@@ -389,8 +419,9 @@ export function ReportsPage() {
               </div>
 
               <div className="filter-group">
-                <label className="filter-label">Payroll Status</label>
+                <label className="filter-label" htmlFor="reports-salary-status">Payroll status</label>
                 <select
+                  id="reports-salary-status"
                   className="form-control"
                   value={salaryStatus}
                   onChange={(e) => setSalaryStatus(e.target.value)}
@@ -406,17 +437,27 @@ export function ReportsPage() {
 
           {/* Quick Search */}
           <div className="filter-group filter-group-search">
-            <label className="filter-label">Search Staff / Ref</label>
+            <label className="filter-label" htmlFor="reports-search">Search employee or reference</label>
             <input
+              id="reports-search"
               type="text"
               className="form-control"
-              placeholder="Search by name, code or ref..."
+              placeholder="Name, employee ID or reference"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
-      </div>
+      </section>
+
+      <section id={`report-panel-${activeTab}`} role="tabpanel" aria-labelledby={`report-tab-${activeTab}`} className="reports-panel">
+      {activeQuery.isError ? (
+        <div className="reports-state reports-error-state" role="alert">
+          <div><strong>{activeReport.label} could not be loaded</strong><span>{activeQuery.error?.message || 'Check your connection or access and try again.'}</span></div>
+          <Button variant="secondary" size="sm" onClick={() => activeQuery.refetch()}>Retry loading {activeReport.shortLabel}</Button>
+        </div>
+      ) : (
+        <>
 
       {/* TAB 1: LOANS PORTFOLIO & RECOVERIES */}
       {activeTab === 'loans' && (
@@ -451,7 +492,7 @@ export function ReportsPage() {
             {isLoadingLoans ? (
               <div className="reports-loading-box">Loading loans portfolio data...</div>
             ) : filteredLoanRows.length === 0 ? (
-              <div className="reports-empty-box">No loan accounts found matching the filter criteria.</div>
+              <div className="reports-empty-box"><strong>No loan accounts match this scope</strong><span>Try a different branch, loan type, status or employee search.</span><Button variant="secondary" size="sm" onClick={resetActiveFilters}>Clear filters</Button></div>
             ) : (
               <div className="table-responsive">
                 <table className="table reports-table">
@@ -563,7 +604,7 @@ export function ReportsPage() {
             {isLoadingInsurance ? (
               <div className="reports-loading-box">Loading insurance policies data...</div>
             ) : filteredInsuranceRows.length === 0 ? (
-              <div className="reports-empty-box">No insurance policy records found.</div>
+              <div className="reports-empty-box"><strong>No policy records match this scope</strong><span>Try a different branch, policy type, status or employee search.</span><Button variant="secondary" size="sm" onClick={resetActiveFilters}>Clear filters</Button></div>
             ) : (
               <div className="table-responsive">
                 <table className="table reports-table">
@@ -672,9 +713,7 @@ export function ReportsPage() {
             {isLoadingSalary ? (
               <div className="reports-loading-box">Loading master payroll data...</div>
             ) : filteredSalaryRows.length === 0 ? (
-              <div className="reports-empty-box">
-                No finalized payroll run found for the selected period ({salaryMonth}/{salaryYear}).
-              </div>
+              <div className="reports-empty-box"><strong>No salary records match this scope</strong><span>No payroll run was found for {MONTH_OPTIONS.find((month) => month.value === salaryMonth)?.label} {salaryYear}, or the current filters removed all rows.</span><Button variant="secondary" size="sm" onClick={resetActiveFilters}>Clear filters</Button></div>
             ) : (
               <div className="table-responsive">
                 <table className="table reports-table reports-salary-table">
@@ -831,6 +870,9 @@ export function ReportsPage() {
           </Card>
         </div>
       )}
+        </>
+      )}
+      </section>
     </div>
   );
 }
