@@ -84,6 +84,63 @@ export function dashboardParams(filters = {}) {
   }));
 }
 
+const COMMAND_CENTRE_FILTERS = ['branchId', 'departmentId', 'employmentType', 'date', 'period', 'search'];
+
+function urlParams(value) {
+  return value instanceof URLSearchParams ? new URLSearchParams(value) : new URLSearchParams(value || '');
+}
+
+export function commandCentreParams(searchParams) {
+  const params = urlParams(searchParams);
+  const result = {};
+  for (const key of COMMAND_CENTRE_FILTERS) {
+    const value = String(params.get(key) || '').trim();
+    if (!value) continue;
+    if (key === 'branchId' || key === 'departmentId') {
+      const numeric = Number(value);
+      if (Number.isInteger(numeric) && numeric > 0) result[key] = numeric;
+    } else result[key] = value;
+  }
+  return result;
+}
+
+export function updateCommandCentreFilter(searchParams, key, value) {
+  if (!COMMAND_CENTRE_FILTERS.includes(key)) throw new TypeError(`Unknown command centre filter: ${key}`);
+  const params = urlParams(searchParams);
+  const normalized = typeof value === 'string' ? value.trim() : value;
+  if (normalized == null || normalized === '') params.delete(key);
+  else params.set(key, String(normalized));
+  if (key === 'branchId') params.delete('departmentId');
+  return params;
+}
+
+export function clearCommandCentreFilters(searchParams = '') {
+  const params = urlParams(searchParams);
+  COMMAND_CENTRE_FILTERS.forEach((key) => params.delete(key));
+  return params;
+}
+
+export function filterActions(actions = [], filters = {}) {
+  const tab = String(filters.tab || 'all').toUpperCase();
+  return actions.filter((action) => {
+    if (tab === 'CRITICAL' && action.priority !== 'CRITICAL') return false;
+    if (!['ALL', 'CRITICAL'].includes(tab) && action.category !== tab) return false;
+    if (filters.priority && action.priority !== filters.priority) return false;
+    if (filters.owner && action.owner !== filters.owner) return false;
+    if (filters.branchId && String(action.branchId) !== String(filters.branchId)) return false;
+    return true;
+  });
+}
+
+export function distributionDestination(row = {}) {
+  if (row.destination) return row.destination;
+  const query = new URLSearchParams();
+  Object.entries(row.query || {}).sort(([left], [right]) => left.localeCompare(right)).forEach(([key, value]) => {
+    if (value != null && value !== '') query.set(key, String(value));
+  });
+  return `/people${query.size ? `?${query}` : ''}`;
+}
+
 export function prioritiseActions(rows = []) {
   const order = { HIGH: 0, MEDIUM: 1, LOW: 2 };
   return [...rows].sort((left, right) => (order[left.priority] ?? 9) - (order[right.priority] ?? 9)

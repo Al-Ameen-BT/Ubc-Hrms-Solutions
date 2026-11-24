@@ -85,7 +85,10 @@ export const organizationAccessApi = {
   assignEmployee: body => api.post(`${structurePath}/assignments`, body),
   responsibilities: () => api.get(`${structurePath}/responsibilities`),
   assignResponsibility: body => api.post(`${structurePath}/responsibilities`, body),
-  chart: at => api.get(`${structurePath}/chart${at ? `?${new URLSearchParams({ at })}` : ''}`),
+  chart: (at, filters = {}) => {
+    const query = new URLSearchParams(Object.entries({ ...(at ? { at } : {}), ...filters }).filter(([, value]) => value !== '' && value != null));
+    return api.get(`${structurePath}/chart${query.size ? `?${query}` : ''}`);
+  },
   downloadBranchTemplate: () => downloadFile(`${structurePath}/branches/import/template`, 'branches.xlsx'),
   previewBranchImport,
   applyBranchImport: body => api.post(`${structurePath}/branches/import/apply`, body),

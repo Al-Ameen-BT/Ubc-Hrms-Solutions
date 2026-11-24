@@ -246,6 +246,10 @@ export const platformApi = {
 export const orgApi = {
   settings: () => api.get('/org/settings'),
   dashboardAnalytics: (params = {}) => api.get(`/org/dashboard-analytics?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== '' && value != null))}`),
+  branchDashboard: (branchId, params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== '' && value != null));
+    return api.get(`/org/dashboard-analytics/branches/${encodeURIComponent(branchId)}${query.size ? `?${query}` : ''}`);
+  },
   updateSettings: (data) => api.put('/org/settings', data),
   smtp: () => api.get('/org/settings/smtp'),
   updateSmtp: (data) => api.put('/org/settings/smtp', data),
