@@ -19,9 +19,12 @@ test('report selector exposes accessible tab and panel semantics', () => {
   assert.match(page, /aria-label="Available reports"/);
   assert.match(page, /role="tab"/);
   assert.match(page, /aria-selected=\{activeTab === report\.id\}/);
-  assert.match(page, /aria-controls=\{`report-panel-\$\{report\.id\}`\}/);
+  assert.match(page, /aria-controls="reports-panel"/);
+  assert.match(page, /id="reports-panel"/);
   assert.match(page, /role="tabpanel"/);
   assert.match(page, /aria-labelledby=\{`report-tab-\$\{activeTab\}`\}/);
+  assert.match(page, /onKeyDown=\{\(event\) => handleReportKeyDown\(event, index\)\}/);
+  for (const key of ['ArrowRight', 'ArrowLeft', 'Home', 'End']) assert.match(page, new RegExp(`'${key}'`));
 });
 
 test('Reports associates filter labels with controls and supports recovery states', () => {

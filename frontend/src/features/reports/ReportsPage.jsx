@@ -240,6 +240,20 @@ export function ReportsPage() {
     }
   };
 
+  const handleReportKeyDown = (event, index) => {
+    let targetIndex = index;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') targetIndex = (index + 1) % REPORTS.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') targetIndex = (index - 1 + REPORTS.length) % REPORTS.length;
+    else if (event.key === 'Home') targetIndex = 0;
+    else if (event.key === 'End') targetIndex = REPORTS.length - 1;
+    else return;
+    event.preventDefault();
+    const target = REPORTS[targetIndex];
+    setActiveTab(target.id);
+    setSearchTerm('');
+    requestAnimationFrame(() => document.getElementById(`report-tab-${target.id}`)?.focus());
+  };
+
   return (
     <div className="reports-page page">
       {/* Page Header */}
@@ -272,7 +286,7 @@ export function ReportsPage() {
 
       {/* Navigation Tabs */}
       <div className="reports-tabs-bar" role="tablist" aria-label="Available reports">
-        {REPORTS.map((report) => (
+        {REPORTS.map((report, index) => (
           <button
             key={report.id}
             id={`report-tab-${report.id}`}
@@ -280,8 +294,9 @@ export function ReportsPage() {
             role="tab"
             className={`reports-tab-btn ${activeTab === report.id ? 'active' : ''}`}
             aria-selected={activeTab === report.id}
-            aria-controls={`report-panel-${report.id}`}
+            aria-controls="reports-panel"
             tabIndex={activeTab === report.id ? 0 : -1}
+            onKeyDown={(event) => handleReportKeyDown(event, index)}
             onClick={() => {
               setActiveTab(report.id);
               setSearchTerm('');
@@ -450,7 +465,7 @@ export function ReportsPage() {
         </div>
       </section>
 
-      <section id={`report-panel-${activeTab}`} role="tabpanel" aria-labelledby={`report-tab-${activeTab}`} className="reports-panel">
+      <section id="reports-panel" role="tabpanel" aria-labelledby={`report-tab-${activeTab}`} className="reports-panel">
       {activeQuery.isError ? (
         <div className="reports-state reports-error-state" role="alert">
           <div><strong>{activeReport.label} could not be loaded</strong><span>{activeQuery.error?.message || 'Check your connection or access and try again.'}</span></div>
