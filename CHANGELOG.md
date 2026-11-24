@@ -4,6 +4,19 @@ This project uses [Semantic Versioning](https://semver.org/). Record user-visibl
 
 ## Unreleased
 
+## 0.4.0 — 2026-11-24
+
+### Added
+
+- Operational HR command centre with scoped organisation health, attendance, payroll readiness, compliance signals, and one unified Action Centre.
+- Permission-gated Branch Dashboard and Organisation Explorer with progressive branch, department, position, and current-employee drill-downs.
+- Eight functional navigation groups with session-persisted disclosure state and a keyboard-accessible, permission-scoped employee search.
+
+### Changed
+
+- Replaced the chart-heavy organisation overview with decision-focused workforce distributions, attendance status, branch health, and compact operational summaries.
+- Kept sensitive employee, identity, bank, and salary data out of command-centre and explorer read models.
+
 ## 0.3.0 — 2026-11-18
 
 ### Added
