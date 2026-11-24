@@ -74,6 +74,8 @@ const Employee = sequelize.define('Employee', {
   gender: { type: DataTypes.ENUM('MALE', 'FEMALE', 'OTHER'), allowNull: true },
   bloodGroup: { type: DataTypes.STRING(8), allowNull: true, field: 'blood_group' },
   educationalQualification: { type: DataTypes.STRING(255), allowNull: true, field: 'educational_qualification' },
+  educationVerified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'education_verified' },
+  physicallyHandicapped: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'physically_handicapped' },
   photoAssetId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'photo_asset_id' }, // -> EmployeeDocument.id (docType PHOTO)
 
   // ---- Identity / statutory numbers ----

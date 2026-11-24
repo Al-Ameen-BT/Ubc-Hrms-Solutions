@@ -26,6 +26,13 @@ import {
   ClipboardListIcon,
   LockIcon,
   ArrowRightIcon,
+  DollarSignIcon,
+  BarChartIcon,
+  CalendarIcon,
+  ClockIcon,
+  FolderIcon,
+  CreditCardIcon,
+  SmartphoneIcon,
 } from '../../components/ui/Icons';
 import './RolesPermissionsPage.css';
 
@@ -39,7 +46,7 @@ const FEATURE_GROUPS = [
   {
     id: 'payroll',
     title: 'Payroll Management',
-    icon: '💰',
+    Icon: DollarSignIcon,
     description: 'Salary register, batch preparation, approvals and payment export advice.',
     permissions: [
       { code: 'payroll.view', name: 'View Payroll', desc: 'Inspect monthly payroll sheets, salary registers and reports', risk: 'READ' },
@@ -51,7 +58,7 @@ const FEATURE_GROUPS = [
   {
     id: 'arrears',
     title: 'DA Arrears & Pay Revisions',
-    icon: '📑',
+    Icon: FileTextIcon,
     description: 'Dearness allowance arrears, installment planning, approvals and disbursement.',
     permissions: [
       { code: 'arrears.view', name: 'View Arrears', desc: 'Inspect arrears calculations and installment schedules', risk: 'READ' },
@@ -63,7 +70,7 @@ const FEATURE_GROUPS = [
   {
     id: 'compensation',
     title: 'Compensation & Financial Changes',
-    icon: '📊',
+    Icon: BarChartIcon,
     description: 'Pay scale rules, allowance configurations and individual salary adjustments.',
     permissions: [
       { code: 'compensation.view', name: 'View Compensation', desc: 'View employee compensation packages and pay scales', risk: 'READ' },
@@ -77,7 +84,7 @@ const FEATURE_GROUPS = [
   {
     id: 'leave',
     title: 'Leave Management',
-    icon: '🏖️',
+    Icon: CalendarIcon,
     description: 'Staff leave applications, balance administration and manager approvals.',
     permissions: [
       { code: 'leave.view', name: 'View Leave Records', desc: 'View staff leave balances, applications and calendars', risk: 'READ' },
@@ -88,7 +95,7 @@ const FEATURE_GROUPS = [
   {
     id: 'attendance',
     title: 'Attendance, Shifts & Geofencing',
-    icon: '⏱️',
+    Icon: ClockIcon,
     description: 'Daily biometric/punch logs, shift timings, manual adjustments and geofences.',
     permissions: [
       { code: 'attendance.view', name: 'View Attendance', desc: 'Inspect daily shift logs, punch times and presence records', risk: 'READ' },
@@ -101,7 +108,7 @@ const FEATURE_GROUPS = [
   {
     id: 'people',
     title: 'People & Staff Directory',
-    icon: '👥',
+    Icon: UsersIcon,
     description: 'Employee onboarding, profile maintenance, cadre definitions and exports.',
     permissions: [
       { code: 'people.view', name: 'View Directory', desc: 'Access employee directory, profiles and contact info', risk: 'READ' },
@@ -115,7 +122,7 @@ const FEATURE_GROUPS = [
   {
     id: 'documents',
     title: 'Employee Documents',
-    icon: '📁',
+    Icon: FolderIcon,
     description: 'KYC documents, appointment letters, service books and certificates.',
     permissions: [
       { code: 'documents.view', name: 'View Documents', desc: 'Inspect uploaded employee identification and service proofs', risk: 'READ' },
@@ -125,7 +132,7 @@ const FEATURE_GROUPS = [
   {
     id: 'structure',
     title: 'Organisation Structure & Transfers',
-    icon: '🏛️',
+    Icon: BuildingIcon,
     description: 'Branches, departments, post cadration, assignments and inter-branch transfers.',
     permissions: [
       { code: 'structure.view', name: 'View Structure', desc: 'Inspect head office, branches, departments and cadres', risk: 'READ' },
@@ -145,7 +152,7 @@ const FEATURE_GROUPS = [
   {
     id: 'expenses',
     title: 'Expenses & Reimbursements',
-    icon: '💸',
+    Icon: ClipboardListIcon,
     description: 'Employee travel vouchers, petty cash claims, verification and sign-off.',
     permissions: [
       { code: 'expenses.view', name: 'View Claims', desc: 'Inspect expense submissions and supporting vouchers', risk: 'READ' },
@@ -156,7 +163,7 @@ const FEATURE_GROUPS = [
   {
     id: 'payments',
     title: 'Disbursements & Staff Advances',
-    icon: '💳',
+    Icon: CreditCardIcon,
     description: 'Payment execution, festival advances, staff loan ledgers and banking exports.',
     permissions: [
       { code: 'payments.view', name: 'View Payments', desc: 'View payment queues, disburse history and transaction status', risk: 'READ' },
@@ -170,7 +177,7 @@ const FEATURE_GROUPS = [
   {
     id: 'yearend',
     title: 'Year-End Closing',
-    icon: '📅',
+    Icon: CalendarIcon,
     description: 'Financial year & calendar year balance carry-forwards and statutory roll-over.',
     permissions: [
       { code: 'yearend.view', name: 'View Year-End', desc: 'Inspect year-end closing checklist, accruals and status', risk: 'READ' },
@@ -180,7 +187,7 @@ const FEATURE_GROUPS = [
   {
     id: 'audit',
     title: 'Audit & Compliance Inspection',
-    icon: '🛡️',
+    Icon: ShieldIcon,
     description: 'Immutable transaction trails, system event logs and regulatory review.',
     permissions: [
       { code: 'audit.view', name: 'View Audit Logs', desc: 'Inspect immutable system audit trails, access and security logs', risk: 'READ' },
@@ -189,7 +196,7 @@ const FEATURE_GROUPS = [
   {
     id: 'dpdp',
     title: 'DPDP Compliance & Data Privacy',
-    icon: '🔒',
+    Icon: LockIcon,
     description: 'Data protection officer workspace, subject access requests and sensitive records.',
     permissions: [
       { code: 'dpdp.view', name: 'View DPDP Governance', desc: 'Inspect DPDP compliance checklist, privacy notice and log', risk: 'READ' },
@@ -200,7 +207,7 @@ const FEATURE_GROUPS = [
   {
     id: 'self',
     title: 'Employee Self-Service (ESS)',
-    icon: '📱',
+    Icon: SmartphoneIcon,
     description: 'Personal profile, payslip downloads, leave requests and device linking.',
     permissions: [
       { code: 'self.profile', name: 'My Profile', desc: 'View and update personal address and emergency contacts', risk: 'READ' },
@@ -216,7 +223,7 @@ const FEATURE_GROUPS = [
   {
     id: 'admin',
     title: 'System Administration & Settings',
-    icon: '⚙️',
+    Icon: SettingsIcon,
     description: 'Bank general settings, user management and system access configuration.',
     permissions: [
       { code: 'settings.view', name: 'View Settings', desc: 'Inspect bank parameters and operational rules', risk: 'READ' },
@@ -1210,7 +1217,7 @@ function RoleEditor({ role, copying, permissions, templates, enabled, busy, onCo
                   <div className="roles-feature-card-header">
                     <div>
                       <div className="roles-feature-card-title-wrap">
-                        <span className="roles-feature-card-icon">{group.icon}</span>
+                        <span className="roles-feature-card-icon"><group.Icon size={20} /></span>
                         <h4 className="roles-feature-card-title">{group.title}</h4>
                       </div>
                       <p className="roles-feature-card-desc">{group.description}</p>

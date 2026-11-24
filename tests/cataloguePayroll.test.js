@@ -39,6 +39,45 @@ test('payroll run uses adopted catalogue stage and defaults, then freezes proven
   assert.equal(slip.compensationSegments[1].stageNo, 1);
 });
 
+test('payroll engine supplies effective catalogue salary to percentage rules', async () => {
+  const { AllowanceType, DeductionType } = require('../src/models');
+  await employee.update({ physicallyHandicapped: true });
+  await AllowanceType.create({
+    organizationId: employee.organizationId,
+    name: 'Physical disability allowance',
+    calculationType: 'PERCENTAGE',
+    percentageBase: 'BASIC',
+    percentageValue: 5,
+    maxAmount: 1000,
+    requiresEmployeeFlag: 'physicallyHandicapped',
+    frequency: 'MONTHLY',
+    amount: 0,
+  });
+  await DeductionType.create({
+    organizationId: employee.organizationId,
+    name: 'Provident fund catalogue rule',
+    category: 'STATUTORY',
+    calculationType: 'PERCENTAGE',
+    percentageBase: 'BASIC_PLUS_DA',
+    percentageValue: 12,
+    frequency: 'MONTHLY',
+    amount: 0,
+  });
+  assert.equal((await require('../src/services/allowances').applicableAllowancesFor(
+    employee.organizationId,
+    employee.postCadreId,
+    2026,
+    6,
+    { basicPaise: 1050000, daPaise: 126000, employee: employee.toJSON() },
+  )).length, 1);
+
+  const run = await require('../src/services/payrollEngine').processRun({ organizationId: employee.organizationId, year: 2026, month: 6 });
+  const line = await PayrollRunLine.findOne({ where: { payrollRunId: run.id, employeeId: employee.id } });
+  const slip = JSON.parse(line.payslipJson);
+  assert.equal(slip.earnings.customAllowances[0].amount, 525);
+  assert.equal(slip.deductions.customDeductions[0].amount, 1411);
+});
+
 
 after(async () => { if (server) await new Promise(resolve => server.close(resolve)); await sequelize.close(); });
 

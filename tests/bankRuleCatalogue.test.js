@@ -23,6 +23,17 @@ test('validates and expands post scales without inventing payroll defaults', () 
   assert.deepEqual(value.posts[0].stages, [10000, 10500, 11000]);
   assert.deepEqual(value.payrollDefaults, { daPercent: 12, pfCalculationBase: 'BASIC_PLUS_DA' });
 });
+test('preserves validated structured calculation rules and rejects unsupported rule fields', () => {
+  const structured = {
+    kind: 'ALLOWANCE', code: 'MEDICAL_ALLOWANCE', name: 'Medical Allowance', enabled: true,
+    calculationType: 'FLAT', amount: 4000, percentageValue: null, percentageBase: null,
+    frequency: 'YEARLY', maximum: 4000, eligibility: 'For all grades',
+    customizableFields: ['amount', 'maximum', 'frequency'], source: { sheet: 'Sheet1', row: 3 },
+  };
+  const value = catalogue.validateCatalogue(draft({ rules: [structured] }));
+  assert.deepEqual(value.rules[0], structured);
+  assert.throws(() => catalogue.validateCatalogue(draft({ rules: [{ ...structured, role: 'ORG_ADMIN' }] })), /unsupported rule field/i);
+});
 test('accepts explicit whole-rupee stage ladders without a scale expression', () => {
   const value = catalogue.validateCatalogue(draft({ posts: [{ code: 'NURSE', name: 'Nurse', stages: [10000, 10450, 10925], payableDays: 30 }] }));
   assert.deepEqual(value.posts[0].stages, [10000, 10450, 10925]);

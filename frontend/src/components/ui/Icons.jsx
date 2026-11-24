@@ -331,3 +331,49 @@ export function XIcon({ size = 18, className = '', strokeWidth = 2, ...props }) 
     </svg>
   );
 }
+
+function StandardIcon({ size = 18, className = '', strokeWidth = 2, iconClass = '', children, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+      className={`app-icon ${iconClass} ${className}`} aria-hidden="true" {...props}>
+      {children}
+    </svg>
+  );
+}
+
+export function CheckIcon(props) {
+  return <StandardIcon iconClass="icon-check" {...props}><polyline points="20 6 9 17 4 12" /></StandardIcon>;
+}
+
+export function ArrowLeftIcon(props) {
+  return <StandardIcon iconClass="icon-arrow-left" {...props}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></StandardIcon>;
+}
+
+export function DollarSignIcon(props) {
+  return <StandardIcon iconClass="icon-dollar-sign" {...props}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></StandardIcon>;
+}
+
+export function BarChartIcon(props) {
+  return <StandardIcon iconClass="icon-bar-chart" {...props}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></StandardIcon>;
+}
+
+export function CalendarIcon(props) {
+  return <StandardIcon iconClass="icon-calendar" {...props}><rect x="3" y="4" width="18" height="17" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></StandardIcon>;
+}
+
+export function ClockIcon(props) {
+  return <StandardIcon iconClass="icon-clock" {...props}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></StandardIcon>;
+}
+
+export function FolderIcon(props) {
+  return <StandardIcon iconClass="icon-folder" {...props}><path d="M3 5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></StandardIcon>;
+}
+
+export function CreditCardIcon(props) {
+  return <StandardIcon iconClass="icon-credit-card" {...props}><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></StandardIcon>;
+}
+
+export function SmartphoneIcon(props) {
+  return <StandardIcon iconClass="icon-smartphone" {...props}><rect x="6" y="2" width="12" height="20" rx="2" /><line x1="10" y1="18" x2="14" y2="18" /></StandardIcon>;
+}

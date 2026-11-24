@@ -44,8 +44,9 @@ const DeductionType = sequelize.define('DeductionType', {
   employerAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: true, field: 'employer_amount' },
   status: { type: DataTypes.ENUM('ACTIVE', 'INACTIVE'), allowNull: false, defaultValue: 'ACTIVE' },
   remarks: { type: DataTypes.STRING(500), allowNull: true },
-}, {
-  tableName: 'deduction_type',
-});
+  catalogueId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'catalogue_id' },
+  catalogueRuleCode: { type: DataTypes.STRING(64), allowNull: true, field: 'catalogue_rule_code' },
+  customizableFields: { type: DataTypes.JSON, allowNull: false, defaultValue: [], field: 'customizable_fields' },
+}, { tableName: 'deduction_type' });
 
 module.exports = DeductionType;

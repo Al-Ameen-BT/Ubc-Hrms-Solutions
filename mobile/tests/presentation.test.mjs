@@ -44,7 +44,7 @@ test('nested employee services keep More selected in primary navigation', () => 
 test('navigation metadata keeps five compact accessible destinations', () => {
   assert.deepEqual(navigationItems.map(item => item.label), ['Home', 'Pay', 'Leave', 'Time', 'More']);
   assert.equal(new Set(navigationItems.map(item => item.section)).size, 5);
-  assert.ok(navigationItems.every(item => item.glyph.length > 0));
+  assert.ok(navigationItems.every(item => !Object.hasOwn(item, 'glyph')));
   assert.ok(navigationItems.every(item => item.accessibilityLabel.length > item.label.length));
 });
 

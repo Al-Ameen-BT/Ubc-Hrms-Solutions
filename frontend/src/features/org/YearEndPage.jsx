@@ -11,6 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { StatLedger } from '../../components/ui/StatLedger';
+import { BuildingIcon, CalendarIcon } from '../../components/ui/Icons';
 
 export function YearEndPage() {
   const { user } = useAuth();
@@ -164,13 +165,13 @@ export function YearEndPage() {
           variant={activeTab === 'financial' ? 'primary' : 'secondary'}
           onClick={() => setActiveTab('financial')}
         >
-          🏛️ Financial Year-End (Fiscal: 1 Apr – 31 Mar)
+          <BuildingIcon size={17} /> Financial Year-End (Fiscal: 1 Apr – 31 Mar)
         </Button>
         <Button
           variant={activeTab === 'leave' ? 'primary' : 'secondary'}
           onClick={() => setActiveTab('leave')}
         >
-          📅 Leave Year-End Rollover (KSR Calendar: 1 Jan – 31 Dec)
+          <CalendarIcon size={17} /> Leave Year-End Rollover (KSR Calendar: 1 Jan – 31 Dec)
         </Button>
       </div>
 

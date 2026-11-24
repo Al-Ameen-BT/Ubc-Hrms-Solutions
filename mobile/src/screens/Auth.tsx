@@ -9,6 +9,7 @@ import { parseLinkQr } from '../link';
 import {
   Action,
   Card,
+  CheckboxIcon,
   colors,
   ErrorText,
   Field,
@@ -247,9 +248,7 @@ export function AuthScreen({ api, relinkNotice, onAuthenticated }: { api: Api; r
               onPress={() => setNoticeAgreed(!noticeAgreed)}
               style={[{ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.line, padding: 12, backgroundColor: colors.white }, noticeAgreed && { borderColor: colors.blue, backgroundColor: colors.pale }]}
             >
-              <Text style={[{ width: 26, height: 26, borderRadius: 6, borderWidth: 1.5, borderColor: colors.muted, textAlign: 'center', textAlignVertical: 'center', lineHeight: 24, color: colors.blue, fontWeight: '900', backgroundColor: colors.white }, noticeAgreed && { borderColor: colors.blue }]}>
-                {noticeAgreed ? '✓' : ''}
-              </Text>
+              <CheckboxIcon checked={noticeAgreed} />
               <Text style={[styles.body, { flex: 1, fontWeight: noticeAgreed ? '700' : '400' }]}>
                 I have read and acknowledge the bank employee privacy notice.
               </Text>

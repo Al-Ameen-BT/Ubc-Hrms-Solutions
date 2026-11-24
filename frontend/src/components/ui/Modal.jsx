@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { XIcon } from './Icons';
 
 export function Modal({ open, onClose, title, children, footer, size = 'md' }) {
   const dialogRef = useRef(null);
@@ -26,7 +27,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }) {
       <header className="modal-header">
         <h2 id="modal-title" className="modal-title">{title}</h2>
         <button className="modal-close" onClick={() => dialogRef.current?.close()} aria-label="Close">
-          ✕
+          <XIcon size={18} />
         </button>
       </header>
       <div className="modal-body">{children}</div>

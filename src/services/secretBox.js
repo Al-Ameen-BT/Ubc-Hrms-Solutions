@@ -15,10 +15,18 @@
 
 const crypto = require('crypto');
 
+function deriveKey(secret) {
+  return crypto.createHash('sha256').update(String(secret)).digest();
+}
+
+function getPrimarySecret() {
+  const secret = process.env.DATA_ENCRYPTION_KEY || process.env.JWT_SECRET;
+  if (!secret) throw new Error('DATA_ENCRYPTION_KEY or JWT_SECRET is not set — cannot encrypt/decrypt stored secrets.');
+  return secret;
+}
+
 function key() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET is not set — cannot encrypt/decrypt stored secrets.');
-  return crypto.createHash('sha256').update(secret).digest();
+  return deriveKey(getPrimarySecret());
 }
 
 function encrypt(plain) {
@@ -28,12 +36,30 @@ function encrypt(plain) {
   return [iv.toString('base64'), cipher.getAuthTag().toString('base64'), enc.toString('base64')].join(':');
 }
 
+function decryptWithKey(ivB64, tagB64, encB64, keyBuffer) {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, Buffer.from(ivB64, 'base64'));
+  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(encB64, 'base64')), decipher.final()]).toString('utf8');
+}
+
 function decrypt(stored) {
   const [ivB64, tagB64, encB64] = String(stored || '').split(':');
   if (!ivB64 || !tagB64 || !encB64) throw new Error('Malformed encrypted value');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), Buffer.from(ivB64, 'base64'));
-  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
-  return Buffer.concat([decipher.update(Buffer.from(encB64, 'base64')), decipher.final()]).toString('utf8');
+  const primarySecret = getPrimarySecret();
+  const primaryKey = deriveKey(primarySecret);
+  try {
+    return decryptWithKey(ivB64, tagB64, encB64, primaryKey);
+  } catch (err) {
+    if (process.env.DATA_ENCRYPTION_KEY && process.env.JWT_SECRET && process.env.DATA_ENCRYPTION_KEY !== process.env.JWT_SECRET) {
+      try {
+        const fallbackKey = deriveKey(process.env.JWT_SECRET);
+        return decryptWithKey(ivB64, tagB64, encB64, fallbackKey);
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
+  }
 }
 
 /** Random URL-safe token plus its SHA-256 (store the hash, send the token). */
@@ -46,4 +72,4 @@ function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
-module.exports = { encrypt, decrypt, randomToken, sha256 };
+module.exports = { encrypt, decrypt, randomToken, sha256, key };

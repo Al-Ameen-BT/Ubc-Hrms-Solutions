@@ -20,9 +20,10 @@ const sequelize = require('../config/sequelize');
 const LeaveType = sequelize.define('LeaveType', {
   id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
   organizationId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, field: 'organization_id' },
-  code: { type: DataTypes.STRING(16), allowNull: false },
+  code: { type: DataTypes.STRING(64), allowNull: false },
   name: { type: DataTypes.STRING(128), allowNull: false },
-  accrualMethod: { type: DataTypes.ENUM('FIXED_ANNUAL', 'ACCRUAL_PER_MONTH', 'NONE'), allowNull: false, defaultValue: 'FIXED_ANNUAL', field: 'accrual_method' },
+  accrualMethod: { type: DataTypes.ENUM('FIXED_ANNUAL', 'ACCRUAL_PER_MONTH', 'ATTENDANCE_RATIO', 'NONE'), allowNull: false, defaultValue: 'FIXED_ANNUAL', field: 'accrual_method' },
+  attendanceDaysPerCredit: { type: DataTypes.DECIMAL(6, 2), allowNull: true, field: 'attendance_days_per_credit' },
   annualDays: { type: DataTypes.DECIMAL(6, 1), allowNull: false, defaultValue: 0, field: 'annual_days' },
   maxAccumulation: { type: DataTypes.DECIMAL(6, 1), allowNull: true, field: 'max_accumulation' }, // null = unlimited carry-forward
   carryForward: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true, field: 'carry_forward' },
@@ -33,6 +34,9 @@ const LeaveType = sequelize.define('LeaveType', {
   requiresApproval: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true, field: 'requires_approval' },
   status: { type: DataTypes.ENUM('ACTIVE', 'INACTIVE'), allowNull: false, defaultValue: 'ACTIVE' },
   remarks: { type: DataTypes.STRING(500), allowNull: true },
+  catalogueId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true, field: 'catalogue_id' },
+  catalogueRuleCode: { type: DataTypes.STRING(64), allowNull: true, field: 'catalogue_rule_code' },
+  customizableFields: { type: DataTypes.JSON, allowNull: false, defaultValue: [], field: 'customizable_fields' },
 }, {
   tableName: 'leave_type',
   indexes: [{ unique: true, fields: ['organization_id', 'code'] }],

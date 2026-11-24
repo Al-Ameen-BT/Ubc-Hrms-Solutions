@@ -34,10 +34,12 @@ const {
   DpdpIncident,
   DpdpOrganizationProfile,
   OrganizationFeature,
+  AllowanceType,
   DeductionType,
   DeductionTypePost,
   OverdraftSlab,
   LeaveType,
+  BankRuleCatalogue,
   OrgLeaveSetting,
 } = require('../models');
 
@@ -331,6 +333,26 @@ const COLUMN_STEPS = [
   ['org_payroll_setting', 'hra_max_amount', { type: DataTypes.DECIMAL(10, 2), allowNull: true }],
   ['employee', 'hra_type', { type: DataTypes.ENUM('PERCENT', 'FIXED'), allowNull: false, defaultValue: 'PERCENT' }],
   ['employee', 'fixed_hra_amount', { type: DataTypes.DECIMAL(10, 2), allowNull: true }],
+  // Controlled catalogue and employee import pipelines.
+  ['employee', 'physically_handicapped', Employee.rawAttributes.physicallyHandicapped],
+  ['employee', 'education_verified', Employee.rawAttributes.educationVerified],
+  ['allowance_type', 'calculation_type', AllowanceType.rawAttributes.calculationType],
+  ['allowance_type', 'percentage_base', AllowanceType.rawAttributes.percentageBase],
+  ['allowance_type', 'percentage_value', AllowanceType.rawAttributes.percentageValue],
+  ['allowance_type', 'max_amount', AllowanceType.rawAttributes.maxAmount],
+  ['allowance_type', 'requires_employee_flag', AllowanceType.rawAttributes.requiresEmployeeFlag],
+  ['allowance_type', 'catalogue_id', AllowanceType.rawAttributes.catalogueId],
+  ['allowance_type', 'catalogue_rule_code', AllowanceType.rawAttributes.catalogueRuleCode],
+  ['allowance_type', 'customizable_fields', AllowanceType.rawAttributes.customizableFields],
+  ['deduction_type', 'catalogue_id', DeductionType.rawAttributes.catalogueId],
+  ['deduction_type', 'catalogue_rule_code', DeductionType.rawAttributes.catalogueRuleCode],
+  ['deduction_type', 'customizable_fields', DeductionType.rawAttributes.customizableFields],
+  ['leave_type', 'attendance_days_per_credit', LeaveType.rawAttributes.attendanceDaysPerCredit],
+  ['leave_type', 'catalogue_id', LeaveType.rawAttributes.catalogueId],
+  ['leave_type', 'catalogue_rule_code', LeaveType.rawAttributes.catalogueRuleCode],
+  ['leave_type', 'customizable_fields', LeaveType.rawAttributes.customizableFields],
+  ['bank_rule_catalogue', 'source_workbook_sha256', BankRuleCatalogue.rawAttributes.sourceWorkbookSha256],
+  ['bank_rule_catalogue', 'source_workbook_filename', BankRuleCatalogue.rawAttributes.sourceWorkbookFilename],
   // Slice: Leave calculation settings & sandwich rule (common holidays included in leaves other than CL and LOP)
   ['leave_type', 'include_holidays', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
   ['leave_type', 'is_lop', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
@@ -376,6 +398,8 @@ const ENUM_WIDEN_STEPS = [
     type: DataTypes.ENUM('BRANCH_MANAGER', 'SENIOR_MANAGER', 'GENERAL_MANAGER', 'DATA_PROTECTION_OFFICER'),
     allowNull: false,
   }],
+  ['leave_type', 'accrual_method', LeaveType.rawAttributes.accrualMethod],
+  ['leave_type', 'code', LeaveType.rawAttributes.code],
 ];
 
 async function migrate() {
@@ -398,6 +422,17 @@ async function migrate() {
     if (!indexes.some(existing => existing.name === index.name)) {
       await qi.addIndex('organization_branch', index.fields, index);
       added.push(`organization_branch.${index.name}`);
+    }
+  }
+  for (const [table, index] of [
+    ['allowance_type', { name: 'uq_allowance_catalogue_rule', unique: true, fields: ['organization_id', 'catalogue_rule_code'] }],
+    ['deduction_type', { name: 'uq_deduction_catalogue_rule', unique: true, fields: ['organization_id', 'catalogue_rule_code'] }],
+    ['bank_rule_catalogue', { name: 'uq_catalogue_class_workbook', unique: true, fields: ['bank_class', 'source_workbook_sha256'] }],
+  ]) {
+    const existing = await qi.showIndex(table);
+    if (!existing.some(currentIndex => currentIndex.name === index.name)) {
+      await qi.addIndex(table, index.fields, index);
+      added.push(`${table}.${index.name}`);
     }
   }
   if (sequelize.getDialect() !== 'sqlite') {

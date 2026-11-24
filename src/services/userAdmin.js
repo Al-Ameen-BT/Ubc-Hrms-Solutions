@@ -14,6 +14,7 @@ const { assertCanAddUser } = require('./license');
 const mailer = require('./mailer');
 const { appBaseUrl } = require('./settings');
 const { audit } = require('./audit');
+const { authCache } = require('./redis');
 
 function publicUser(user) {
   return {
@@ -221,6 +222,9 @@ async function invalidateUserAccess(userIds, { transaction, reason = 'access.cha
   const affected = await User.findAll({ where: { id: ids }, attributes: ['id', 'organizationId'], order: [['id', 'ASC']], transaction, lock: transaction.LOCK.UPDATE });
   await User.increment('accessVersion', { where: { id: ids }, transaction });
   await revokeEmployeeDevices(ids, transaction);
+  for (const id of ids) {
+    try { await authCache.del(id); } catch {}
+  }
   await AuditLog.bulkCreate(affected.map(user => ({ organizationId: user.organizationId, actorUserId: actor?.id || null, action: 'user.access.invalidate', targetType: 'user', targetId: String(user.id), details: { reason } })), { transaction });
 }
 

@@ -12,7 +12,7 @@ function permissionMiddleware(codes, resolveResource, legacyRoles) {
     try {
       // A legacy platform path remains explicit; platform identities never gain tenant grants.
       const platform = req.user.role === 'SUPER_ADMIN' && legacyRoles?.includes('SUPER_ADMIN');
-      let access = platform ? null : await effectiveAccess(req.user.id);
+      let access = platform ? null : await effectiveAccess(req.user.id, undefined, undefined, req.user.accessVersion);
       const legacy = platform || access?.accessControlMode === 'LEGACY' && legacyRoles;
       const allowed = legacy ? legacyRoles.includes(req.user.role) && (!access?.bootstrapRestricted || codes.some(code => can(access, code))) : sameId(access?.organizationId, req.user.organizationId) && codes.some(code => can(access, code));
       if (!allowed) return res.status(403).json({ status: 'error', message: 'Permission denied' });

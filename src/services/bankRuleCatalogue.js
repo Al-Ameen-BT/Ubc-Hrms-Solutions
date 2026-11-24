@@ -97,6 +97,45 @@ function validatePayroll(value = {}) {
   }
   return out;
 }
+const STRUCTURED_RULE_FIELDS = {
+  ALLOWANCE: ['kind', 'code', 'name', 'enabled', 'calculationType', 'amount', 'percentageValue', 'percentageBase', 'frequency', 'month', 'maximum', 'eligibility', 'eligiblePostCodes', 'requiresEmployeeFlag', 'customizableFields', 'source'],
+  DEDUCTION: ['kind', 'code', 'name', 'enabled', 'category', 'calculationType', 'amount', 'percentageValue', 'percentageBase', 'frequency', 'month', 'maximum', 'eligibility', 'eligiblePostCodes', 'employerAmount', 'collectionMonths', 'customizableFields', 'source'],
+  LOAN_POLICY: ['kind', 'code', 'name', 'enabled', 'interestRatePercent', 'minimumAmount', 'maximumAmount', 'maximumMonths', 'eligibility', 'customizableFields', 'source'],
+  LEAVE: ['kind', 'code', 'name', 'enabled', 'accrualMethod', 'annualDays', 'attendanceDaysPerCredit', 'maxAccumulation', 'carryForward', 'paidPercent', 'eligibility', 'customizableFields', 'source'],
+};
+function finiteOrNull(value, label, { min = 0, max = 9999999999, whole = false } = {}) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || whole && !Number.isSafeInteger(value)) throw new CatalogueError(`${label} is invalid.`);
+  return value;
+}
+function validateStructuredRule(input) {
+  const allowed = STRUCTURED_RULE_FIELDS[input.kind];
+  if (!allowed) throw new CatalogueError('Unsupported structured rule kind.');
+  if (Object.keys(input).some(key => !allowed.includes(key))) throw new CatalogueError('Unsupported rule field.');
+  const out = { ...input };
+  out.kind = input.kind;
+  out.code = text(input.code, 'Rule code', 64, true).toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]*$/.test(out.code)) throw new CatalogueError('Rule code must use letters, numbers and underscores.');
+  out.name = text(input.name, 'Rule name', 128, true);
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new CatalogueError('Rule enabled must be true or false.');
+  if (input.customizableFields !== undefined) {
+    if (!Array.isArray(input.customizableFields) || input.customizableFields.length > 20 || input.customizableFields.some(field => typeof field !== 'string' || !allowed.includes(field))) throw new CatalogueError('Rule customizable fields are invalid.');
+    out.customizableFields = [...new Set(input.customizableFields)];
+  }
+  if (input.source !== undefined) {
+    if (!input.source || typeof input.source !== 'object' || Array.isArray(input.source) || Object.keys(input.source).some(key => !['sheet', 'row'].includes(key))) throw new CatalogueError('Rule source is invalid.');
+    out.source = { sheet: text(input.source.sheet, 'Rule source sheet', 128, true), row: integer(input.source.row, 'Rule source row', 1, 100000) };
+  }
+  for (const key of ['amount', 'maximum', 'minimumAmount', 'maximumAmount', 'annualDays', 'attendanceDaysPerCredit', 'maxAccumulation', 'employerAmount', 'paidPercent', 'interestRatePercent', 'percentageValue']) {
+    if (Object.hasOwn(input, key)) out[key] = finiteOrNull(input[key], key, { max: key.includes('Percent') || key === 'percentageValue' || key === 'paidPercent' ? 100 : 9999999999, whole: ['amount', 'maximum', 'minimumAmount', 'maximumAmount', 'attendanceDaysPerCredit', 'maxAccumulation'].includes(key) });
+  }
+  for (const key of ['month', 'maximumMonths']) if (Object.hasOwn(input, key)) out[key] = finiteOrNull(input[key], key, { min: 1, max: key === 'month' ? 12 : 1200, whole: true });
+  for (const key of ['eligiblePostCodes', 'collectionMonths']) if (Object.hasOwn(input, key)) {
+    if (!Array.isArray(input[key]) || input[key].length > 100) throw new CatalogueError(`${key} must be a list.`);
+    out[key] = [...new Set(input[key])];
+  }
+  return out;
+}
 function validateCatalogue(body, publishing = false) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new CatalogueError('Catalogue details are required.');
   const bankClass = body.bankClass;
@@ -141,6 +180,7 @@ function validateCatalogue(body, publishing = false) {
     notes: text(body.notes, 'Notes', 10000), posts: normalizedPosts,
     rules: rules.map(r => {
       if (!r || typeof r !== 'object') throw new CatalogueError('Each rule must contain a title and reference.');
+      if (r.kind) return validateStructuredRule(r);
       return { title: text(r.title, 'Rule title', 128, true), reference: text(r.reference, 'Rule reference', 255, publishing), description: text(r.description, 'Rule details', 4000, true) };
     }),
     payrollDefaults: validatePayroll(body.payrollDefaults),
@@ -208,4 +248,4 @@ async function publish(id, actorId, body) {
     return load(id, transaction);
   });
 }
-module.exports = { CatalogueError, validateCatalogue, validatePayroll, expandStages, payrollFields, referenceForClass, createDraft, updateDraft, deleteDraft, publish };
+module.exports = { CatalogueError, validateCatalogue, validatePayroll, validateStructuredRule, expandStages, payrollFields, referenceForClass, createDraft, updateDraft, deleteDraft, publish };

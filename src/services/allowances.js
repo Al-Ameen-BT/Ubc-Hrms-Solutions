@@ -8,7 +8,8 @@
  * CCA/Conveyance/Medical/Bonus).
  */
 
-const { AllowanceType, AllowanceTypePost, PostCadre } = require('../models');
+const { AllowanceType, AllowanceTypePost, PostCadre, EmployeePayrollAdjustment } = require('../models');
+const { percentOf, toRupees } = require('../utils/money');
 
 class AllowanceError extends Error {
   constructor(message, status) { super(message); this.status = status || 400; }
@@ -65,7 +66,7 @@ async function setPosts(row, postCadreIds) {
  * `postCadreId` may be null (employee with no post on record) — such an
  * employee is only eligible for allowances with NO post restriction.
  */
-async function applicableAllowancesFor(organizationId, postCadreId, year, month) {
+async function applicableAllowancesFor(organizationId, postCadreId, year, month, salaryContext = {}) {
   const types = await AllowanceType.findAll({
     where: { organizationId, status: 'ACTIVE' },
     include: [{ model: AllowanceTypePost, required: false }],
@@ -75,11 +76,28 @@ async function applicableAllowancesFor(organizationId, postCadreId, year, month)
   for (const t of types) {
     const posts = t.AllowanceTypePosts || [];
     if (posts.length && !(postCadreId && posts.some((p) => Number(p.postCadreId) === Number(postCadreId)))) continue;
+    if (t.requiresEmployeeFlag && !salaryContext.employee?.[t.requiresEmployeeFlag]) continue;
     let applies = false;
     if (t.frequency === 'MONTHLY') applies = true;
     else if (t.frequency === 'YEARLY') applies = Number(t.month) === Number(month);
     else if (t.frequency === 'ONE_TIME') applies = Number(t.month) === Number(month) && Number(t.year) === Number(year);
-    if (applies) out.push({ id: t.id, name: t.name, amount: Number(t.amount) || 0 });
+    if (applies) {
+      let amount = Number(t.amount) || 0;
+      if (t.calculationType === 'PERCENTAGE' && Number(t.percentageValue) > 0) {
+        const basic = salaryContext.basicPaise || 0, da = salaryContext.daPaise || 0;
+        const base = t.percentageBase === 'GROSS' ? salaryContext.grossPaise || basic + da : t.percentageBase === 'BASIC_PLUS_DA' ? basic + da : basic;
+        amount = toRupees(percentOf(base, Number(t.percentageValue)));
+        if (t.maxAmount != null) amount = Math.min(amount, Number(t.maxAmount));
+      }
+      out.push({ id: t.id, name: t.name, amount });
+    }
+  }
+  if (salaryContext.employee?.id) {
+    const assigned = await EmployeePayrollAdjustment.findAll({
+      where: { organizationId, employeeId: salaryContext.employee.id, kind: 'ALLOWANCE', payYear: year, payMonth: month, status: 'ACTIVE' },
+      order: [['id', 'ASC']],
+    });
+    for (const item of assigned) out.push({ id: `employee-${item.id}`, name: item.name, amount: Number(item.amount) });
   }
   return out;
 }

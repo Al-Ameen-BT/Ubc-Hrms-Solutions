@@ -58,6 +58,7 @@ async function payrollInputFingerprint(organizationId, year, month, transaction)
   await collect(models.OverdraftSlab, { organizationId });
   await collect(models.EmployeeAttendance, { employeeId: { [Op.in]: employeeIds }, year, month });
   await collect(models.EmployeeBankAccount, { employeeId: { [Op.in]: employeeIds } });
+  await collect(models.EmployeePayrollAdjustment, { organizationId, payYear: year, payMonth: month, status: 'ACTIVE' });
   for (const Model of [models.EmployeeFestivalAdvance, models.EmployeeOverdraft, models.EmployeeRecurringDeposit, models.EmployeeLic, models.EmployeeHousingLoan, models.EmployeeVehicleLoan]) {
     await collect(Model, { employeeId: { [Op.in]: employeeIds } });
   }
@@ -138,16 +139,31 @@ async function processRun({ organizationId, year, month, userId }) {
     }
     const last = salarySegments.at(-1);
     const post = last?.source === 'CATALOGUE' ? await PostCadre.findOne({ where: { organizationId, code: last.postCode } }) : null;
-    const [activeLoans, attendanceRow, customAllowances, customDeductions] = await Promise.all([
+    const [activeLoans, attendanceRow] = await Promise.all([
       loans.loadActiveLoans(employee.id, asOf),
       attendance.getForMonth(employee.id, month),
-      applicableAllowancesFor(organizationId, post?.id || employee.postCadreId, year, month),
-      applicableDeductionsFor(organizationId, post?.id || employee.postCadreId, year, month),
     ]);
     const catalogueSegments = salarySegments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? salarySegments : null;
     const effectiveSettings = catalogueSegments ? catalogueSegments.at(-1).settings : settings;
     const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
-    const payslip = computePayslip(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, year, customDeductions);
+    const attendanceJson = attendanceRow ? attendanceRow.toJSON() : null;
+    const basePayslip = computePayslip(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceJson, [], catalogueSegments, year, []);
+    const allowanceContext = {
+      basicPaise: Math.round(Number(basePayslip.earnings.basic || 0) * 100),
+      daPaise: Math.round(Number(basePayslip.earnings.da || 0) * 100),
+      grossPaise: Math.round(Number(basePayslip.earnings.grossEarnings || 0) * 100),
+      employee: effectiveEmployee,
+    };
+    const customAllowances = await applicableAllowancesFor(organizationId, post?.id || employee.postCadreId, year, month, allowanceContext);
+    const allowancePayslip = computePayslip(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceJson, customAllowances, catalogueSegments, year, []);
+    const deductionContext = {
+      ...allowanceContext,
+      basicPaise: Math.round(Number(allowancePayslip.earnings.basic || 0) * 100),
+      daPaise: Math.round(Number(allowancePayslip.earnings.da || 0) * 100),
+      grossPaise: Math.round(Number(allowancePayslip.earnings.grossEarnings || 0) * 100),
+    };
+    const customDeductions = await applicableDeductionsFor(organizationId, post?.id || employee.postCadreId, year, month, deductionContext);
+    const payslip = computePayslip(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceJson, customAllowances, catalogueSegments, year, customDeductions);
     totalGross = round2(totalGross + payslip.earnings.grossEarnings);
     totalDeductions = round2(totalDeductions + payslip.deductions.totalDeductions);
     totalNet = round2(totalNet + payslip.netPay);

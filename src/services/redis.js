@@ -215,8 +215,169 @@ function probeRedis() {
     .catch(() => ({ configured: true, ok: false, status: 'degraded' }));
 }
 
+const AUTH_CACHE_TTL_SECONDS = 600; // 10 minutes
+const AUTH_KEY_PREFIX = 'hrms:auth:';
+
+const memoryAuthCache = new Map();
+
+function pruneMemoryAuthCache() {
+  const now = Date.now();
+  for (const [k, v] of memoryAuthCache) {
+    if (now >= v.expiresAt) memoryAuthCache.delete(k);
+  }
+}
+
+function toRedisKey(k) {
+  const str = String(k);
+  return str.startsWith(AUTH_KEY_PREFIX) ? str : `${AUTH_KEY_PREFIX}${str}`;
+}
+
+function fromRedisKey(k) {
+  const str = String(k);
+  return str.startsWith(AUTH_KEY_PREFIX) ? str.slice(AUTH_KEY_PREFIX.length) : str;
+}
+
+async function getAuthCache(key) {
+  if (redisClient && redisClient.status === 'ready') {
+    try {
+      const raw = await redisClient.get(toRedisKey(key));
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // Graceful fallback to memory on Redis error
+    }
+  }
+  const memKey = fromRedisKey(key);
+  const item = memoryAuthCache.get(memKey);
+  if (!item) return null;
+  if (Date.now() >= item.expiresAt) {
+    memoryAuthCache.delete(memKey);
+    return null;
+  }
+  return JSON.parse(JSON.stringify(item.value));
+}
+
+async function setAuthCache(key, value, ttlSeconds = AUTH_CACHE_TTL_SECONDS) {
+  pruneMemoryAuthCache();
+  const memKey = fromRedisKey(key);
+  memoryAuthCache.set(memKey, {
+    value: JSON.parse(JSON.stringify(value)),
+    expiresAt: Date.now() + ttlSeconds * 1000,
+  });
+  if (redisClient && redisClient.status === 'ready') {
+    try {
+      await redisClient.set(toRedisKey(key), JSON.stringify(value), 'EX', ttlSeconds);
+    } catch {
+      // Graceful fallback: memory cache already has it
+    }
+  }
+}
+
+async function findRedisKeys(pattern) {
+  if (!redisClient) return [];
+  if (typeof redisClient.scanStream === 'function') {
+    return new Promise((resolve, reject) => {
+      const keys = [];
+      const stream = redisClient.scanStream({ match: pattern, count: 100 });
+      stream.on('data', resultKeys => {
+        for (let i = 0; i < resultKeys.length; i++) keys.push(resultKeys[i]);
+      });
+      stream.on('end', () => resolve([...new Set(keys)]));
+      stream.on('error', err => reject(err));
+    });
+  }
+  if (typeof redisClient.scan === 'function') {
+    let cursor = '0';
+    const keys = [];
+    do {
+      const [nextCursor, matchedKeys] = await redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      if (matchedKeys && matchedKeys.length) keys.push(...matchedKeys);
+    } while (cursor !== '0');
+    return [...new Set(keys)];
+  }
+  if (typeof redisClient.keys === 'function') {
+    return await redisClient.keys(pattern);
+  }
+  return [];
+}
+
+async function deleteRedisKeys(pattern) {
+  const keys = await findRedisKeys(pattern);
+  if (!keys || !keys.length) return;
+  const chunkSize = 500;
+  for (let i = 0; i < keys.length; i += chunkSize) {
+    const chunk = keys.slice(i, i + chunkSize);
+    if (chunk.length) await redisClient.del(...chunk);
+  }
+}
+
+async function delAuthCache(keyOrUserId) {
+  if (keyOrUserId == null) return;
+  const raw = fromRedisKey(keyOrUserId);
+  const isPrefix = !raw.includes(':');
+  const memPrefix = isPrefix ? `${raw}:` : null;
+
+  if (memPrefix) {
+    for (const k of memoryAuthCache.keys()) {
+      if (k.startsWith(memPrefix) || k === raw) memoryAuthCache.delete(k);
+    }
+  } else {
+    memoryAuthCache.delete(raw);
+  }
+
+  if (redisClient && redisClient.status === 'ready') {
+    try {
+      if (isPrefix) {
+        await deleteRedisKeys(`${AUTH_KEY_PREFIX}${raw}:*`);
+        await redisClient.del(toRedisKey(raw));
+      } else {
+        await redisClient.del(toRedisKey(raw));
+      }
+    } catch {}
+  }
+}
+
+async function clearAuthCache() {
+  memoryAuthCache.clear();
+  if (redisClient && redisClient.status === 'ready') {
+    try {
+      await deleteRedisKeys(`${AUTH_KEY_PREFIX}*`);
+    } catch {}
+  }
+}
+
+function getRedisClient() {
+  return redisClient;
+}
+
+function setRedisClient(client) {
+  redisClient = client;
+  if (client) {
+    decisionPromise = Promise.resolve('redis');
+  } else {
+    decisionPromise = null;
+  }
+}
+
+const authCache = {
+  get: getAuthCache,
+  set: setAuthCache,
+  del: delAuthCache,
+  clear: clearAuthCache,
+  getMemoryCache: () => memoryAuthCache,
+  getRedisClient,
+  setRedisClient,
+  AUTH_KEY_PREFIX,
+};
+
 module.exports = {
   isRedisConfigured,
   getRateStore,
   probeRedis,
+  authCache,
+  getAuthCache,
+  setAuthCache,
+  delAuthCache,
+  clearAuthCache,
+  AUTH_KEY_PREFIX,
 };

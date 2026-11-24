@@ -8,7 +8,9 @@ import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
+import { CheckCircleIcon } from '../../components/ui/Icons';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 
 /* Bulk employee import workspace supporting formatted Excel (.xlsx) and CSV templates,
    live bank reference codes, data structure guide, and line-by-line pre-import preview. */
@@ -22,10 +24,16 @@ export function BulkImportPage() {
   const [fileDataUrl, setFileDataUrl] = useState('');
   const [csv, setCsv] = useState('');
   const [fileName, setFileName] = useState('');
+  const [controlledFile, setControlledFile] = useState(null);
   const [organizationId, setOrganizationId] = useState('');
   const [error, setError] = useState('');
   const [previewData, setPreviewData] = useState(null);
   const [results, setResults] = useState(null);
+  const [credentials, setCredentials] = useState([]);
+  const [financialFile, setFinancialFile] = useState(null);
+  const [financialPeriod, setFinancialPeriod] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
+  const [financialPreview, setFinancialPreview] = useState(null);
+  const [financialResult, setFinancialResult] = useState(null);
 
   // Super-admin bank list
   const { data: orgs } = useQuery({
@@ -89,6 +97,34 @@ export function BulkImportPage() {
     onError: (err) => setError(err.message || 'Bulk import failed.'),
   });
 
+  const onboardingPreviewMutation = useMutation({
+    mutationFn: (file) => masterDataApi.onboardingImportPreview(file),
+    onSuccess: (preview) => {
+      setPreviewData({ controlled: true, signedPreview: preview, summary: preview.summary, data: preview.rows.map(row => ({ row: row.sourceRow, valid: !row.errors.length, ...row.values, errors: row.errors })) });
+      setError('');
+    },
+    onError: (err) => setError(err.message || 'Controlled onboarding validation failed.'),
+  });
+  const onboardingApplyMutation = useMutation({
+    mutationFn: (preview) => masterDataApi.onboardingImportApply(preview),
+    onSuccess: (result) => {
+      setCredentials(result.credentials || []);
+      setResults({ rows: result.results.map((row, index) => ({ row: index + 1, empCode: row.naturalKey?.replace('EMPLOYEE:', ''), status: row.status === 'CREATED' ? 'created' : row.status === 'UNCHANGED' ? 'unchanged' : 'error', message: row.errors?.join('; ') || row.status })), summary: { ...result.summary, failed: result.summary.failed + result.summary.invalid } });
+      toast.add(`Controlled onboarding finished: ${result.summary.created} created.`, result.summary.failed || result.summary.invalid ? 'warning' : 'success');
+    },
+    onError: (err) => setError(err.message || 'Controlled onboarding failed.'),
+  });
+  const financialPreviewMutation = useMutation({
+    mutationFn: () => masterDataApi.financialImportPreview(financialFile, financialPeriod.year, financialPeriod.month),
+    onSuccess: setFinancialPreview,
+    onError: (err) => setError(err.message || 'Financial workbook validation failed.'),
+  });
+  const financialApplyMutation = useMutation({
+    mutationFn: () => masterDataApi.financialImportApply(financialPreview),
+    onSuccess: (result) => { setFinancialResult(result); toast.add(`Financial import finished: ${result.summary.created} rows created.`, result.summary.failed || result.summary.invalid ? 'warning' : 'success'); },
+    onError: (err) => setError(err.message || 'Financial workbook import failed.'),
+  });
+
   const handleFile = async (file) => {
     if (!file) return;
     setError('');
@@ -96,8 +132,15 @@ export function BulkImportPage() {
     setFileName(file.name);
 
     try {
-      const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.type.includes('spreadsheetml');
+      const isXlsx = file.name.toLowerCase().endsWith('.xlsx') || file.type.includes('spreadsheetml');
       if (isXlsx) {
+        if (!isSuperAdmin) {
+          setControlledFile(file);
+          setFileDataUrl('');
+          setCsv('');
+          onboardingPreviewMutation.mutate(file);
+          return;
+        }
         const dataUrl = await readFileAsDataUrl(file);
         setFileDataUrl(dataUrl);
         setCsv('');
@@ -132,6 +175,10 @@ export function BulkImportPage() {
   const runImport = () => {
     setError('');
     setResults(null);
+    if (previewData?.controlled) {
+      onboardingApplyMutation.mutate(previewData.signedPreview);
+      return;
+    }
     const payload = {
       organizationId: isSuperAdmin ? Number(organizationId) : undefined,
     };
@@ -183,7 +230,7 @@ export function BulkImportPage() {
       label: 'Issues / Notes',
       render: (r) => {
         if (!r.errors || r.errors.length === 0) {
-          return <span style={{ color: 'var(--success)' }}>✓ Validated</span>;
+          return <span style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}><CheckCircleIcon size={15} /> Validated</span>;
         }
         return (
           <span style={{ color: 'var(--danger)', fontWeight: 500 }}>
@@ -211,7 +258,7 @@ export function BulkImportPage() {
     { field: 'message', label: 'Detail', render: (r) => r.message || '—' },
   ];
 
-  const hasData = Boolean(fileDataUrl || csv.trim());
+  const hasData = Boolean(controlledFile || fileDataUrl || csv.trim());
   const canImport = hasData && (!isSuperAdmin || Boolean(organizationId)) && (!previewData || previewData.summary?.valid > 0);
 
   return (
@@ -330,7 +377,7 @@ export function BulkImportPage() {
                   id="bi-file"
                   className="input"
                   type="file"
-                  accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                  accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                   onChange={(e) => handleFile(e.target.files?.[0])}
                 />
                 {fileName && (
@@ -389,7 +436,7 @@ export function BulkImportPage() {
                   </div>
                   <Button
                     variant="primary"
-                    loading={importMutation.isPending}
+                    loading={importMutation.isPending || onboardingApplyMutation.isPending}
                     disabled={!canImport || (previewData.summary?.valid === 0)}
                     onClick={runImport}
                   >
@@ -408,7 +455,7 @@ export function BulkImportPage() {
               </div>
             )}
 
-            {!previewData && hasData && (
+            {!previewData && hasData && !controlledFile && (
               <div className="card-actions" style={{ marginTop: 'var(--space-4)' }}>
                 <Button
                   loading={previewMutation.isPending || importMutation.isPending}
@@ -431,15 +478,18 @@ export function BulkImportPage() {
               <Table columns={resultColumns} data={results.rows} keyField="row" emptyMessage="No rows processed." />
             </Card>
           )}
+          {credentials.length > 0 && <Card title="One-time employee login credentials" style={{ marginTop: 'var(--space-4)' }}><p className="form-note">Copy these temporary passwords now. They are shown only in this result and each employee must change the password at first sign-in.</p><div className="table-wrapper"><table className="table"><thead><tr><th className="table-th">Employee</th><th className="table-th">Login email</th><th className="table-th">Temporary password</th></tr></thead><tbody>{credentials.map(item => <tr className="table-row" key={item.employeeCode}><td className="table-td mono">{item.employeeCode}</td><td className="table-td">{item.email}</td><td className="table-td mono">{item.temporaryPassword}</td></tr>)}</tbody></table></div></Card>}
+
+          {!isSuperAdmin && <Card title="Employee financial workbook" style={{ marginTop: 'var(--space-4)' }}><p className="form-note">Import employee-linked allowances and deductions for one payroll month. Rows without an employee code or required authoritative loan fields remain blocked; employee names are never used for matching.</p><div className="form-grid"><Input id="financial-year" label="Payroll year" type="number" min="2000" max="2100" value={financialPeriod.year} onChange={event => setFinancialPeriod(current => ({ ...current, year: Number(event.target.value) }))} /><Input id="financial-month" label="Payroll month" type="number" min="1" max="12" value={financialPeriod.month} onChange={event => setFinancialPeriod(current => ({ ...current, month: Number(event.target.value) }))} /><Input id="financial-workbook" label="Financial workbook (.xlsx)" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event => { setFinancialFile(event.target.files?.[0] || null); setFinancialPreview(null); setFinancialResult(null); }} /></div>{financialPreview && <p className="form-note">{financialPreview.summary.valid} valid rows · {financialPreview.summary.invalid} blocked rows · SHA-256 <span className="mono">{financialPreview.source.sha256.slice(0, 12)}…</span></p>}<div className="card-actions"><Button variant="secondary" disabled={!financialFile} loading={financialPreviewMutation.isPending} onClick={() => financialPreviewMutation.mutate()}>Validate financial workbook</Button><Button disabled={!financialPreview || financialPreview.summary.valid === 0} loading={financialApplyMutation.isPending} onClick={() => financialApplyMutation.mutate()}>Apply valid rows</Button></div>{financialResult && <p className="form-note" role="status">Created {financialResult.summary.created}; unchanged {financialResult.summary.unchanged}; blocked {financialResult.summary.invalid}; failed {financialResult.summary.failed}.</p>}</Card>}
         </>
       )}
 
       {/* TAB 2: DATA STRUCTURE GUIDE */}
       {activeTab === 'guide' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <Card title="Arranged Employee Data Structure (5 Categories)">
+          <Card title={`Arranged Employee Data Structure (${fieldGroups.length} Categories)`}>
             <p>
-              The employee data in the Excel workbook is organized into 5 functional categories to make input clear and prevent
+              The employee data in the Excel workbook is organized into clear functional categories to make input clear and prevent
               formatting mistakes. Below is the detailed schema:
             </p>
           </Card>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckIcon } from './Icons';
 
 /**
  * Stepper — progress rail for multi-section forms.
@@ -19,7 +20,7 @@ export function Stepper({ steps, current, onStepClick }) {
               disabled={!clickable}
               aria-current={state === 'active' ? 'step' : undefined}
             >
-              <span className="stepper-tick mono">{state === 'done' ? '✓' : i + 1}</span>
+              <span className="stepper-tick mono">{state === 'done' ? <CheckIcon size={14} /> : i + 1}</span>
               <span className="stepper-label">{step.label}</span>
             </button>
             {i < steps.length - 1 && <span className="stepper-connector" aria-hidden="true" />}

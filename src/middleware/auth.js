@@ -57,6 +57,7 @@ async function authenticate(req, res, next) {
       deviceId: payload.deviceId || null,
       dpdpPending: Boolean(payload.dpdpPending),
       accessControlMode,
+      accessVersion: user.accessVersion,
     };
     if (user.organizationId && user.employeeId) {
       const channel = payload.deviceId ? 'MOBILE' : 'WEB';

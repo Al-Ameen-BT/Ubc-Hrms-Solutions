@@ -59,7 +59,7 @@ export function Notice({ message, tone = 'info' }: { message?: string | null; to
 }
 
 export function Empty({ message, action }: { message: string; action?: React.ReactNode }) {
-  return <View style={{ alignItems: 'center', paddingVertical: 18, paddingHorizontal: 10, gap: 12 }}><Text style={{ fontSize: 26, color: colors.blue }}>◇</Text><Text style={[styles.muted, { textAlign: 'center' }]}>{message}</Text>{action}</View>;
+  return <View style={{ alignItems: 'center', paddingVertical: 18, paddingHorizontal: 10, gap: 12 }}><EmptyStateIcon color={colors.blue} size={28} /><Text style={[styles.muted, { textAlign: 'center' }]}>{message}</Text>{action}</View>;
 }
 
 export function Loading({ rows = 3 }: { rows?: number }) {
@@ -168,6 +168,46 @@ export function CheckCircleIcon({ color = colors.green, size = 20 }: { color?: s
       <View style={{ width: size * 0.42, height: size * 0.22, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: colors.white, transform: [{ rotate: '-45deg' }], marginTop: -2 }} />
     </View>
   );
+}
+
+export function CheckIcon({ color = colors.blue, size = 16 }: { color?: string; size?: number }) {
+  return <View style={{ width: size * 0.62, height: size * 0.34, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: color, transform: [{ rotate: '-45deg' }], marginTop: -2 }} />;
+}
+
+export function CheckboxIcon({ checked, size = 26 }: { checked: boolean; size?: number }) {
+  return <View style={{ width: size, height: size, borderRadius: 7, borderWidth: 1.5, borderColor: checked ? colors.blue : colors.muted, backgroundColor: checked ? colors.pale : colors.white, alignItems: 'center', justifyContent: 'center' }}>{checked ? <CheckIcon size={15} /> : null}</View>;
+}
+
+export function EmptyStateIcon({ color = colors.blue, size = 28 }: { color?: string; size?: number }) {
+  return <View style={{ width: size * 0.82, height: size, borderRadius: 4, borderWidth: 1.8, borderColor: color, padding: size * 0.18, gap: size * 0.12 }}><View style={{ height: 1.8, backgroundColor: color, borderRadius: 1 }} /><View style={{ width: '70%', height: 1.8, backgroundColor: color, borderRadius: 1 }} /></View>;
+}
+
+export function PolicyIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return <EmptyStateIcon color={color} size={size} />;
+}
+
+export function CalendarGridIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return <View style={{ width: size, height: size, borderRadius: 4, borderWidth: 1.7, borderColor: color, overflow: 'hidden' }}><View style={{ height: size * 0.32, backgroundColor: color }} /><View style={{ flex: 1, padding: 3, flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>{Array.from({ length: 4 }, (_, index) => <View key={index} style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: color }} />)}</View></View>;
+}
+
+export function WorkplaceIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return <View style={{ width: size, height: size, flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}><View style={{ width: size * 0.3, height: size * 0.55, borderWidth: 1.6, borderColor: color }} /><View style={{ width: size * 0.36, height: size, borderWidth: 1.6, borderColor: color }} /><View style={{ width: size * 0.3, height: size * 0.7, borderWidth: 1.6, borderColor: color }} /></View>;
+}
+
+export function ReceiptIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return <View style={{ width: size * 0.82, height: size, borderWidth: 1.7, borderColor: color, padding: 4, gap: 3 }}><View style={{ height: 1.5, backgroundColor: color }} /><View style={{ height: 1.5, backgroundColor: color }} /><View style={{ width: '60%', height: 1.5, backgroundColor: color }} /></View>;
+}
+
+export function PrivacyIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'flex-end' }}><View style={{ width: size * 0.62, height: size * 0.55, borderRadius: 4, borderWidth: 1.7, borderColor: color }} /><View style={{ position: 'absolute', top: 0, width: size * 0.44, height: size * 0.48, borderRadius: size, borderWidth: 1.7, borderColor: color, backgroundColor: colors.white }} /></View>;
+}
+
+export function ProfileIcon({ color = colors.blue, size = 20 }: { color?: string; size?: number }) {
+  return <View style={{ width: size, height: size, alignItems: 'center' }}><View style={{ width: size * 0.38, height: size * 0.38, borderRadius: size, borderWidth: 1.7, borderColor: color }} /><View style={{ position: 'absolute', bottom: 0, width: size * 0.78, height: size * 0.42, borderTopLeftRadius: size, borderTopRightRadius: size, borderWidth: 1.7, borderBottomWidth: 0, borderColor: color }} /></View>;
+}
+
+export function ChevronLeftIcon({ color = colors.muted, size = 16 }: { color?: string; size?: number }) {
+  return <View style={{ width: size * 0.44, height: size * 0.44, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: color, transform: [{ rotate: '45deg' }] }} />;
 }
 
 /* ================= Profile Avatar ================= */

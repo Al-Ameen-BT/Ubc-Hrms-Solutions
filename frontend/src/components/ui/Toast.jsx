@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { XIcon } from './Icons';
 
 const ToastContext = createContext(null);
 
@@ -26,7 +27,7 @@ export function ToastProvider({ children }) {
         {toasts.map(toast => (
           <div key={toast.id} className={`toast toast-${toast.variant}`} role="alert">
             <span>{toast.message}</span>
-            <button className="toast-close" onClick={() => remove(toast.id)} aria-label="Dismiss">✕</button>
+            <button className="toast-close" onClick={() => remove(toast.id)} aria-label="Dismiss"><XIcon size={16} /></button>
           </div>
         ))}
       </div>

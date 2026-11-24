@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { Api } from '../api';
-import { Action, Card, colors, ErrorText, Loading, Page, radius, ScreenHeading, styles } from '../ui';
+import { Action, Card, CheckboxIcon, colors, ErrorText, Loading, Page, PrivacyIcon, radius, ScreenHeading, styles } from '../ui';
 
 export type PublicDpdpDoc = {
   id: number;
@@ -76,7 +76,7 @@ export function PrivacyOnboardingScreen({
     <Page>
       <View style={local.brandRow}>
         <View style={local.brandMark}>
-          <Text style={local.brandMarkText}>§</Text>
+          <PrivacyIcon color={colors.white} size={22} />
         </View>
         <View>
           <Text style={local.brand}>DATA PRIVACY</Text>
@@ -105,9 +105,7 @@ export function PrivacyOnboardingScreen({
             onPress={() => setTermsAgreed(!termsAgreed)}
             style={[local.checkRow, termsAgreed && local.checkRowSelected]}
           >
-            <Text style={[local.checkMark, termsAgreed && local.checkMarkSelected]}>
-              {termsAgreed ? '✓' : ''}
-            </Text>
+            <CheckboxIcon checked={termsAgreed} />
             <Text style={[styles.body, { flex: 1, fontWeight: termsAgreed ? '700' : '400' }]}>
               I have read and agree to the Platform Terms of Service.
             </Text>
@@ -128,9 +126,7 @@ export function PrivacyOnboardingScreen({
             onPress={() => setPrivacyAgreed(!privacyAgreed)}
             style={[local.checkRow, privacyAgreed && local.checkRowSelected]}
           >
-            <Text style={[local.checkMark, privacyAgreed && local.checkMarkSelected]}>
-              {privacyAgreed ? '✓' : ''}
-            </Text>
+            <CheckboxIcon checked={privacyAgreed} />
             <Text style={[styles.body, { flex: 1, fontWeight: privacyAgreed ? '700' : '400' }]}>
               I understand how my personal data is processed under the DPDP Act.
             </Text>
@@ -149,9 +145,7 @@ export function PrivacyOnboardingScreen({
           onPress={() => setAgeAffirmed(!ageAffirmed)}
           style={[local.checkRow, ageAffirmed && local.checkRowSelected]}
         >
-          <Text style={[local.checkMark, ageAffirmed && local.checkMarkSelected]}>
-            {ageAffirmed ? '✓' : ''}
-          </Text>
+          <CheckboxIcon checked={ageAffirmed} />
           <Text style={[styles.body, { flex: 1, fontWeight: ageAffirmed ? '700' : '400' }]}>
             I affirm that I am 18 years of age or older.
           </Text>
@@ -170,7 +164,6 @@ export function PrivacyOnboardingScreen({
 const local = StyleSheet.create({
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   brandMark: { width: 44, height: 44, borderRadius: 13, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  brandMarkText: { color: colors.white, fontSize: 22, fontWeight: '900' },
   brand: { color: colors.ink, fontSize: 15, fontWeight: '900', letterSpacing: 0.8 },
   documentBodyBox: {
     maxHeight: 140,
@@ -194,21 +187,5 @@ const local = StyleSheet.create({
   checkRowSelected: {
     borderColor: colors.blue,
     backgroundColor: colors.pale,
-  },
-  checkMark: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: colors.muted,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    lineHeight: 24,
-    color: colors.blue,
-    fontWeight: '900',
-    backgroundColor: colors.white,
-  },
-  checkMarkSelected: {
-    borderColor: colors.blue,
   },
 });

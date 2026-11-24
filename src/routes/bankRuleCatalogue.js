@@ -43,6 +43,21 @@ router.post('/', action(async (req, res) => {
   res.status(201).json({ data: row });
 }));
 router.post('/preview', action(async (req, res) => res.json({ data: catalogue.validateCatalogue(req.body) })));
+router.post('/import/preview', express.raw({ type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', limit: '2mb' }), action(async (req, res) => {
+  const parsed = await require('../services/importWorkbooks').parseRuleWorkbook(req.body, { filename: req.get('X-Import-Filename') });
+  res.json({ data: require('../services/importPreview').signPreview('bank-rule-catalogue', req.user, parsed) });
+}));
+router.post('/import', action(async (req, res) => {
+  const parsed = require('../services/importPreview').verifyPreview('bank-rule-catalogue', req.user, req.body?.preview);
+  if (parsed.rows.some(row => row.errors?.length)) throw new catalogue.CatalogueError('Resolve workbook validation errors before importing.');
+  const rules = parsed.rows.map(({ kind, sourceSheet, sourceRow, values }) => ({ kind, ...values, source: { sheet: sourceSheet, row: sourceRow } }));
+  const payload = catalogue.validateCatalogue({ ...(req.body?.catalogue || {}), rules, payrollDefaults: parsed.payrollDefaults });
+  const existing = await BankRuleCatalogue.findOne({ where: { bankClass: payload.bankClass, sourceWorkbookSha256: parsed.source.sha256 } });
+  if (existing) return res.json({ data: existing, unchanged: true });
+  const row = await BankRuleCatalogue.create({ ...payload, sourceWorkbookSha256: parsed.source.sha256, sourceWorkbookFilename: parsed.source.filename, createdByUserId: req.user.id });
+  await audit(req, 'bank-catalogue.import', { organizationId: null, targetType: 'bank-rule-catalogue', targetId: row.id, details: { filename: parsed.source.filename, sha256: parsed.source.sha256, ruleCount: rules.length } });
+  res.status(201).json({ data: row });
+}));
 router.param('id', (req, res, next, id) => {
   if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) return res.status(400).json({ status: 'error', message: 'Invalid catalogue ID.' });
   next();

@@ -5,6 +5,7 @@ process.env.JWT_SECRET = 'catalogue-api-test-secret-only';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
+const Excel = require('exceljs');
 const { sequelize, User, Organization, AuditLog, PayScale, PostCadre } = require('../src/models');
 const { signToken } = require('../src/services/authService');
 const routes = require('../src/routes');
@@ -13,6 +14,21 @@ const orgTokens = [];
 async function call(method, path, body, token = adminToken) {
   const response = await fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, body: await response.json() };
+}
+async function callWorkbook(path, buffer, token = adminToken) {
+  const response = await fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', Authorization: `Bearer ${token}`, 'X-Import-Filename': 'catalogue.xlsx' }, body: buffer });
+  return { status: response.status, body: await response.json() };
+}
+async function catalogueWorkbook() {
+  const book = new Excel.Workbook();
+  const sheet = book.addWorksheet('Sheet1');
+  sheet.addRow(['Sno.', 'Allowances', 'Amount', 'per periodicity', 'maximum', 'Level']);
+  sheet.addRow([1, 'Medical Allowance', '4000', 'Per Year', '4000', 'For all grades']);
+  sheet.addRow(['A', 'Deductions']);
+  sheet.addRow([1, 'Provident Fund', '12 % of Basic Pay and D.A', 'every month', '', 'For all grades']);
+  sheet.addRow(['D', 'Leave Particulars']);
+  sheet.addRow([1, 'Casual Leave', '20 days for Calendar Year', '', '', 'For all grades']);
+  return Buffer.from(await book.xlsx.writeBuffer());
 }
 before(async () => {
   await sequelize.sync();
@@ -71,6 +87,27 @@ test('rejects invalid filters, malformed IDs, version omissions and source tampe
   const id = created.body.data.id;
   assert.equal((await call('DELETE', `/${id}`, {})).status, 409);
   assert.equal((await call('DELETE', `/${id}`, { version: 1 })).status, 200);
+});
+
+test('workbook import requires a signed preview and creates only a structured draft', async () => {
+  const preview = await callWorkbook('/import/preview', await catalogueWorkbook());
+  assert.equal(preview.status, 200);
+  assert.match(preview.body.data.previewSignature, /^[1-9]\d{12}\.[a-f0-9]{64}$/);
+  assert.ok(preview.body.data.rows.some(row => row.kind === 'ALLOWANCE'));
+
+  const tampered = structuredClone(preview.body.data);
+  tampered.rows[0].values.amount = 999999;
+  const rejected = await call('POST', '/import', { preview: tampered, catalogue: { name: 'Tampered import', bankClass: 'CLASS_III' } });
+  assert.equal(rejected.status, 400);
+
+  const created = await call('POST', '/import', { preview: preview.body.data, catalogue: { name: 'Workbook draft', bankClass: 'CLASS_III', notes: 'Imported for verification.' } });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.status, 'DRAFT');
+  assert.ok(created.body.data.rules.some(rule => rule.kind === 'ALLOWANCE' && rule.code === 'MEDICAL_ALLOWANCE'));
+  const retried = await call('POST', '/import', { preview: preview.body.data, catalogue: { name: 'Workbook draft', bankClass: 'CLASS_III' } });
+  assert.equal(retried.status, 200);
+  assert.equal(retried.body.data.id, created.body.data.id);
+  assert.ok(await AuditLog.count({ where: { action: 'bank-catalogue.import' } }));
 });
 
 test('new bank waits for verified catalogue adoption instead of receiving reference pay stages', async () => {

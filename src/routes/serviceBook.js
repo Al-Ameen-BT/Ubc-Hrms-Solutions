@@ -385,7 +385,7 @@ const employeeCrud = crudRouter(Employee, {
       'gsliOptIn', 'gsliAmount', 'ptAmount', 'taxRegime', 'taxOtherDeductions',
       'lastPromotionDate', 'stagnationStagesGranted',
       // Personal details / identity / contact / bank / posting / service milestones
-      'fatherName', 'spouseName', 'gender', 'bloodGroup', 'educationalQualification', 'photoAssetId',
+      'fatherName', 'spouseName', 'gender', 'bloodGroup', 'educationalQualification', 'educationVerified', 'photoAssetId',
       'panNumber', 'aadhaarNumber', 'uanNumber', 'pfNumber',
       'officeEmail', 'personalEmail', 'residenceAddress',
       'emergencyContactName', 'emergencyContactNumber', 'emergencyContactRelation',
@@ -637,6 +637,29 @@ router.get('/:id/service-book/events/:eventId/document/file', authenticate, requ
  */
 const PAYSLIP_READERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY'];
 
+async function livePayslipFor(employee, year, month) {
+  const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
+  const asOf = loans.asOfForMonth(month, year);
+  const [activeLoans, attendanceRow, segments] = await Promise.all([
+    loans.loadActiveLoans(employee.id, asOf),
+    attendance.getForMonth(employee.id, month),
+    require('../services/compensationResolver').segmentsForMonth(employee, year, month),
+  ]);
+  const currentSegment = segments.at(-1);
+  const post = currentSegment?.source === 'CATALOGUE' ? await PostCadre.findOne({ where: { organizationId: employee.organizationId, code: currentSegment.postCode } }) : null;
+  const catalogueSegments = segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? segments : null;
+  const effectiveSettings = catalogueSegments ? currentSegment.settings : settings;
+  const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...currentSegment.employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
+  const attendanceJson = attendanceRow ? attendanceRow.toJSON() : null;
+  const compute = require('../services/payslip').computePayslip;
+  const base = compute(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceJson, [], catalogueSegments, year, []);
+  const context = { employee: effectiveEmployee, basicPaise: Number(base.earnings.basic || 0) * 100, daPaise: Number(base.earnings.da || 0) * 100, grossPaise: Number(base.earnings.grossEarnings || 0) * 100 };
+  const customAllowances = await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post?.id || employee.postCadreId, year, month, context);
+  const withAllowances = compute(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceJson, customAllowances, catalogueSegments, year, []);
+  const customDeductions = await require('../services/deductions').applicableDeductionsFor(employee.organizationId, post?.id || employee.postCadreId, year, month, { ...context, grossPaise: Number(withAllowances.earnings.grossEarnings || 0) * 100 });
+  return compute(effectiveEmployee, effectiveSettings, month, activeLoans, attendanceJson, customAllowances, catalogueSegments, year, customDeductions);
+}
+
 router.get('/:id/payslip', authenticate, requireFeaturePermission('payroll.view', PAYSLIP_READERS, resource('Employee')), async (req, res) => {
   try {
     const employee = await Employee.findByPk(req.params.id, { include: [{ model: PayScale, as: 'CurrentPayScale' }] });
@@ -644,29 +667,10 @@ router.get('/:id/payslip', authenticate, requireFeaturePermission('payroll.view'
     if (req.user.role !== 'SUPER_ADMIN' && String(employee.organizationId) !== String(req.user.organizationId)) {
       return res.status(404).json({ status: 'error', message: 'Employee not found' });
     }
-    const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
     const month = req.query.month ? Number(req.query.month) : undefined;
     const resolvedMonth = month || (new Date().getMonth() + 1);
     const resolvedYear = req.query.year ? Number(req.query.year) : new Date().getFullYear();
-    const asOf = loans.asOfForMonth(resolvedMonth, resolvedYear);
-    const [activeLoans, attendanceRow, customAllowances, customDeductions] = await Promise.all([
-      loans.loadActiveLoans(employee.id, asOf),
-      attendance.getForMonth(employee.id, month),
-      require('../services/allowances').applicableAllowancesFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
-      require('../services/deductions').applicableDeductionsFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
-    ]);
-    const segments = await require('../services/compensationResolver').segmentsForMonth(employee, resolvedYear, resolvedMonth);
-    const currentSegment = segments.at(-1);
-    if (currentSegment?.source === 'CATALOGUE') {
-      const post = await PostCadre.findOne({ where: { organizationId: employee.organizationId, code: currentSegment.postCode } });
-      if (post) {
-        customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
-        customDeductions.splice(0, customDeductions.length, ...await require('../services/deductions').applicableDeductionsFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
-      }
-    }
-    const catalogueSegments = segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? segments : null;
-    const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
-    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear, customDeductions);
+    const payslip = await livePayslipFor(employee, resolvedYear, resolvedMonth);
     res.json({ data: payslip });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });
@@ -686,29 +690,10 @@ router.get('/:id/payslip.pdf', authenticate, requireFeaturePermission('payroll.v
     if (req.user.role !== 'SUPER_ADMIN' && String(employee.organizationId) !== String(req.user.organizationId)) {
       return res.status(404).json({ status: 'error', message: 'Employee not found' });
     }
-    const settings = await require('../services/payrollSettings').getSettings(employee.organizationId);
     const month = req.query.month ? Number(req.query.month) : undefined;
     const resolvedMonth = month || (new Date().getMonth() + 1);
     const resolvedYear = req.query.year ? Number(req.query.year) : new Date().getFullYear();
-    const asOf = loans.asOfForMonth(resolvedMonth, resolvedYear);
-    const [activeLoans, attendanceRow, customAllowances, customDeductions] = await Promise.all([
-      loans.loadActiveLoans(employee.id, asOf),
-      attendance.getForMonth(employee.id, month),
-      require('../services/allowances').applicableAllowancesFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
-      require('../services/deductions').applicableDeductionsFor(employee.organizationId, employee.postCadreId, resolvedYear, resolvedMonth),
-    ]);
-    const segments = await require('../services/compensationResolver').segmentsForMonth(employee, resolvedYear, resolvedMonth);
-    const currentSegment = segments.at(-1);
-    if (currentSegment?.source === 'CATALOGUE') {
-      const post = await PostCadre.findOne({ where: { organizationId: employee.organizationId, code: currentSegment.postCode } });
-      if (post) {
-        customAllowances.splice(0, customAllowances.length, ...await require('../services/allowances').applicableAllowancesFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
-        customDeductions.splice(0, customDeductions.length, ...await require('../services/deductions').applicableDeductionsFor(employee.organizationId, post.id, resolvedYear, resolvedMonth));
-      }
-    }
-    const catalogueSegments = segments.some(segment => segment.source === 'CATALOGUE' || segment.source === 'DIRECT_PAY') ? segments : null;
-    const effectiveEmployee = catalogueSegments ? { ...employee.toJSON(), ...catalogueSegments.at(-1).employeeFields, CurrentPayScale: employee.CurrentPayScale } : employee;
-    const payslip = require('../services/payslip').computePayslip(effectiveEmployee, catalogueSegments ? catalogueSegments.at(-1).settings : settings, month, activeLoans, attendanceRow ? attendanceRow.toJSON() : null, customAllowances, catalogueSegments, resolvedYear, customDeductions);
+    const payslip = await livePayslipFor(employee, resolvedYear, resolvedMonth);
     const org = await Organization.findByPk(employee.organizationId, { attributes: ['id', 'name', 'shortName'] });
     const { buildPayslipPdf } = require('../services/payslipPdf');
     const pdf = await buildPayslipPdf({

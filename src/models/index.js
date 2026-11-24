@@ -65,6 +65,7 @@ const OrgLeaveSetting = require('./orgLeaveSetting');
 const EmployeeLeaveBalance = require('./employeeLeaveBalance');
 const LeaveApplication = require('./leaveApplication');
 const EmployeeBankAccount = require('./employeeBankAccount');
+const EmployeePayrollAdjustment = require('./employeePayrollAdjustment');
 const BankRuleCatalogue = require('./bankRuleCatalogue');
 const OrganizationCatalogueAdoption = require('./organizationCatalogueAdoption');
 const EmployeeCompensationAssignment = require('./employeeCompensationAssignment');
@@ -156,6 +157,9 @@ Employee.belongsTo(PayScale, { as: 'CurrentPayScale', foreignKey: 'currentPaySca
 Employee.belongsTo(PayStage, { as: 'CurrentPayStage', foreignKey: 'currentStageId' });
 Employee.belongsTo(IncrementPolicy, { foreignKey: 'incrementPolicyId' });
 Employee.belongsTo(PayFixationPolicy, { foreignKey: 'payFixationPolicyId' });
+Employee.hasMany(EmployeePayrollAdjustment, { foreignKey: 'employeeId' });
+EmployeePayrollAdjustment.belongsTo(Employee, { foreignKey: 'employeeId' });
+EmployeePayrollAdjustment.belongsTo(Organization, { foreignKey: 'organizationId' });
 
 IncrementPolicy.hasMany(Employee, { foreignKey: 'incrementPolicyId' });
 PayFixationPolicy.hasMany(Employee, { foreignKey: 'payFixationPolicyId' });
@@ -558,6 +562,7 @@ module.exports = {
   EmployeeLeaveBalance,
   LeaveApplication,
   EmployeeBankAccount,
+  EmployeePayrollAdjustment,
   EmployeePolicy,
   EmployeePolicyAcknowledgement,
   OrganizationHoliday,

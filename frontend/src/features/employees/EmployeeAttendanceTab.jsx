@@ -6,6 +6,7 @@ import { useToast } from '../../components/ui/Toast';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { ArrowLeftIcon, ArrowRightIcon } from '../../components/ui/Icons';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -53,8 +54,8 @@ export function EmployeeAttendanceTab({ employeeId }) {
       <div className="table-toolbar">
         <span className="form-note">Enter Loss of Pay days for any month; allowances and Basic are pro-rated for the days marked.</span>
         <div className="row-actions">
-          <Button variant="secondary" size="sm" onClick={() => setYear((y) => y - 1)}>◀ {year - 1}</Button>
-          <Button variant="secondary" size="sm" onClick={() => setYear((y) => y + 1)} disabled={year >= thisYear + 1}>{year + 1} ▶</Button>
+          <Button variant="secondary" size="sm" onClick={() => setYear((y) => y - 1)}><ArrowLeftIcon size={15} /> {year - 1}</Button>
+          <Button variant="secondary" size="sm" onClick={() => setYear((y) => y + 1)} disabled={year >= thisYear + 1}>{year + 1} <ArrowRightIcon size={15} /></Button>
         </div>
       </div>
 

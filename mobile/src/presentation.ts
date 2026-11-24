@@ -1,12 +1,12 @@
 export const primarySections = ['Home', 'Payslips', 'Leave', 'Time', 'More'] as const;
 export type PrimarySection = typeof primarySections[number];
 
-export const navigationItems: ReadonlyArray<{ section: PrimarySection; label: string; glyph: string; accessibilityLabel: string }> = [
-  { section: 'Home', label: 'Home', glyph: '⌂', accessibilityLabel: 'Employee home' },
-  { section: 'Payslips', label: 'Pay', glyph: '₹', accessibilityLabel: 'My payslips' },
-  { section: 'Leave', label: 'Leave', glyph: '◷', accessibilityLabel: 'My leave' },
-  { section: 'Time', label: 'Time', glyph: '◴', accessibilityLabel: 'Check in and time entries' },
-  { section: 'More', label: 'More', glyph: '•••', accessibilityLabel: 'More employee services' },
+export const navigationItems: ReadonlyArray<{ section: PrimarySection; label: string; accessibilityLabel: string }> = [
+  { section: 'Home', label: 'Home', accessibilityLabel: 'Employee home' },
+  { section: 'Payslips', label: 'Pay', accessibilityLabel: 'My payslips' },
+  { section: 'Leave', label: 'Leave', accessibilityLabel: 'My leave' },
+  { section: 'Time', label: 'Time', accessibilityLabel: 'Check in and time entries' },
+  { section: 'More', label: 'More', accessibilityLabel: 'More employee services' },
 ];
 
 const nestedSections = new Set(['Policies', 'Calendar', 'Workplace', 'Claims', 'Profile']);

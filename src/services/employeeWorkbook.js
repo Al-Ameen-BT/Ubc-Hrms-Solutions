@@ -18,6 +18,9 @@ const EMPLOYEE_FIELD_GROUPS = [
       { key: 'empCode', label: 'Employee Code *', required: true, width: 20, example: 'E101', description: 'Unique identifier for employee within the bank.' },
       { key: 'name', label: 'Full Name *', required: true, width: 26, example: 'Jane Doe', description: 'Official full name as per bank records / Aadhaar.' },
       { key: 'dob', label: 'Date of Birth (YYYY-MM-DD)', required: false, width: 22, example: '1990-04-12', description: 'Birth date in standard YYYY-MM-DD format.' },
+      { key: 'gender', label: 'Gender (MALE / FEMALE / OTHER)', required: false, width: 24, example: 'FEMALE', dropdown: ['MALE', 'FEMALE', 'OTHER'], description: 'Gender used by applicable leave entitlement rules.' },
+      { key: 'educationalQualification', label: 'Educational Qualification *', required: true, width: 28, example: 'B.Com', description: 'Highest verified qualification.' },
+      { key: 'educationVerified', label: 'Education Verified * (YES / NO)', required: true, width: 26, example: 'YES', dropdown: ['YES', 'NO'], description: 'Must be YES before controlled onboarding can apply the row.' },
     ],
   },
   {
@@ -30,6 +33,9 @@ const EMPLOYEE_FIELD_GROUPS = [
       { key: 'doa', label: 'Date of Appointment (YYYY-MM-DD)', required: false, width: 26, example: '2015-06-01', description: 'Date appointed to present post cadre in YYYY-MM-DD format.' },
       { key: 'employmentType', label: 'Employment Type (REGULAR / PART_TIME_CONTINGENT)', required: false, width: 34, example: 'REGULAR', dropdown: ['REGULAR', 'PART_TIME_CONTINGENT'], description: 'REGULAR or PART_TIME_CONTINGENT (defaults to REGULAR).' },
       { key: 'postCode', label: 'Post Code * (See Reference sheet)', required: true, width: 30, example: 'CLERK', description: 'Must match an active Post Cadre code in your bank.' },
+      { key: 'branchCode', label: 'Branch Code', required: false, width: 20, example: 'HO', description: 'Required in permission mode; must match an active branch.' },
+      { key: 'departmentCode', label: 'Department Code', required: false, width: 22, example: 'ACCOUNTS', description: 'Required in permission mode; must belong to the selected branch.' },
+      { key: 'positionCode', label: 'Position Code', required: false, width: 22, example: 'CLERK-01', description: 'Required in permission mode; must belong to the selected department and have capacity.' },
     ],
   },
   {
@@ -46,7 +52,35 @@ const EMPLOYEE_FIELD_GROUPS = [
     ],
   },
   {
-    name: '4. Deductions & Welfare',
+    name: '4. Contact & Statutory Details',
+    code: 'contact',
+    colorHex: '374151',
+    bgHex: 'E5E7EB',
+    fields: [
+      { key: 'officeEmail', label: 'Office Email', required: false, width: 28, example: 'employee@bank.example', description: 'Official work email.' },
+      { key: 'personalEmail', label: 'Personal Email', required: false, width: 28, example: 'employee@example.com', description: 'Personal contact email.' },
+      { key: 'panNumber', label: 'PAN Number', required: false, width: 18, example: 'AAAAA0000A', description: 'PAN stored under sensitive-data controls.' },
+      { key: 'aadhaarNumber', label: 'Aadhaar Number', required: false, width: 20, example: '123456789012', description: 'Aadhaar stored under sensitive-data controls.' },
+      { key: 'uanNumber', label: 'UAN Number', required: false, width: 20, example: '100000000000', description: 'Universal Account Number.' },
+      { key: 'pfNumber', label: 'PF Number', required: false, width: 20, example: 'PF-001', description: 'Provident-fund account reference.' },
+      { key: 'designation', label: 'Designation', required: false, width: 24, example: 'Clerk', description: 'Display designation; authoritative position is selected separately.' },
+      { key: 'bankName', label: 'Salary Bank Name', required: false, width: 24, example: 'Co-operative Bank', description: 'Salary-credit bank.' },
+      { key: 'bankAccountNumber', label: 'Salary Account Number', required: false, width: 24, example: '001234567890', description: 'Enter as text to preserve leading zeros.' },
+      { key: 'bankIfsc', label: 'Salary Account IFSC', required: false, width: 20, example: 'ABCD0123456', description: 'Salary-credit IFSC.' },
+    ],
+  },
+  {
+    name: '5. Self-Service Login',
+    code: 'login',
+    colorHex: '4338CA',
+    bgHex: 'E0E7FF',
+    fields: [
+      { key: 'createLogin', label: 'Create Login (YES / NO)', required: false, width: 24, example: 'YES', dropdown: ['YES', 'NO'], description: 'YES creates an employee self-service account only.' },
+      { key: 'loginEmail', label: 'Login Email', required: false, width: 30, example: 'employee@bank.example', description: 'Required when Create Login is YES; imported accounts always receive the protected EMPLOYEE own-record role.' },
+    ],
+  },
+  {
+    name: '6. Deductions & Welfare',
     code: 'deductions',
     colorHex: '7D4E00', // Dark Amber
     bgHex: 'FFF2CC',    // Soft Amber
@@ -60,7 +94,7 @@ const EMPLOYEE_FIELD_GROUPS = [
     ],
   },
   {
-    name: '5. Income Tax Regime',
+    name: '7. Income Tax Regime',
     code: 'tax',
     colorHex: '4A235A', // Dark Purple
     bgHex: 'F2DCDB',    // Soft Rose/Purple
@@ -89,6 +123,8 @@ function cellToString(val) {
   }
   if (typeof val === 'object') {
     if (val.text !== undefined) return String(val.text).trim();
+    // Formula results are not authoritative import input.
+    if (val.formula !== undefined || val.sharedFormula !== undefined) return '';
     if (val.result !== undefined) return String(val.result).trim();
   }
   return String(val).trim();

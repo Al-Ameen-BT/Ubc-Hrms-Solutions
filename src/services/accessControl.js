@@ -1,10 +1,11 @@
 'use strict';
 const { Op, literal } = require('sequelize');
 const models = require('../models');
-const { User, Organization, Employee, OrganizationBranch, OrganizationDepartment, OrganizationRole, OrganizationRolePermission, UserRoleAssignment, UserRoleBranch, UserRoleDepartment } = models;
+const { User, Organization, Employee, OrganizationBranch, OrganizationDepartment, OrganizationRole, OrganizationRolePermission, UserRoleAssignment, UserRoleBranch, UserRoleDepartment, EmployeeOrganizationAssignment } = models;
 const { permission, template } = require('./permissionCatalog');
 const { checkOrgAccess, todayIST } = require('./orgAccess');
 const { sameId, matchesScope } = require('./organizationAccessPolicy');
+const { authCache } = require('./redis');
 
 const BOOTSTRAP_MODULES = ['structure', 'branches', 'departments', 'positions', 'assignments', 'settings', 'roles', 'users', 'audit'];
 const bootstrapPermission = code => BOOTSTRAP_MODULES.includes(code.split('.')[0]) || ['people.view', 'people.create', 'people.edit'].includes(code);
@@ -25,28 +26,54 @@ async function bootstrapState(user, date, transaction) {
   };
 }
 
-async function effectiveAccess(userId, at = todayIST(), transaction) {
+async function effectiveAccess(userOrId, at = todayIST(), transaction, accessVersion = null) {
+  let userId = userOrId;
+  let av = accessVersion;
+  let tx = transaction;
+
+  if (tx && !tx.commit && !tx.rollback && typeof tx === 'object') {
+    av = tx.accessVersion ?? av;
+    tx = tx.transaction;
+  }
+  if (av && typeof av === 'object') {
+    av = av.accessVersion;
+  }
+  if (typeof userOrId === 'object' && userOrId !== null) {
+    userId = userOrId.id;
+    if (av == null && userOrId.accessVersion != null) {
+      av = userOrId.accessVersion;
+    }
+  }
+
   const date = at instanceof Date ? at.toISOString().slice(0, 10) : at;
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) throw new TypeError('Invalid access date');
+
+  const isToday = date === todayIST();
+  const cacheKey = (av != null && !tx && isToday) ? `${userId}:${av}` : null;
+  if (cacheKey) {
+    const cached = await authCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
   const access = { userId, organizationId: null, employeeId: null, accessControlMode: null, grants: [], permissionCodes: [], scopeSummary: { own: false, organization: false, branchIds: [], departmentIds: [] }, activeBranchIds: [], activeDepartmentIds: [] };
-  const user = await User.findByPk(userId, { transaction });
+  const user = await User.findByPk(userId, { transaction: tx });
   if (!user || user.status !== 'ACTIVE' || user.role === 'SUPER_ADMIN' || !user.organizationId) return access;
   access.organizationId = user.organizationId;
-  const organization = await Organization.findByPk(user.organizationId, { transaction });
+  const organization = await Organization.findByPk(user.organizationId, { transaction: tx });
   if (!checkOrgAccess(organization).ok) return access;
   access.accessControlMode = organization.accessControlMode;
   access.at = date;
-  const employee = user.employeeId && await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' }, attributes: ['id'], transaction });
-  const linked = employee && await User.count({ where: { organizationId: user.organizationId, employeeId: employee.id, status: 'ACTIVE' }, transaction }) === 1;
+  const employee = user.employeeId && await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' }, attributes: ['id'], transaction: tx });
+  const linked = employee && await User.count({ where: { organizationId: user.organizationId, employeeId: employee.id, status: 'ACTIVE' }, transaction: tx }) === 1;
   if (linked) access.employeeId = employee.id;
-  const branches = await OrganizationBranch.findAll({ where: { organizationId: user.organizationId, status: 'ACTIVE' }, attributes: ['id'], transaction });
+  const branches = await OrganizationBranch.findAll({ where: { organizationId: user.organizationId, status: 'ACTIVE' }, attributes: ['id'], transaction: tx });
   access.activeBranchIds = branches.map(b => b.id);
-  const departments = await OrganizationDepartment.findAll({ where: { organizationId: user.organizationId, status: 'ACTIVE', branchId: { [Op.in]: access.activeBranchIds } }, attributes: ['id', 'branchId'], transaction });
+  const departments = await OrganizationDepartment.findAll({ where: { organizationId: user.organizationId, status: 'ACTIVE', branchId: { [Op.in]: access.activeBranchIds } }, attributes: ['id', 'branchId'], transaction: tx });
   access.activeDepartmentIds = departments.map(d => d.id);
   function grant(code, scope, branchIds = [], departmentIds = []) {
     access.grants.push({ action: code, scope, branchIds, departmentIds });
   }
-  const { bootstrap, protectedAssignment } = linked ? { bootstrap: false, protectedAssignment: false } : await bootstrapState(user, date, transaction);
+  const { bootstrap, protectedAssignment } = linked ? { bootstrap: false, protectedAssignment: false } : await bootstrapState(user, date, tx);
   access.bootstrapRestricted = protectedAssignment;
   if (organization.accessControlMode === 'LEGACY') {
     const definition = template(User.LEGACY_ROLE_TEMPLATES[user.role]);
@@ -58,11 +85,11 @@ async function effectiveAccess(userId, at = todayIST(), transaction) {
       } else grant(code, 'ORGANISATION');
     }
   } else if (organization.accessControlMode === 'PERMISSIONS') {
-    const assignments = await UserRoleAssignment.findAll({ where: { organizationId: user.organizationId, userId: user.id, ...current(date) }, transaction });
-    const roles = await OrganizationRole.findAll({ where: { organizationId: user.organizationId, id: { [Op.in]: assignments.map(a => a.roleId) }, status: 'ACTIVE' }, transaction });
-    const rolePermissions = await OrganizationRolePermission.findAll({ where: { organizationId: user.organizationId, roleId: { [Op.in]: roles.map(r => r.id) } }, transaction });
-    const branchScopes = await UserRoleBranch.findAll({ where: { organizationId: user.organizationId, userRoleAssignmentId: { [Op.in]: assignments.map(a => a.id) }, branchId: { [Op.in]: access.activeBranchIds } }, transaction });
-    const departmentScopes = await UserRoleDepartment.findAll({ where: { organizationId: user.organizationId, userRoleAssignmentId: { [Op.in]: assignments.map(a => a.id) }, departmentId: { [Op.in]: access.activeDepartmentIds } }, transaction });
+    const assignments = await UserRoleAssignment.findAll({ where: { organizationId: user.organizationId, userId: user.id, ...current(date) }, transaction: tx });
+    const roles = await OrganizationRole.findAll({ where: { organizationId: user.organizationId, id: { [Op.in]: assignments.map(a => a.roleId) }, status: 'ACTIVE' }, transaction: tx });
+    const rolePermissions = await OrganizationRolePermission.findAll({ where: { organizationId: user.organizationId, roleId: { [Op.in]: roles.map(r => r.id) } }, transaction: tx });
+    const branchScopes = await UserRoleBranch.findAll({ where: { organizationId: user.organizationId, userRoleAssignmentId: { [Op.in]: assignments.map(a => a.id) }, branchId: { [Op.in]: access.activeBranchIds } }, transaction: tx });
+    const departmentScopes = await UserRoleDepartment.findAll({ where: { organizationId: user.organizationId, userRoleAssignmentId: { [Op.in]: assignments.map(a => a.id) }, departmentId: { [Op.in]: access.activeDepartmentIds } }, transaction: tx });
     if (linked || bootstrap) for (const assignment of assignments) {
       const role = roles.find(r => sameId(r.id, assignment.roleId));
       const definition = role && template(role.templateCode);
@@ -88,6 +115,11 @@ async function effectiveAccess(userId, at = todayIST(), transaction) {
     branchIds: unique(access.grants.flatMap(g => g.branchIds)),
     departmentIds: unique(access.grants.flatMap(g => g.departmentIds)),
   };
+
+  if (cacheKey && access.organizationId) {
+    await authCache.set(cacheKey, access, 600);
+  }
+
   return access;
 }
 
@@ -159,21 +191,33 @@ function can(access, permissionCode, resource) {
 // QueryGenerator escapes every tenant/date/scope value; SQL never interpolates request text.
 function employeeIds(access, scope) {
   const q = models.sequelize.getQueryInterface().queryGenerator;
+  const assignment = models.EmployeeOrganizationAssignment;
+  const employeeTable = q.quoteTable(Employee.getTableName());
+  const assignmentTable = q.quoteTable(assignment.getTableName());
   const employeeQuery = where => literal(`(${q.selectQuery(Employee.getTableName(), { attributes: ['id'], where }).replace(/;$/, '')})`);
   if (!scope) return employeeQuery({ organization_id: access.organizationId });
-  const assignment = models.EmployeeOrganizationAssignment;
   const date = access.at || todayIST();
-  const currentWhere = { organization_id: access.organizationId, status: 'ACTIVE', effective_from: { [Op.lte]: date }, [Op.or]: [{ effective_to: null }, { effective_to: { [Op.gte]: date } }] };
-  const currentQuery = q.selectQuery(assignment.getTableName(), { attributes: ['employee_id'], where: currentWhere, group: ['employee_id'], having: literal('COUNT(*) = 1') }).replace(/;$/, '');
-  if (scope.allCurrent) return literal(`(${q.selectQuery(assignment.getTableName(), { attributes: ['employee_id'], where: currentWhere }).replace(/;$/, '')})`);
-  const where = { ...currentWhere, employee_id: { [Op.in]: literal(`(${currentQuery})`) },
+  const currentWhere = {
+    organization_id: access.organizationId,
+    status: 'ACTIVE',
+    effective_from: { [Op.lte]: date },
+    [Op.or]: [{ effective_to: null }, { effective_to: { [Op.gte]: date } }],
+  };
+  const antiJoin = `LEFT JOIN ${assignmentTable} AS a2 ON e.id = a2.employee_id AND e.organization_id = a2.organization_id AND a2.id <> a.id AND a2.status = 'ACTIVE' AND a2.effective_from <= ${q.escape(date)} AND (a2.effective_to IS NULL OR a2.effective_to >= ${q.escape(date)})`;
+
+  if (scope.allCurrent) {
+    return literal(`(${q.selectQuery(assignment.getTableName(), { attributes: ['employee_id'], where: currentWhere }).replace(/;$/, '')})`);
+  }
+  const where = {
+    ...currentWhere,
     branch_id: { [Op.in]: access.activeBranchIds },
     [Op.and]: [{ [Op.or]: [{ department_id: null }, { department_id: { [Op.in]: access.activeDepartmentIds } }] }],
   };
   if (scope.scope === 'SELECTED_BRANCHES') where.branch_id = { [Op.in]: scope.branchIds.filter(id => access.activeBranchIds.includes(id)) };
   if (scope.scope === 'DEPARTMENT') where.department_id = { [Op.in]: scope.departmentIds.filter(id => access.activeDepartmentIds.includes(id)) };
-  const query = q.selectQuery(assignment.getTableName(), { attributes: ['employee_id'], where, group: ['employee_id'], having: literal('COUNT(*) = 1') }).replace(/;$/, '');
-  return employeeQuery({ organization_id: access.organizationId, id: { [Op.in]: literal(`(${query})`) } });
+  const whereConds = q.getWhereConditions(where, 'a', assignment);
+  const sql = `SELECT DISTINCT e.id FROM ${employeeTable} AS e INNER JOIN ${assignmentTable} AS a ON e.id = a.employee_id AND e.organization_id = a.organization_id ${antiJoin} WHERE ${whereConds} AND a2.id IS NULL`;
+  return literal(`(${sql})`);
 }
 function tenantWhere(access, resourceType) {
   const model = resourceModel(resourceType);
@@ -227,4 +271,46 @@ function scopedWhere(access, permissionCode, resourceType) {
   if (permission(permissionCode).guardrails.includes('APPROVED_PAYMENT_ONLY')) clauses.push(resourceType === 'ArrearsCase' ? { paymentMode: { [Op.ne]: 'NONE' }, planApprovedBy: { [Op.ne]: null } } : { status: 'APPROVED' });
   return { [Op.and]: clauses };
 }
-module.exports = { effectiveAccess, can, scopedWhere, resourceModel, hasProtectedConflict, tenantWhere };
+
+// Automatically invalidate authorization cache when role or structure assignments change
+const mutatingModels = [
+  UserRoleAssignment,
+  UserRoleBranch,
+  UserRoleDepartment,
+  OrganizationRole,
+  OrganizationRolePermission,
+  OrganizationBranch,
+  OrganizationDepartment,
+  EmployeeOrganizationAssignment,
+  User,
+  Organization,
+  Employee,
+];
+
+for (const model of mutatingModels) {
+  if (model?.addHook) {
+    const invalidate = async instance => {
+      try {
+        const targetUserId = instance?.userId || (model === User ? instance?.id : null);
+        if (targetUserId) {
+          await authCache.del(targetUserId);
+        } else {
+          await authCache.clear();
+        }
+      } catch {}
+    };
+    const invalidateAll = async () => {
+      try {
+        await authCache.clear();
+      } catch {}
+    };
+    model.addHook('afterCreate', 'authCacheInvalidate', invalidate);
+    model.addHook('afterUpdate', 'authCacheInvalidate', invalidate);
+    model.addHook('afterDestroy', 'authCacheInvalidate', invalidate);
+    model.addHook('afterBulkCreate', 'authCacheInvalidate', invalidateAll);
+    model.addHook('afterBulkUpdate', 'authCacheInvalidate', invalidateAll);
+    model.addHook('afterBulkDestroy', 'authCacheInvalidate', invalidateAll);
+  }
+}
+
+module.exports = { effectiveAccess, can, scopedWhere, resourceModel, hasProtectedConflict, tenantWhere, authCache };

@@ -17,6 +17,8 @@ const BankRuleCatalogue = sequelize.define('BankRuleCatalogue', {
   posts: { type: DataTypes.JSON, allowNull: false, defaultValue: [] },
   rules: { type: DataTypes.JSON, allowNull: false, defaultValue: [] },
   payrollDefaults: { type: DataTypes.JSON, allowNull: false, defaultValue: {}, field: 'payroll_defaults' },
+  sourceWorkbookSha256: { type: DataTypes.STRING(64), allowNull: true, field: 'source_workbook_sha256' },
+  sourceWorkbookFilename: { type: DataTypes.STRING(255), allowNull: true, field: 'source_workbook_filename' },
   supersedesId: { type: DataTypes.INTEGER.UNSIGNED, field: 'supersedes_id' },
   version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   // Unique on publication only; prevents concurrent independent heads per class.

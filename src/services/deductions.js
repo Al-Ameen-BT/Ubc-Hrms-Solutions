@@ -7,7 +7,7 @@
  * directly from the application UI without code changes.
  */
 
-const { DeductionType, DeductionTypePost, PostCadre } = require('../models');
+const { DeductionType, DeductionTypePost, PostCadre, EmployeePayrollAdjustment } = require('../models');
 const { toPaise, toRupees, percentOf, add } = require('../utils/money');
 
 class DeductionError extends Error {
@@ -153,6 +153,13 @@ async function applicableDeductionsFor(organizationId, postCadreId, year, month,
         employerAmount: t.employerAmount != null ? Number(t.employerAmount) : 0,
       });
     }
+  }
+  if (salaryContext.employee?.id) {
+    const assigned = await EmployeePayrollAdjustment.findAll({
+      where: { organizationId, employeeId: salaryContext.employee.id, kind: 'DEDUCTION', payYear: year, payMonth: month, status: 'ACTIVE' },
+      order: [['id', 'ASC']],
+    });
+    for (const item of assigned) out.push({ id: `employee-${item.id}`, name: item.name, category: 'OTHER', amount: Number(item.amount), employerAmount: 0 });
   }
   return out;
 }

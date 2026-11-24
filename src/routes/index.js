@@ -26,6 +26,8 @@ router.use('/org/employee-policy', require('./orgEmployeePolicy'));
 router.use('/org/catalogue-adoptions', require('./orgCatalogueAdoption'));
 router.use('/org/compensation', require('./orgCompensation'));
 router.use('/org/financial-changes', require('./orgFinancialChanges'));
+router.use('/org/imports/employee-financial', require('./employeeFinancialImport'));
+router.use('/org/imports/employee-onboarding', require('./employeeOnboardingImport'));
 router.use('/org/holidays', require('./orgHolidays'));
 router.use('/org/time', require('./orgTime'));
 router.use('/org/expenses', require('./orgExpenses'));

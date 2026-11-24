@@ -178,7 +178,7 @@ test('GET /employees/bulk-references returns active posts, scales and structured
   assert.ok(Array.isArray(res.body.data.scales));
   assert.ok(res.body.data.scales.some((s) => s.code === 'SCALE_TEST'));
   assert.ok(Array.isArray(res.body.data.fieldGroups));
-  assert.equal(res.body.data.fieldGroups.length, 5);
+  assert.equal(res.body.data.fieldGroups.length, 7);
 });
 
 test('bulk import page consumes the reference API posts and scales fields', () => {

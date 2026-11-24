@@ -20,6 +20,7 @@
   --ok-tint: #e7f4ec;
   --radius: 6px;
   --shadow: 0 1px 2px rgba(16, 32, 45, .06), 0 4px 12px rgba(16, 32, 45, .05);
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
@@ -48,7 +49,7 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
   color: var(--text);
@@ -438,11 +439,11 @@ details[open] summary { margin-bottom: .6rem; }
 /* ---------- Stat tiles ---------- */
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .9rem; margin-bottom: 1.25rem; }
-.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: .9rem 1rem; border-left: 3px solid var(--brand); }
-.stat.warn { border-left-color: var(--warn); }
-.stat.off { border-left-color: var(--danger); }
+.stat { --stat-tone: var(--brand); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: .9rem 1rem; }
+.stat.warn { --stat-tone: var(--warn); }
+.stat.off { --stat-tone: var(--danger); }
 .stat-label { font-size: .75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
-.stat-value { font-size: 1.5rem; overflow-wrap: anywhere; font-weight: 650; margin: .15rem 0; line-height: 1.2; }
+.stat-value { color: var(--stat-tone); font-size: 1.5rem; overflow-wrap: anywhere; font-weight: 650; margin: .15rem 0; line-height: 1.2; }
 .stat-sub { font-size: .8125rem; color: var(--text-muted); }
 .stat-sub a { color: var(--brand); }
 

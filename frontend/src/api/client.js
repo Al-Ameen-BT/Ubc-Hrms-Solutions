@@ -112,6 +112,28 @@ export const api = {
   postRaw: (path, body) => request('POST', path, body, { raw: true }),
 };
 
+export async function uploadWorkbook(path, file) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${sessionStorage.getItem('token')}`,
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'X-Import-Filename': file.name,
+    },
+    credentials: 'same-origin',
+    body: file,
+  });
+  let body = null;
+  try { body = await res.json(); } catch { body = null; }
+  if (res.status === 401) {
+    const message = body?.code === 'ACCESS_CHANGED' ? ACCESS_CHANGED_MESSAGE : 'Your session has ended. Please sign in again.';
+    forceLogout(message, 'warn');
+    throw new ApiError(message, 401, body);
+  }
+  if (!res.ok) throw new ApiError(body?.message || `Workbook upload failed (${res.status})`, res.status, body);
+  return body?.data ?? body;
+}
+
 export const bankRulesApi = {
   metadata: () => api.get('/admin/bank-rule-catalogue/metadata'),
   list: (bankClass = '', status = '') => api.get(`/admin/bank-rule-catalogue?${new URLSearchParams({ ...(bankClass ? { bankClass } : {}), ...(status ? { status } : {}) })}`),
@@ -122,6 +144,8 @@ export const bankRulesApi = {
   update: (id, body) => api.put(`/admin/bank-rule-catalogue/${id}`, body),
   publish: (id, body) => api.post(`/admin/bank-rule-catalogue/${id}/publish`, body),
   delete: (id, version) => request('DELETE', `/admin/bank-rule-catalogue/${id}`, { version }),
+  importPreview: (file) => uploadWorkbook('/admin/bank-rule-catalogue/import/preview', file),
+  importDraft: (preview, catalogue) => api.post('/admin/bank-rule-catalogue/import', { preview, catalogue }),
 };
 
 /* Authenticated binary downloads (CSV exports, payslip/register PDFs). The
@@ -332,6 +356,10 @@ export const masterDataApi = {
   bulkTemplateUrl: '/employees/bulk-template.csv',
   bulkTemplateXlsxUrl: '/employees/bulk-template.xlsx',
   bulkReferences: (orgId) => api.get(`/employees/bulk-references${orgId ? `?organizationId=${encodeURIComponent(orgId)}` : ''}`),
+  onboardingImportPreview: (file) => uploadWorkbook('/org/imports/employee-onboarding/preview', file),
+  onboardingImportApply: (preview) => api.post('/org/imports/employee-onboarding/apply', { preview }),
+  financialImportPreview: (file, payYear, payMonth) => uploadWorkbook(`/org/imports/employee-financial/preview?${new URLSearchParams({ payYear, payMonth })}`, file),
+  financialImportApply: (preview) => api.post('/org/imports/employee-financial/apply', { preview }),
 };
 
 /* Payroll API */

@@ -39,8 +39,15 @@ export function BankRulesPage() {
 function CatalogueList({ metadata }) {
   const [bankClass, setBankClass] = useState('');
   const [status, setStatus] = useState('');
+  const [importFile, setImportFile] = useState(null);
+  const [importName, setImportName] = useState('');
+  const [importClass, setImportClass] = useState(metadata.classes[0]?.code || '');
+  const [importPreview, setImportPreview] = useState(null);
   const navigate = useNavigate();
+  const toast = useToast();
   const list = useQuery({ queryKey: ['bank-rules', bankClass, status], queryFn: () => bankRulesApi.list(bankClass, status) });
+  const previewImport = useMutation({ mutationFn: () => bankRulesApi.importPreview(importFile), onSuccess: value => { setImportPreview(value); toast.add(`Workbook validated: ${value.summary.valid} rules ready.`, value.summary.invalid ? 'warning' : 'success'); } });
+  const applyImport = useMutation({ mutationFn: () => bankRulesApi.importDraft(importPreview, { name: importName, bankClass: importClass }), onSuccess: row => { toast.add('Workbook rules loaded into a controlled draft.', 'success'); navigate(`/bank-rules/${row.id}`); } });
   const rows = list.data?.rows || [];
   return <div className="page bank-rules-page">
     <header className="page-header bank-rules-header"><div><h1>Bank Classes & Rules</h1><p>Government orders, job posts, pay stages and payroll setup for each bank class.</p></div><Button onClick={() => navigate(`/bank-rules/new${bankClass ? `?bankClass=${bankClass}` : ''}`)}>New revision</Button></header>
@@ -48,6 +55,17 @@ function CatalogueList({ metadata }) {
       <button type="button" className={`bank-class-option ${!bankClass ? 'is-selected' : ''}`} aria-pressed={!bankClass} onClick={() => setBankClass('')}>All classes</button>
       {metadata.classes.map(c => <button type="button" key={c.code} className={`bank-class-option ${bankClass === c.code ? 'is-selected' : ''}`} aria-pressed={bankClass === c.code} onClick={() => setBankClass(c.code)}>{c.label.replace(' Urban Banks (Licensed Banks)', '')}</button>)}
     </div>
+    <Card title="Import government rule workbook">
+      <p className="form-note">The workbook is parsed into executable allowance, deduction, loan-policy and leave rules. Review the signed preview before creating a draft; publication and organisation adoption remain separate approvals.</p>
+      <div className="form-grid">
+        <Input id="catalogue-import-name" label="Draft revision name" required value={importName} onChange={event => setImportName(event.target.value)} />
+        <SelectField id="catalogue-import-class" label="Bank class" value={importClass} onChange={event => setImportClass(event.target.value)}>{metadata.classes.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}</SelectField>
+        <Input id="catalogue-import-file" label="Government rules workbook (.xlsx)" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event => { setImportFile(event.target.files?.[0] || null); setImportPreview(null); }} />
+      </div>
+      {importPreview && <p className="form-note" role="status">{importPreview.summary.valid} valid rules · {importPreview.summary.invalid} blocked rows · source SHA-256 <span className="mono">{importPreview.source.sha256.slice(0, 12)}…</span></p>}
+      <div className="card-actions"><Button variant="secondary" disabled={!importFile} loading={previewImport.isPending} onClick={() => previewImport.mutate()}>Validate workbook</Button><Button disabled={!importPreview || !importName.trim() || importPreview.summary.invalid > 0} loading={applyImport.isPending} onClick={() => applyImport.mutate()}>Create controlled draft</Button></div>
+      <ErrorNotice error={previewImport.error || applyImport.error} />
+    </Card>
     <Card noPadding>
       <div className="table-toolbar"><p>Publish one verified setup per bank class. Revisions preserve earlier rules and salary history.</p><SelectField id="catalogue-status" label="Revision status" value={status} onChange={e => setStatus(e.target.value)}><option value="">All statuses</option><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="SUPERSEDED">Superseded</option></SelectField></div>
       <ErrorNotice error={list.error} retry={list.refetch} />
@@ -149,7 +167,7 @@ function CatalogueEditor({ initial, metadata }) {
       {tab === 'rules' && <Card title="Service rules & references" actions={editable && <Button size="sm" disabled={busy || form.rules.length >= 100} onClick={() => set({ rules: [...form.rules, { title: '', reference: '', description: '' }] })}>Add rule</Button>}>
         <p className="form-note">Record the applicable government clauses for increments, fixation, eligibility and exceptions. These references document the rules; they do not create executable salary formulas.</p>
         {!form.rules.length && <p className="bank-rules-message">No additional service rules recorded.</p>}
-        {form.rules.map((rule, i) => <fieldset disabled={!editable || busy} className="bank-rule-entry" key={i}><legend>Rule {i + 1}</legend><div className="form-grid"><Input id={`rule-title-${i}`} label="Rule title" maxLength={128} value={rule.title} onChange={e => set({ rules: form.rules.map((r, j) => j === i ? { ...r, title: e.target.value } : r) })} /><Input id={`rule-reference-${i}`} label="Order clause / reference" maxLength={255} value={rule.reference} onChange={e => set({ rules: form.rules.map((r, j) => j === i ? { ...r, reference: e.target.value } : r) })} /></div><TextArea id={`rule-description-${i}`} label="Rule details & conditions" maxLength={4000} value={rule.description} onChange={e => set({ rules: form.rules.map((r, j) => j === i ? { ...r, description: e.target.value } : r) })} />{editable && <Button size="sm" variant="ghost" onClick={() => set({ rules: form.rules.filter((_, j) => j !== i) })}>Remove rule {i + 1}</Button>}</fieldset>)}
+        {form.rules.map((rule, i) => rule.kind ? <fieldset className="bank-rule-entry" key={i}><legend>{rule.kind.replaceAll('_', ' ')} · {rule.name}</legend><div className="form-grid"><div><span className="field-label">Rule code</span><p className="mono">{rule.code}</p></div><div><span className="field-label">Calculation</span><p>{rule.calculationType ? `${rule.calculationType}${rule.percentageValue ? ` · ${rule.percentageValue}% ${rule.percentageBase || ''}` : ''}` : rule.accrualMethod || 'Policy rule'}</p></div><div><span className="field-label">Source</span><p>{rule.source?.sheet || 'Workbook'}{rule.source?.row ? ` · row ${rule.source.row}` : ''}</p></div></div><p className="form-note">Organisation-customisable fields: {(rule.customizableFields || []).join(', ') || 'None'}</p>{editable && <Button size="sm" variant="ghost" onClick={() => set({ rules: form.rules.filter((_, j) => j !== i) })}>Remove imported rule</Button>}</fieldset> : <fieldset disabled={!editable || busy} className="bank-rule-entry" key={i}><legend>Rule {i + 1}</legend><div className="form-grid"><Input id={`rule-title-${i}`} label="Rule title" maxLength={128} value={rule.title} onChange={e => set({ rules: form.rules.map((r, j) => j === i ? { ...r, title: e.target.value } : r) })} /><Input id={`rule-reference-${i}`} label="Order clause / reference" maxLength={255} value={rule.reference} onChange={e => set({ rules: form.rules.map((r, j) => j === i ? { ...r, reference: e.target.value } : r) })} /></div><TextArea id={`rule-description-${i}`} label="Rule details & conditions" maxLength={4000} value={rule.description} onChange={e => set({ rules: form.rules.map((r, j) => j === i ? { ...r, description: e.target.value } : r) })} />{editable && <Button size="sm" variant="ghost" onClick={() => set({ rules: form.rules.filter((_, j) => j !== i) })}>Remove rule {i + 1}</Button>}</fieldset>)}
       </Card>}
       {tab === 'payroll' && <Card title="Class-wise payroll setup">
         <p className="form-note">Declare the rates and settings covered by this order. Unspecified settings remain bank-managed. Publication stores this template without changing a bank’s active payroll settings. Recoverable advances, earnings and pay progression are separate settings; new salary payments are managed under Allowances.</p>
