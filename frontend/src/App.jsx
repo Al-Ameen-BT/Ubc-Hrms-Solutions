@@ -52,6 +52,8 @@ import { CatalogueAdoptionPage } from './features/org/CatalogueAdoptionPage';
 import { CompensationPage } from './features/employees/CompensationPage';
 import { FinancialApprovalsPage } from './features/org/FinancialApprovalsPage';
 import { OrganisationStructurePage } from './features/org/OrganisationStructurePage';
+import { BranchDashboardPage } from './features/org/BranchDashboardPage';
+import { OrganisationExplorerPage } from './features/org/OrganisationExplorerPage';
 
 import { hasServiceAccess } from './api/organizationAccess';
 import { RolesPermissionsPage } from './features/org/RolesPermissionsPage';
@@ -147,6 +149,8 @@ function AppRoutes() {
 
         <Route path="org-profile" element={<OrgProfilePage />} />
         <Route path="organisation-structure" element={<OrganisationStructurePage />} />
+        <Route path="organisation-explorer" element={<OrganisationExplorerPage />} />
+        <Route path="branches/:branchId" element={<BranchDashboardPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="payroll-settings" element={<PayrollSettingsPage />} />
         <Route path="catalogue-adoption" element={<CatalogueAdoptionPage />} />

@@ -123,6 +123,8 @@ const PAYROLL_READERS = STAFF.filter(role => role !== 'DEPARTMENT_HEAD');
 const PROCESSORS = ['ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'];
 const ROUTES = {
   people: [['people.view', 'users.manage'], STAFF], employees: [['people.view'], STAFF],
+  branches: [['hr.view'], ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']],
+  'organisation-explorer': [['chart.view'], []],
   'organisation-structure': [['structure.view', 'structure.manage', 'branches.view', 'branches.manage', 'departments.view', 'departments.manage', 'positions.view', 'positions.manage', 'assignments.view', 'assignments.manage', 'transfers.view', 'transfers.manage', 'chart.view'], []],
   payroll: [['payroll.view', 'payments.view'], PAYROLL_READERS], posts: [['compensation.view'], STAFF],
   'pay-scales': [['compensation.view'], STAFF], 'pay-revisions': [['compensation.view'], STAFF],
