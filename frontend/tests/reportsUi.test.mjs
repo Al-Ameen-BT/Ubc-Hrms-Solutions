@@ -34,3 +34,27 @@ test('Reports associates filter labels with controls and supports recovery state
   assert.match(page, /onClick=\{resetActiveFilters\}/);
   assert.match(page, />Clear filters</);
 });
+
+test('Reports uses scoped design-system controls and contained register scrolling', () => {
+  const page = source('features/reports/ReportsPage.jsx');
+  assert.doesNotMatch(page, /className="form-control"/);
+  assert.match(page, /className="input reports-control"/);
+  assert.match(page, /className="reports-table-scroll"/);
+
+  const css = source('features/reports/ReportsPage.css');
+  assert.match(css, /\.reports-control/);
+  assert.match(css, /\.reports-tab-btn:focus-visible/);
+  assert.match(css, /\.reports-table-scroll\s*\{[^}]*overflow-x:\s*auto/s);
+  assert.match(css, /\.reports-table thead th\s*\{[^}]*position:\s*sticky/s);
+  assert.match(css, /@media \(max-width:\s*760px\)/);
+  assert.match(css, /min-height:\s*44px/);
+  assert.doesNotMatch(css, /linear-gradient|radial-gradient/);
+});
+
+test('Reports gives loading, empty and error states compact readable structure', () => {
+  const css = source('features/reports/ReportsPage.css');
+  assert.match(css, /\.reports-loading-box,[\s\S]*\.reports-empty-box,[\s\S]*\.reports-state/);
+  assert.match(css, /\.reports-empty-box strong/);
+  assert.match(css, /\.reports-error-state/);
+  assert.match(css, /\.reports-panel/);
+});

@@ -302,7 +302,7 @@ export function ReportsPage() {
             <label className="filter-label" htmlFor="reports-branch">Branch</label>
             <select
               id="reports-branch"
-              className="form-control"
+              className="input reports-control"
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
             >
@@ -322,7 +322,7 @@ export function ReportsPage() {
                 <label className="filter-label" htmlFor="reports-loan-type">Loan type</label>
                 <select
                   id="reports-loan-type"
-                  className="form-control"
+                  className="input reports-control"
                   value={loanType}
                   onChange={(e) => setLoanType(e.target.value)}
                 >
@@ -339,7 +339,7 @@ export function ReportsPage() {
                 <label className="filter-label" htmlFor="reports-loan-status">Status</label>
                 <select
                   id="reports-loan-status"
-                  className="form-control"
+                  className="input reports-control"
                   value={loanStatus}
                   onChange={(e) => setLoanStatus(e.target.value)}
                 >
@@ -357,7 +357,7 @@ export function ReportsPage() {
                 <label className="filter-label" htmlFor="reports-policy-type">Policy type</label>
                 <select
                   id="reports-policy-type"
-                  className="form-control"
+                  className="input reports-control"
                   value={policyType}
                   onChange={(e) => setPolicyType(e.target.value)}
                 >
@@ -372,7 +372,7 @@ export function ReportsPage() {
                 <label className="filter-label" htmlFor="reports-policy-status">Status</label>
                 <select
                   id="reports-policy-status"
-                  className="form-control"
+                  className="input reports-control"
                   value={policyStatus}
                   onChange={(e) => setPolicyStatus(e.target.value)}
                 >
@@ -390,7 +390,7 @@ export function ReportsPage() {
                 <label className="filter-label" htmlFor="reports-salary-year">Year</label>
                 <select
                   id="reports-salary-year"
-                  className="form-control"
+                  className="input reports-control"
                   value={salaryYear}
                   onChange={(e) => setSalaryYear(Number(e.target.value))}
                 >
@@ -406,7 +406,7 @@ export function ReportsPage() {
                 <label className="filter-label" htmlFor="reports-salary-month">Month</label>
                 <select
                   id="reports-salary-month"
-                  className="form-control"
+                  className="input reports-control"
                   value={salaryMonth}
                   onChange={(e) => setSalaryMonth(Number(e.target.value))}
                 >
@@ -422,7 +422,7 @@ export function ReportsPage() {
                 <label className="filter-label" htmlFor="reports-salary-status">Payroll status</label>
                 <select
                   id="reports-salary-status"
-                  className="form-control"
+                  className="input reports-control"
                   value={salaryStatus}
                   onChange={(e) => setSalaryStatus(e.target.value)}
                 >
@@ -441,7 +441,7 @@ export function ReportsPage() {
             <input
               id="reports-search"
               type="text"
-              className="form-control"
+              className="input reports-control"
               placeholder="Name, employee ID or reference"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -490,11 +490,11 @@ export function ReportsPage() {
           {/* Loans Table */}
           <Card title="Loans & Advances Register" noPadding>
             {isLoadingLoans ? (
-              <div className="reports-loading-box">Loading loans portfolio data...</div>
+              <div className="reports-loading-box" role="status">Loading loans portfolio data…</div>
             ) : filteredLoanRows.length === 0 ? (
               <div className="reports-empty-box"><strong>No loan accounts match this scope</strong><span>Try a different branch, loan type, status or employee search.</span><Button variant="secondary" size="sm" onClick={resetActiveFilters}>Clear filters</Button></div>
             ) : (
-              <div className="table-responsive">
+              <div className="reports-table-scroll" tabIndex="0" aria-label="Loans and advances register; scroll horizontally for all columns">
                 <table className="table reports-table">
                   <thead>
                     <tr>
@@ -602,11 +602,11 @@ export function ReportsPage() {
           {/* Insurance Table */}
           <Card title="Insurance Policies & Staff Benefits Register" noPadding>
             {isLoadingInsurance ? (
-              <div className="reports-loading-box">Loading insurance policies data...</div>
+              <div className="reports-loading-box" role="status">Loading insurance policy data…</div>
             ) : filteredInsuranceRows.length === 0 ? (
               <div className="reports-empty-box"><strong>No policy records match this scope</strong><span>Try a different branch, policy type, status or employee search.</span><Button variant="secondary" size="sm" onClick={resetActiveFilters}>Clear filters</Button></div>
             ) : (
-              <div className="table-responsive">
+              <div className="reports-table-scroll" tabIndex="0" aria-label="Insurance and policies register; scroll horizontally for all columns">
                 <table className="table reports-table">
                   <thead>
                     <tr>
@@ -711,11 +711,11 @@ export function ReportsPage() {
             noPadding
           >
             {isLoadingSalary ? (
-              <div className="reports-loading-box">Loading master payroll data...</div>
+              <div className="reports-loading-box" role="status">Loading salary register…</div>
             ) : filteredSalaryRows.length === 0 ? (
               <div className="reports-empty-box"><strong>No salary records match this scope</strong><span>No payroll run was found for {MONTH_OPTIONS.find((month) => month.value === salaryMonth)?.label} {salaryYear}, or the current filters removed all rows.</span><Button variant="secondary" size="sm" onClick={resetActiveFilters}>Clear filters</Button></div>
             ) : (
-              <div className="table-responsive">
+              <div className="reports-table-scroll" tabIndex="0" aria-label="Master salary register; scroll horizontally for all columns">
                 <table className="table reports-table reports-salary-table">
                   <thead>
                     <tr>
