@@ -24,6 +24,7 @@ const payrollSettings = require('../services/payrollSettings');
 const { getPlatformSettings } = require('../services/settings');
 const orgDomains = require('../services/orgDomains');
 const { getDashboardAnalytics } = require('../services/dashboardAnalytics');
+const { scopedWhere } = require('../services/accessControl');
 
 const router = express.Router();
 router.use(authenticate);
@@ -56,6 +57,58 @@ router.get('/dashboard-analytics', requireFeaturePermission('hr.view', ['ORG_ADM
     }
     const analytics = await getDashboardAnalytics(req.user.organizationId, filters, req.access);
     res.json({ data: analytics });
+  } catch (err) { sendError(res, err); }
+});
+
+router.get('/dashboard-analytics/branches/:branchId', requireFeaturePermission('hr.view', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']), async (req, res) => {
+  try {
+    if (!/^[1-9]\d*$/.test(req.params.branchId)) return res.status(404).json({ status: 'error', message: 'Branch not found' });
+    const branchId = Number(req.params.branchId);
+    const branch = await OrganizationBranch.findOne({
+      where: {
+        [Op.and]: [
+          { id: branchId, organizationId: req.user.organizationId, status: 'ACTIVE' },
+          scopedWhere(req.access, 'hr.view', 'OrganizationBranch'),
+        ],
+      },
+      attributes: ['id', 'code', 'name', 'unitType', 'isHeadOffice'],
+    });
+    if (!branch) return res.status(404).json({ status: 'error', message: 'Branch not found' });
+
+    const filters = { branchId };
+    for (const key of ['departmentId']) {
+      if (req.query[key] === undefined || req.query[key] === '') continue;
+      const value = Number(req.query[key]);
+      if (!Number.isInteger(value) || value <= 0) return res.status(400).json({ status: 'error', message: 'Invalid department filter.' });
+      filters[key] = value;
+    }
+    if (req.query.date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.date) || Number.isNaN(new Date(`${req.query.date}T00:00:00Z`).getTime())) return res.status(400).json({ status: 'error', message: 'Invalid dashboard date.' });
+      filters.date = req.query.date;
+    }
+    if (req.query.employmentType) {
+      if (!['REGULAR', 'PART_TIME_CONTINGENT'].includes(req.query.employmentType)) return res.status(400).json({ status: 'error', message: 'Invalid employment type filter.' });
+      filters.employmentType = req.query.employmentType;
+    }
+
+    const analytics = await getDashboardAnalytics(req.user.organizationId, filters, req.access);
+    const centre = analytics.commandCentre;
+    const health = centre.branchHealth.find((row) => Number(row.branchId) === branchId);
+    const byCategory = (category) => centre.actions.filter((row) => row.category === category);
+    res.json({ data: {
+      schemaVersion: centre.schemaVersion,
+      branch: { id: branch.id, code: branch.code, name: branch.name, unitType: branch.unitType, isHeadOffice: Boolean(branch.isHeadOffice), manager: health?.manager || { assigned: false, employeeId: null, name: null }, health: health?.health || null },
+      overview: centre.overview,
+      departmentDistribution: centre.distribution.department,
+      attendanceTrend: centre.attendance.trend,
+      upcomingLeave: analytics.leaves.activeLeavesList,
+      vacancies: { count: centre.overview.openPositions.value, available: true },
+      onboardingIssues: byCategory('ONBOARDING'),
+      payrollBlockers: byCategory('PAYROLL'),
+      complianceIssues: byCategory('COMPLIANCE'),
+      employeeIssues: centre.actions,
+      asOf: centre.asOf,
+    } });
   } catch (err) { sendError(res, err); }
 });
 

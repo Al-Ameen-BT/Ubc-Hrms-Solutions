@@ -25,6 +25,10 @@ const {
   OrganizationDepartment,
   OrganizationPosition,
   OrganizationResponsibilityAssignment,
+  OrganizationRole,
+  OrganizationRolePermission,
+  UserRoleAssignment,
+  UserRoleBranch,
 } = require('../src/models');
 const { signToken } = require('../src/services/authService');
 const { getDashboardAnalytics } = require('../src/services/dashboardAnalytics');
@@ -386,6 +390,37 @@ test('GET /org/dashboard-analytics returns 200 with complete analytics structure
   assert.ok(res.body.data.alerts);
   assert.ok(res.body.data.analytics);
   assert.ok(res.body.data.workspaces);
+});
+
+test('GET branch dashboard returns reconciled safe data and hides foreign, inactive and out-of-scope branches', async () => {
+  const accessible = await request(`/org/dashboard-analytics/branches/${branch1.id}`, adminToken);
+  assert.equal(accessible.status, 200);
+  assert.deepEqual(Object.keys(accessible.body.data), [
+    'schemaVersion', 'branch', 'overview', 'departmentDistribution', 'attendanceTrend', 'upcomingLeave',
+    'vacancies', 'onboardingIssues', 'payrollBlockers', 'complianceIssues', 'employeeIssues', 'asOf',
+  ]);
+  assert.equal(accessible.body.data.overview.totalWorkforce.value, 2);
+  assert.equal(accessible.body.data.branch.id, branch1.id);
+  assert.doesNotMatch(JSON.stringify(accessible.body.data), /bankAccountNumber|aadhaarNumber|panNumber|currentBasicPay|contactEmail|contactPhone/i);
+
+  const foreignOrg = await Organization.create({ code: 'DASHFOREIGN', name: 'Foreign Dashboard Bank' });
+  const foreignBranch = await OrganizationBranch.create({ organizationId: foreignOrg.id, code: 'FOREIGN', name: 'Foreign Branch' });
+  assert.equal((await request(`/org/dashboard-analytics/branches/${foreignBranch.id}`, adminToken)).status, 404);
+  await branch2.update({ status: 'INACTIVE' });
+  assert.equal((await request(`/org/dashboard-analytics/branches/${branch2.id}`, adminToken)).status, 404);
+  await branch2.update({ status: 'ACTIVE' });
+
+  await org.update({ accessControlMode: 'PERMISSIONS' });
+  const role = await OrganizationRole.create({ organizationId: org.id, code: 'DASH_HR', name: 'Dashboard HR', templateCode: 'HR_OFFICER' });
+  await OrganizationRolePermission.create({ organizationId: org.id, roleId: role.id, permissionCode: 'hr.view' });
+  const roleAssignment = await UserRoleAssignment.create({ organizationId: org.id, userId: adminUser.id, roleId: role.id, scopeType: 'SELECTED_BRANCHES', effectiveFrom: '2020-01-01' });
+  await UserRoleBranch.create({ organizationId: org.id, userRoleAssignmentId: roleAssignment.id, branchId: branch1.id });
+  try {
+    assert.equal((await request(`/org/dashboard-analytics/branches/${branch1.id}`, adminToken)).status, 200);
+    assert.equal((await request(`/org/dashboard-analytics/branches/${branch2.id}`, adminToken)).status, 404);
+  } finally {
+    await org.update({ accessControlMode: 'LEGACY' });
+  }
 });
 
 test('GET /org/dashboard-analytics rejects invalid operational filters', async () => {

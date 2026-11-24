@@ -22,8 +22,17 @@ function includes(organizationId) {
   ];
 }
 
-async function organizationChart({ actor, at = todayIST(), view = 'organization' }) {
-  if (typeof at !== 'string' || !isDateOnly(at) || !['organization', 'employee'].includes(view)) throw new UserAdminError(400, 'Use a valid chart date and view');
+async function organizationChart({ actor, at = todayIST(), view = 'organization', branchId = null, departmentId = null, level = null }) {
+  const normalizedId = (value, label) => {
+    if (value == null || value === '') return null;
+    const id = Number(value);
+    if (!Number.isInteger(id) || id <= 0) throw new UserAdminError(400, `Use a valid ${label}`);
+    return id;
+  };
+  const selectedBranchId = normalizedId(branchId, 'branch filter');
+  const selectedDepartmentId = normalizedId(departmentId, 'department filter');
+  const levels = ['organization', 'branch', 'department', 'position', 'employee'];
+  if (typeof at !== 'string' || !isDateOnly(at) || !['organization', 'employee'].includes(view) || level != null && !levels.includes(level)) throw new UserAdminError(400, 'Use a valid chart date, view and level');
   // Visibility uses present access, never historical roles supplied through a chart date.
   const access = await effectiveAccess(actor?.id);
   if (String(access.organizationId) !== String(actor?.organizationId) || !can(access, 'chart.view')) throw new UserAdminError(403, 'Permission denied');
@@ -39,21 +48,37 @@ async function organizationChart({ actor, at = todayIST(), view = 'organization'
   });
   const ownBranch = view === 'employee' || access.grants.filter(g => g.action === 'chart.view').every(g => g.scope === 'OWN');
   const permitted = ownBranch ? { branchId: { [Op.in]: own ? [own.branchId] : [] } } : scopedWhere(access, 'chart.view', 'EmployeeOrganizationAssignment');
+  const explicitScope = selectedBranchId != null || selectedDepartmentId != null;
+  const visibility = explicitScope ? permitted : { [Op.or]: [permitted, { '$OrganizationBranch.unit_type$': 'HEAD_OFFICE', '$OrganizationPosition.leadership_visible$': true }] };
   const rows = await EmployeeOrganizationAssignment.findAll({
-    where: { organizationId, ...current(at), [Op.and]: [...activeStructure, { [Op.or]: [permitted, { '$OrganizationBranch.unit_type$': 'HEAD_OFFICE', '$OrganizationPosition.leadership_visible$': true }] }] },
+    where: {
+      organizationId,
+      ...current(at),
+      ...(selectedBranchId ? { branchId: selectedBranchId } : {}),
+      ...(selectedDepartmentId ? { departmentId: selectedDepartmentId } : {}),
+      [Op.and]: [...activeStructure, visibility],
+    },
     attributes: ['employeeId', 'branchId', 'departmentId', 'positionId'],
     include: [...includes(organizationId), { model: Employee, required: true, where: { organizationId, status: 'ACTIVE' }, attributes: ['id', 'empCode', 'name', 'photoAssetId'] }],
     order: [[OrganizationBranch, 'displayOrder', 'ASC'], [OrganizationDepartment, 'displayOrder', 'ASC'], [OrganizationPosition, 'displayOrder', 'ASC'], [Employee, 'name', 'ASC'], ['employeeId', 'ASC']],
   });
   // Manual profiles have no lifecycle dates/status; existing rows are active until removed.
   const board = await OrganizationBoardMember.findAll({ where: { organizationId }, attributes: ['id', 'name', 'role', 'roleOther', 'displayOrder', 'photoMimeType'], order: [['displayOrder', 'ASC'], ['id', 'ASC']] });
+  const unique = (values) => [...new Map(values.filter(Boolean).map((row) => [row.id, row])).values()];
+  const branches = unique(rows.map((row) => pick(row.OrganizationBranch, branchFields)));
+  const departments = unique(rows.map((row) => pick(row.OrganizationDepartment, departmentFields)));
+  const positions = unique(rows.map((row) => pick(row.OrganizationPosition, positionFields)));
+  const revealEmployees = level == null || level === 'employee';
   return {
-    at, view, context: context(own),
-    employees: rows.map(row => ({
+    at, view, scope: { branchId: selectedBranchId, departmentId: selectedDepartmentId, level }, context: context(own),
+    branches,
+    departments,
+    positions,
+    employees: revealEmployees ? rows.map(row => ({
       id: row.Employee.id, empCode: row.Employee.empCode, name: row.Employee.name,
       photoRef: row.Employee.photoAssetId ? `/api/v1/employees/${row.Employee.id}/photo?at=${at}&view=${view}` : null,
       branch: pick(row.OrganizationBranch, branchFields), department: pick(row.OrganizationDepartment, departmentFields), position: pick(row.OrganizationPosition, positionFields),
-    })),
+    })) : [],
     leadership: board.map(row => ({ id: row.id, name: row.name, role: row.role, roleOther: row.roleOther, displayOrder: row.displayOrder, photoRef: row.photoMimeType ? `/api/v1/org/structure/board/${row.id}/photo` : null })),
   };
 }

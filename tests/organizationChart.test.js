@@ -98,6 +98,20 @@ test('branch and department grants constrain assignment queries and include only
   }
 });
 
+test('progressive chart filters branch and department in the scoped query and reveals employees only at employee level', async () => {
+  const f = await fixture();
+  const employees = await chart(f.admin, { branchId: f.units.B.branch.id, departmentId: f.units.B.department.id, level: 'employee' });
+  assert.deepEqual(names(employees), ['Other']);
+  assert.deepEqual(employees.scope, { branchId: f.units.B.branch.id, departmentId: f.units.B.department.id, level: 'employee' });
+  assert.doesNotMatch(JSON.stringify(employees), /currentBasicPay|panNumber|aadhaarNumber|bankAccount|mobile|email/i);
+
+  const positions = await chart(f.admin, { branchId: f.units.B.branch.id, departmentId: f.units.B.department.id, level: 'position' });
+  assert.deepEqual(positions.employees, []);
+  assert.deepEqual(positions.positions.map(row => row.id), [f.units.B.position.id]);
+  assert.deepEqual(positions.departments.map(row => row.id), [f.units.B.department.id]);
+  assert.deepEqual(positions.branches.map(row => row.id), [f.units.B.branch.id]);
+});
+
 test('effective dates move employee view on transfer day and exclude future, closed, inactive occupants', async () => {
   const f = await fixture();
   await f.people.Self.assignment.update({ effectiveTo: '2026-06-14' });
@@ -119,6 +133,8 @@ test('chart API authorizes tenant users and denies platform or anonymous access'
   assert.equal((await call(null, '/org/structure/chart')).status, 401);
   const platform = await m.User.create({ name: 'Platform', email: `platform${n}@chart.invalid`, role: 'SUPER_ADMIN', passwordHash: 'unused' });
   await assert.rejects(chart(platform), { status: 403 });
+  assert.equal((await call(f.admin, '/org/structure/chart?branchId=foreign')).status, 400);
+  assert.equal((await call(f.admin, '/org/structure/chart?level=unknown')).status, 400);
 });
 
 test('employee and board photo endpoints enforce chart visibility, tenant ownership, current photo binding and private bytes', async () => {

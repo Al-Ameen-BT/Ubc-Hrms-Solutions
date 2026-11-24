@@ -39,7 +39,14 @@ function boundary(group, Model) {
   };
 }
 router.use(authenticate); legacy.use(authenticate);
-router.get('/chart', requirePermission('chart.view'), handle(req => organizationChart({ actor: req.user, at: req.query.at, view: req.query.view })));
+router.get('/chart', requirePermission('chart.view'), handle(req => organizationChart({
+  actor: req.user,
+  at: req.query.at,
+  view: req.query.view,
+  branchId: req.query.branchId,
+  departmentId: req.query.departmentId,
+  level: req.query.level,
+})));
 router.get('/branch-options', requirePermission('people.create'), handle(req => structure.branchOptions(req.access)));
 router.get('/position-options', requirePermission('people.create'), handle(req => structure.onboardingPositionOptions(req.access, { branchId: req.query.branchId, departmentId: req.query.departmentId })));
 router.get('/board/:id/photo', requirePermission('chart.view'), photoHandler('board'));
