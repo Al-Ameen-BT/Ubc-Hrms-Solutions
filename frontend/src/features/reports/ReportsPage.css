@@ -173,7 +173,7 @@
   letter-spacing: 0.025em;
 }
 
-.reports-control {
+.reports-page .reports-control {
   width: 100%;
   min-width: 0;
   min-height: 44px;

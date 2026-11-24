@@ -28,7 +28,7 @@ const MONTH_OPTIONS = [
 const REPORTS = [
   { id: 'loans', label: 'Loans & Advances', shortLabel: 'Loans', description: 'Employee advances, repayment demand and outstanding balances.' },
   { id: 'insurance', label: 'Insurance & Policies', shortLabel: 'Insurance', description: 'Staff policy coverage, deductions and maturity records.' },
-  { id: 'salary', label: 'Master Salary Register', shortLabel: 'Salary register', description: 'Approved payroll earnings, deductions, arrears and net pay.' },
+  { id: 'salary', label: 'Master Salary Register', shortLabel: 'Salary', description: 'Approved payroll earnings, deductions, arrears and net pay.' },
 ];
 
 export function ReportsPage() {

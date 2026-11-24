@@ -10,6 +10,7 @@ test('Reports uses one clear page identity and selected-report export labels', (
   assert.doesNotMatch(page, /Audit & Operational Reports/);
   assert.match(page, /Export \{activeReport\.shortLabel\} as CSV/);
   assert.match(page, /Export \{activeReport\.shortLabel\} as Excel/);
+  assert.match(page, /id: 'salary', label: 'Master Salary Register', shortLabel: 'Salary'/);
 });
 
 test('report selector exposes accessible tab and panel semantics', () => {
@@ -42,7 +43,7 @@ test('Reports uses scoped design-system controls and contained register scrollin
   assert.match(page, /className="reports-table-scroll"/);
 
   const css = source('features/reports/ReportsPage.css');
-  assert.match(css, /\.reports-control/);
+  assert.match(css, /\.reports-page \.reports-control/);
   assert.match(css, /\.reports-tab-btn:focus-visible/);
   assert.match(css, /\.reports-table-scroll\s*\{[^}]*overflow-x:\s*auto/s);
   assert.match(css, /\.reports-table thead th\s*\{[^}]*position:\s*sticky/s);
