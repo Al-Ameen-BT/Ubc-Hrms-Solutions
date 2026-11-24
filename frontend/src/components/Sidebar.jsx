@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
 import { canVisitRoute } from '../api/organizationAccess';
+import { masterDataApi } from '../api/client';
 import { version } from '../../../package.json';
 
 /* Server permission codes control organisation navigation; the API remains authoritative. */
@@ -22,29 +24,35 @@ const NAV = {
   ],
 
   org: [
-    { label: 'Main', items: [{ to: '/', label: 'Overview', icon: 'dashboard' }] },
+    { label: 'Overview', items: [{ to: '/', label: 'HR Operations', icon: 'dashboard' }, { to: '/organisation-explorer', label: 'Organisation Explorer', icon: 'orgs' }] },
     {
-      label: 'Establishment',
+      label: 'Workforce',
       items: [
         { to: '/people', label: 'People', icon: 'employees' },
         { to: '/organisation-structure', label: 'Organisation Structure', icon: 'orgs' },
         { to: '/posts', label: 'Posts & Cadres', icon: 'posts' },
-        { to: '/pay-scales', label: 'Pay Scales', icon: 'scales' },
-        { to: '/pay-revisions', label: 'Pay Revisions', icon: 'scales' },
-        { to: '/catalogue-adoption', label: 'Bank Class Adoption', icon: 'rules' },
       ],
     },
     {
-      label: 'Payroll',
+      label: 'Time & Attendance',
+      items: [
+        { to: '/employee-services/time', label: 'Attendance', icon: 'audit' },
+        { to: '/leave', label: 'Leave', icon: 'leave' },
+        { to: '/employee-services/holidays', label: 'Holidays', icon: 'leave' },
+      ],
+    },
+    {
+      label: 'Pay & Benefits',
       items: [
         { to: '/payroll', label: 'Payroll', icon: 'payroll' },
-        { to: '/leave', label: 'Leave', icon: 'leave' },
-        { to: '/employee-services', label: 'Employee Services', icon: 'users' },
+        { to: '/pay-scales', label: 'Pay Scales', icon: 'scales' },
+        { to: '/pay-revisions', label: 'Pay Revisions', icon: 'scales' },
+        { to: '/catalogue-adoption', label: 'Bank Class Adoption', icon: 'rules' },
         { to: '/allowances', label: 'Allowances', icon: 'payroll' },
         { to: '/deductions', label: 'Deductions & Slabs', icon: 'payroll' },
+        { to: '/employee-services/expenses', label: 'Reimbursements', icon: 'payroll' },
         { to: '/arrears', label: 'DA Arrears', icon: 'scales' },
         { to: '/year-end', label: 'Year-End', icon: 'go' },
-        { to: '/reports', label: 'Reports', icon: 'audit' },
       ],
     },
     {
@@ -53,12 +61,33 @@ const NAV = {
         { to: '/government-orders', label: 'GO Register', icon: 'go' },
         { to: '/ksr-rules', label: 'KSR Rules', icon: 'rules' },
         { to: '/dpdp-compliance', label: 'DPDP Compliance', icon: 'rules' },
-        { to: '/org-profile', label: 'Org Profile', icon: 'orgs' },
-        { to: '/settings', label: 'Settings', icon: 'settings' },
-        { to: '/payroll-settings', label: 'Payroll Settings', icon: 'payroll' },
+        { to: '/employee-services/policy', label: 'Policy Management', icon: 'rules' },
         { to: '/financial-changes', label: 'Financial Changes', icon: 'audit' },
-        { to: '/mandatory-fields', label: 'Mandatory Fields', icon: 'rules' },
         { to: '/audit', label: 'Audit Log', icon: 'audit' },
+      ],
+    },
+    { label: 'Analytics', items: [{ to: '/reports', label: 'Reports & Analytics', icon: 'audit' }] },
+    {
+      label: 'My Workspace',
+      items: [
+        { to: '/my/payslips', label: 'My Payslips', icon: 'payroll' },
+        { to: '/my/leave', label: 'My Leave', icon: 'leave' },
+        { to: '/my/calendar', label: 'My Calendar', icon: 'leave' },
+        { to: '/my/policies', label: 'Policies', icon: 'rules' },
+        { to: '/my/expenses', label: 'My Reimbursements', icon: 'payroll' },
+        { to: '/my/workplace', label: 'My Workplace', icon: 'employees' },
+        { to: '/my/time', label: 'My Attendance', icon: 'audit' },
+        { to: '/my/privacy', label: 'Privacy Requests', icon: 'rules' },
+        { to: '/account', label: 'My Account', icon: 'users' },
+      ],
+    },
+    {
+      label: 'Administration',
+      items: [
+        { to: '/org-profile', label: 'Organisation Profile', icon: 'orgs' },
+        { to: '/settings', label: 'Organisation Settings', icon: 'settings' },
+        { to: '/payroll-settings', label: 'Payroll Settings', icon: 'payroll' },
+        { to: '/mandatory-fields', label: 'Mandatory Fields', icon: 'rules' },
         { to: '/roles-permissions', label: 'Roles & Permissions', icon: 'users' },
       ],
     },
@@ -66,7 +95,7 @@ const NAV = {
 
   employee: [
     {
-      label: 'Workspace',
+      label: 'My Workspace',
       items: [
         { to: '/', label: 'My Dashboard', icon: 'dashboard' },
         { to: '/my/payslips', label: 'My Payslips', icon: 'payroll' },
@@ -111,16 +140,43 @@ function NavIcon({ name }) {
   );
 }
 
-const TOP_LIMIT = 3;
+const SEARCH_LEGACY_ROLES = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD'];
+
+function workIdentity(employee) {
+  const branch = typeof employee.branch === 'string' ? employee.branch : employee.branch?.name || employee.branchName || 'Branch not assigned';
+  const department = typeof employee.department === 'string' ? employee.department : employee.department?.name || employee.departmentName || 'Department not assigned';
+  const position = typeof employee.position === 'string' ? employee.position : employee.position?.name || employee.postName || 'Position not assigned';
+  return { id: employee.id, name: employee.name || 'Unnamed employee', empCode: employee.empCode || 'No employee ID', branch, department, position, status: employee.status || 'UNKNOWN' };
+}
 
 export function Sidebar({ collapsed }) {
   const { isSuperAdmin, canPermission, permissionCodes, isFeatureEnabled } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const operational = permissionCodes.some(code => !code.startsWith('self.') && code !== 'chart.view');
-  const groups = isSuperAdmin ? NAV.platform : operational ? [...NAV.org, ...NAV.employee.map(group => ({ ...group, label: 'My workspace', items: group.items.filter(item => item.to !== '/') }))] : NAV.employee;
+  const groups = isSuperAdmin ? NAV.platform : operational ? NAV.org : NAV.employee;
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('ucb:sidebar-groups') || '{}'); } catch { return {}; }
+  });
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [activeResult, setActiveResult] = useState(0);
+  const searchRef = useRef(null);
+  const canSearch = !isSuperAdmin && canPermission('people.view', SEARCH_LEGACY_ROLES);
+  const trimmedSearch = employeeSearch.trim();
+  const employeeQuery = useQuery({
+    queryKey: ['sidebar-employee-search', trimmedSearch],
+    queryFn: () => masterDataApi.employees({ search: trimmedSearch, limit: 20 }),
+    enabled: canSearch && trimmedSearch.length >= 2,
+    staleTime: 30000,
+  });
+  const employeeResults = useMemo(() => {
+    if (trimmedSearch.length < 2) return [];
+    const query = trimmedSearch.toLowerCase();
+    return (employeeQuery.data?.rows || []).map(workIdentity).filter((employee) => `${employee.name} ${employee.empCode} ${employee.branch} ${employee.department} ${employee.position} ${employee.status}`.toLowerCase().includes(query)).slice(0, 8);
+  }, [employeeQuery.data, trimmedSearch]);
 
-  const [expandedGroups, setExpandedGroups] = useState({});
-  const [hoveredGroup, setHoveredGroup] = useState(null);
+  useEffect(() => { sessionStorage.setItem('ucb:sidebar-groups', JSON.stringify(expandedGroups)); }, [expandedGroups]);
+  useEffect(() => { setActiveResult(0); }, [employeeSearch]);
 
   const toggleGroup = (groupLabel) => {
     setExpandedGroups((prev) => ({
@@ -129,40 +185,45 @@ export function Sidebar({ collapsed }) {
     }));
   };
 
+  const openEmployee = (employee) => {
+    navigate(`/employees/${employee.id}`);
+    setEmployeeSearch('');
+  };
+
+  const handleSearchKey = (event) => {
+    if (!employeeResults.length) return;
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActiveResult((value) => (value + 1) % employeeResults.length); }
+    if (event.key === 'ArrowUp') { event.preventDefault(); setActiveResult((value) => (value - 1 + employeeResults.length) % employeeResults.length); }
+    if (event.key === 'Enter') { event.preventDefault(); openEmployee(employeeResults[activeResult]); }
+    if (event.key === 'Escape') { setEmployeeSearch(''); searchRef.current?.blur(); }
+  };
+
   return (
     <nav className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Main navigation">
+      {!collapsed && canSearch && <div className="sidebar-employee-search">
+        <label htmlFor="sidebar-employee-search">Find employee</label>
+        <input ref={searchRef} id="sidebar-employee-search" type="search" value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} onKeyDown={handleSearchKey} placeholder="Name or employee ID" role="combobox" aria-expanded={employeeResults.length > 0} aria-controls="sidebar-search-results" aria-activedescendant={employeeResults[activeResult] ? `sidebar-employee-${employeeResults[activeResult].id}` : undefined} autoComplete="off" />
+        {trimmedSearch.length >= 2 && <div id="sidebar-search-results" className="sidebar-search-results" role="listbox" aria-label="Employee search results">
+          {employeeQuery.isLoading ? <p role="status">Searching employees…</p> : employeeQuery.isError ? <p role="alert">Employee search is unavailable.</p> : employeeResults.length ? employeeResults.map((employee, index) => <button id={`sidebar-employee-${employee.id}`} key={employee.id} type="button" role="option" aria-selected={index === activeResult} onMouseEnter={() => setActiveResult(index)} onClick={() => openEmployee(employee)}><span><strong>{employee.name}</strong><small>{employee.empCode} · {employee.status}</small></span><small>{employee.branch} · {employee.department} · {employee.position}</small></button>) : <p>No matching employees.</p>}
+        </div>}
+      </div>}
       <div className="sidebar-nav">
         {groups.map((group) => {
           const authorizedItems = group.items.filter((item) => canVisitRoute(item.to, canPermission, isSuperAdmin, isFeatureEnabled));
           if (!authorizedItems.length) return null;
-          const hasMore = authorizedItems.length > TOP_LIMIT;
-
-          // Auto-expand if active route is among the items beyond top 3
-          const hasActiveHiddenItem = authorizedItems.slice(TOP_LIMIT).some((item) => {
-            return item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
-          });
-
-          const isExpanded = !!expandedGroups[group.label] || hoveredGroup === group.label || hasActiveHiddenItem;
-          const visibleItems = (hasMore && !isExpanded) ? authorizedItems.slice(0, TOP_LIMIT) : authorizedItems;
+          const hasActiveItem = authorizedItems.some((item) => item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to));
+          const isOpen = hasActiveItem || expandedGroups[group.label] !== false;
 
           return (
-            <div
-              className={`sidebar-group ${isExpanded ? 'is-expanded' : ''}`}
-              key={group.label}
-              onMouseEnter={() => setHoveredGroup(group.label)}
-              onMouseLeave={() => setHoveredGroup(null)}
-            >
+            <div className={`sidebar-group ${isOpen ? 'is-expanded' : ''}`} key={group.label}>
               {!collapsed && (
-                <div
-                  className={`sidebar-group-label ${hasMore ? 'clickable' : ''}`}
-                  onClick={() => hasMore && toggleGroup(group.label)}
-                  title={hasMore ? (isExpanded ? 'Click to show less' : 'Click to show more') : undefined}
-                >
+                <button type="button" className="sidebar-group-label sidebar-group-toggle" onClick={() => toggleGroup(group.label)} aria-expanded={isOpen} aria-controls={`sidebar-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>
                   <span>{group.label}</span>
-                </div>
+                  <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M5 7.5L10 12.5L15 7.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
               )}
 
-              {visibleItems.map((item) => (
+              <div id={`sidebar-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className="sidebar-group-items" hidden={!collapsed && !isOpen}>{authorizedItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
@@ -175,28 +236,7 @@ export function Sidebar({ collapsed }) {
                   </span>
                   {!collapsed && <span className="sidebar-item-label">{item.label}</span>}
                 </NavLink>
-              ))}
-
-              {!collapsed && hasMore && (
-                <button
-                  type="button"
-                  className="sidebar-more-btn"
-                  onClick={() => toggleGroup(group.label)}
-                >
-                  <span>{isExpanded ? 'Show less' : 'More'}</span>
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className={`sidebar-more-arrow ${isExpanded ? 'expanded' : ''}`}
-                  >
-                    <path d="M5 7.5L10 12.5L15 7.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
-              )}
+              ))}</div>
             </div>
           );
         })}

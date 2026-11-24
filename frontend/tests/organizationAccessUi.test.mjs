@@ -14,6 +14,8 @@ test('organisation entry points use server permissions and fail closed', () => {
   assert.equal(canVisitRoute('/my/payslips', has('self.payslips')), true);
   assert.equal(canVisitRoute('/my/payslips', has('payroll.view')), false);
   assert.equal(canVisitRoute('/employee-services/time', has('attendance.view')), true);
+  assert.equal(canVisitRoute('/branches/7', has('hr.view')), true);
+  assert.equal(canVisitRoute('/organisation-explorer', has('chart.view')), true);
   assert.equal(canVisitRoute('/platform-users', has('roles.manage')), false);
   assert.equal(canVisitRoute('/platform-users', has(), true), true);
   assert.equal(canVisitRoute('/roles-permissions', has(), true), false);
@@ -56,7 +58,8 @@ test('auth, navigation, protected cells and impact copy meet the UI contract', (
   assert.match(source('components/Sidebar.jsx'), /canPermission/);
   assert.match(source('components/CommandPalette.jsx'), /canPermission/);
   const page = source('features/org/RolesPermissionsPage.jsx');
-  assert.match(page, /disabled=\{[^}]*isProtected/);
+  assert.match(page, /const locked = isOrgAdmin && !copying/);
+  assert.match(page, /isDisabled = locked/);
   assert.match(page, /canManageCustomRoles\(readiness\)/);
   assert.match(page, /browser users must sign in again/i);
   assert.match(page, /QR-only mobile users must relink/i);
@@ -155,7 +158,7 @@ test('optional role assignment support failures stay local to assignment operati
   assert.match(page, /const coreLoadError = coreQueries\.find\(query => query\.error\)\?\.error/);
   assert.match(page, /enabled=\{customEnabled && !coreLoadError\}/);
   assert.match(page, /disabled=\{!readiness\.ready \|\| busy \|\| !!readinessQuery\.error\}/);
-  assert.match(page, /User assignments[\s\S]*?usersQuery\.error/);
+  assert.match(page, /User Role Assignments[\s\S]*?usersQuery\.error/);
   assert.match(page, /assignmentsQuery\.error/);
   assert.match(page, /branchesQuery\.error/);
   assert.match(page, /departmentsQuery\.error/);
