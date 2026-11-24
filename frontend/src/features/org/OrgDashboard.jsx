@@ -9,6 +9,7 @@ import { DashboardFilterBar } from '../dashboard/DashboardFilterBar';
 import { OrganisationOverview } from '../dashboard/OrganisationOverview';
 import { BranchHealth } from '../dashboard/BranchHealth';
 import { OperationalSummary } from '../dashboard/OperationalSummary';
+import { ActionCentre } from '../dashboard/ActionCentre';
 import { clearCommandCentreFilters, commandCentreParams, updateCommandCentreFilter } from '../dashboard/dashboardModel';
 import '../dashboard/Dashboard.css';
 
@@ -31,6 +32,7 @@ export function OrgDashboard() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [now, setNow] = useState(new Date());
+  const [actionFilters, setActionFilters] = useState({ tab: 'all', priority: '', owner: '', branchId: '', due: '' });
   const urlFilters = useMemo(() => commandCentreParams(searchParams), [searchParams]);
   const filters = { date: indiaDate(), period: '7d', ...urlFilters };
   const deferredSearch = useDeferredValue(filters.search || '');
@@ -63,6 +65,7 @@ export function OrgDashboard() {
     {!data && !dashboardQuery.isError ? <div className="command-surface command-empty"><strong>Command-centre data is unavailable</strong><span>Refresh the page or contact your HRMS administrator.</span></div> : null}
     {data ? <>
       <OrganisationOverview data={data} filters={filters} onFilter={updateFilter} onNavigate={navigate} />
+      <ActionCentre actions={data.actions} filters={actionFilters} onFiltersChange={setActionFilters} onNavigate={navigate} branches={data.filterOptions?.branches || []} />
       <BranchHealth data={data.branchHealth} onNavigate={navigate} />
       <OperationalSummary data={data} onNavigate={navigate} />
     </> : null}

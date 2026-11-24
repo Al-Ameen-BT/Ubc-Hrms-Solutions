@@ -163,3 +163,18 @@ test('command-centre styling uses solid surfaces, responsive cards and visible f
   assert.match(styles, /@media \(max-width: 560px\)/);
   assert.doesNotMatch(styles, /linear-gradient|radial-gradient|backdrop-filter/);
 });
+
+test('Action Centre unifies seven queues and only performs allowlisted leave decisions inline', () => {
+  const source = fs.readFileSync(new URL('../src/features/dashboard/ActionCentre.jsx', import.meta.url), 'utf8');
+  for (const label of ['All', 'Critical', 'Attendance', 'Payroll', 'Compliance', 'Onboarding', 'Approvals']) assert.match(source, new RegExp(`['\"]${label}['\"]`));
+  for (const label of ['CRITICAL', 'HIGH', 'MEDIUM', 'ROUTINE']) assert.match(source, new RegExp(label));
+  for (const label of ['Owner', 'Branch', 'Due date']) assert.match(source, new RegExp(label));
+  assert.match(source, /command-action-table/);
+  assert.match(source, /command-action-cards/);
+  assert.match(source, /All clear/);
+  assert.match(source, /quickAction === 'LEAVE_DECISION'/);
+  assert.match(source, /canPermission\('leave\.approve'/);
+  assert.match(source, /leaveApi\.decideApplication/);
+  assert.match(source, /onNavigate\(destinationFor/);
+  assert.doesNotMatch(source, /attendanceApi\.(update|correct)|compensationApi\.(update|decide)|payrollApi\.(update|approve)/);
+});
