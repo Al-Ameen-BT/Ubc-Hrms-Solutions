@@ -22,9 +22,13 @@ const {
   EmployeeServiceHistory,
   EmployeeAttendance,
   EmployeeOrganizationAssignment,
+  OrganizationDepartment,
+  OrganizationPosition,
+  OrganizationResponsibilityAssignment,
 } = require('../src/models');
 const { signToken } = require('../src/services/authService');
 const { getDashboardAnalytics } = require('../src/services/dashboardAnalytics');
+const { classifyBranchHealth } = require('../src/services/dashboardCommandCentre');
 const routes = require('../src/routes');
 
 let server;
@@ -38,6 +42,10 @@ let adminToken;
 let emp1;
 let emp2;
 let emp3;
+let department1;
+let department2;
+let position1;
+let position2;
 
 const request = async (path, token) => {
   const response = await fetch(`${base}${path}`, {
@@ -71,6 +79,10 @@ before(async () => {
     isHeadOffice: false,
   });
   post = await PostCadre.create({ organizationId: org.id, code: 'OFFICER', name: 'Branch Officer' });
+  department1 = await OrganizationDepartment.create({ organizationId: org.id, branchId: branch1.id, code: 'OPS', name: 'Operations' });
+  department2 = await OrganizationDepartment.create({ organizationId: org.id, branchId: branch2.id, code: 'OPS', name: 'Operations' });
+  position1 = await OrganizationPosition.create({ organizationId: org.id, branchId: branch1.id, departmentId: department1.id, code: 'OFFICER', name: 'Branch Officer', postCadreId: post.id, capacity: 3 });
+  position2 = await OrganizationPosition.create({ organizationId: org.id, branchId: branch2.id, departmentId: department2.id, code: 'OFFICER', name: 'Branch Officer', postCadreId: post.id, capacity: 2 });
 
   emp1 = await Employee.create({
     organizationId: org.id,
@@ -103,9 +115,9 @@ before(async () => {
   });
 
   await EmployeeOrganizationAssignment.bulkCreate([
-    { organizationId: org.id, employeeId: emp1.id, branchId: branch1.id, effectiveFrom: '2020-01-01' },
-    { organizationId: org.id, employeeId: emp2.id, branchId: branch2.id, effectiveFrom: '2020-01-01' },
-    { organizationId: org.id, employeeId: emp3.id, branchId: branch1.id, effectiveFrom: '2020-01-01' },
+    { organizationId: org.id, employeeId: emp1.id, branchId: branch1.id, departmentId: department1.id, positionId: position1.id, effectiveFrom: '2020-01-01' },
+    { organizationId: org.id, employeeId: emp2.id, branchId: branch2.id, departmentId: department2.id, positionId: position2.id, effectiveFrom: '2020-01-01' },
+    { organizationId: org.id, employeeId: emp3.id, branchId: branch1.id, departmentId: department1.id, positionId: position1.id, effectiveFrom: '2020-01-01' },
   ]);
 
   adminUser = await User.create({
@@ -117,6 +129,15 @@ before(async () => {
     passwordHash: 'unused',
   });
   adminToken = signToken(adminUser);
+  await OrganizationResponsibilityAssignment.create({
+    organizationId: org.id,
+    employeeId: emp1.id,
+    userId: adminUser.id,
+    responsibility: 'BRANCH_MANAGER',
+    scopeType: 'BRANCH',
+    branchId: branch1.id,
+    effectiveFrom: '2020-01-01',
+  });
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -204,6 +225,53 @@ test('getDashboardAnalytics aggregates branches, attendance presence, leaves and
   assert.equal(data.promotions.recentEvents[0].empCode, 'E101');
 });
 
+test('command centre reconciles workforce, vacancies, managers, attendance and leave queues without sensitive values', async () => {
+  const leaveType = await LeaveType.findOne({ where: { organizationId: org.id, code: 'CL' } });
+  const pending = await LeaveApplication.create({
+    employeeId: emp3.id,
+    leaveTypeId: leaveType.id,
+    fromDate: new Date().toISOString().slice(0, 10),
+    toDate: new Date().toISOString().slice(0, 10),
+    days: 1,
+    status: 'PENDING',
+  });
+  try {
+    const data = await getDashboardAnalytics(org.id);
+    const centre = data.commandCentre;
+
+    assert.equal(centre.schemaVersion, 1);
+    assert.deepEqual(Object.keys(centre.overview), [
+      'totalWorkforce', 'presentToday', 'onLeave', 'openPositions', 'payrollReadiness', 'hrActions',
+    ]);
+    assert.deepEqual(Object.keys(centre.distribution), ['branch', 'department', 'employmentType', 'cadre', 'grade']);
+    assert.deepEqual(centre.attendance.statuses.map((row) => row.key), ['present', 'late', 'onLeave', 'unmarked', 'absent']);
+    assert.equal(centre.overview.totalWorkforce.value, 3);
+    assert.equal(centre.overview.onLeave.value, 1);
+    assert.equal(centre.overview.openPositions.value, 2);
+    assert.equal(centre.actions.filter((row) => row.category === 'APPROVALS').length, 1);
+    assert.equal(centre.branchHealth.reduce((sum, row) => sum + row.employees, 0), centre.overview.totalWorkforce.value);
+    assert.equal(centre.branchHealth.find((row) => row.branchId === branch1.id).manager.assigned, true);
+    assert.equal(centre.branchHealth.find((row) => row.branchId === branch2.id).manager.assigned, false);
+    assert.equal(centre.explorer.totals.vacancies, 2);
+    assert.equal(centre.attendance.shiftAnalyticsAvailable, false);
+    assert.doesNotMatch(JSON.stringify(centre), /bankAccountNumber|aadhaarNumber|panNumber|currentBasicPay|contactEmail|contactPhone/i);
+  } finally {
+    await pending.destroy();
+  }
+});
+
+test('branch health applies transparent thresholds and ignores attendance when shifts are unavailable', () => {
+  assert.deepEqual(classifyBranchHealth({ payrollReadiness: 79, attendancePercent: 100, shiftAnalyticsAvailable: true }), {
+    status: 'CRITICAL', reasons: ['PAYROLL_BELOW_80'],
+  });
+  assert.equal(classifyBranchHealth({ payrollReadiness: 100, overdueMandatoryCompliance: 1, attendancePercent: 100, shiftAnalyticsAvailable: true }).status, 'CRITICAL');
+  assert.equal(classifyBranchHealth({ payrollReadiness: 89, attendancePercent: 100, shiftAnalyticsAvailable: true }).status, 'NEEDS_ATTENTION');
+  assert.equal(classifyBranchHealth({ payrollReadiness: 100, attendancePercent: 84, shiftAnalyticsAvailable: true }).status, 'NEEDS_ATTENTION');
+  assert.equal(classifyBranchHealth({ payrollReadiness: 100, attendancePercent: 74, shiftAnalyticsAvailable: false }).status, 'HEALTHY');
+  assert.equal(classifyBranchHealth({ payrollReadiness: 100, attendancePercent: 100, shiftAnalyticsAvailable: true, vacancies: 1 }).status, 'WATCH');
+  assert.equal(classifyBranchHealth({ payrollReadiness: 100, attendancePercent: 100, shiftAnalyticsAvailable: true }).status, 'HEALTHY');
+});
+
 test('operational dashboard separates unmarked staff and never invents shift exceptions', async () => {
   const data = await getDashboardAnalytics(org.id);
 
@@ -267,7 +335,7 @@ test('operational dashboard enforces branch-scoped HR access before applying fil
     organizationId: org.id,
     accessControlMode: 'PERMISSIONS',
     activeBranchIds: [branch1.id, branch2.id],
-    activeDepartmentIds: [],
+    activeDepartmentIds: [department1.id, department2.id],
     at: new Date().toISOString().slice(0, 10),
     grants: [{ action: 'hr.view', scope: 'SELECTED_BRANCHES', branchIds: [branch1.id], departmentIds: [] }],
   };

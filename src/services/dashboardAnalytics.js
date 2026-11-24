@@ -3,6 +3,7 @@
 const { Op } = require('sequelize');
 const { todayIST } = require('./orgAccess');
 const { scopedWhere } = require('./accessControl');
+const { buildCommandCentre } = require('./dashboardCommandCentre');
 const {
   Employee,
   OrganizationBranch,
@@ -14,6 +15,9 @@ const {
   EmployeeTransfer,
   PayrollRun,
   EmployeeAttendance,
+  OrganizationPosition,
+  EmployeeOrganizationAssignment,
+  OrganizationResponsibilityAssignment,
 } = require('../models');
 
 function workingDates(endDate, count) {
@@ -606,6 +610,52 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
     })),
   };
 
+  const effectiveWhere = {
+    status: 'ACTIVE',
+    effectiveFrom: { [Op.lte]: today },
+    [Op.or]: [{ effectiveTo: null }, { effectiveTo: { [Op.gte]: today } }],
+  };
+  const commandBranchIds = branches.map((branch) => branch.id);
+  const [positions, assignments, responsibilities] = await Promise.all([
+    commandBranchIds.length ? OrganizationPosition.findAll({
+      where: {
+        organizationId,
+        status: 'ACTIVE',
+        branchId: { [Op.in]: commandBranchIds },
+        ...(filters.branchId ? { branchId: Number(filters.branchId) } : {}),
+        ...(filters.departmentId ? { departmentId: Number(filters.departmentId) } : {}),
+      },
+      attributes: ['id', 'branchId', 'departmentId', 'postCadreId', 'capacity'],
+    }) : [],
+    scopedEmployeeIds.size ? EmployeeOrganizationAssignment.findAll({
+      where: { organizationId, employeeId: { [Op.in]: [...scopedEmployeeIds] }, ...effectiveWhere },
+      attributes: ['employeeId', 'branchId', 'departmentId', 'positionId'],
+    }) : [],
+    commandBranchIds.length ? OrganizationResponsibilityAssignment.findAll({
+      where: {
+        organizationId,
+        responsibility: 'BRANCH_MANAGER',
+        branchId: { [Op.in]: commandBranchIds },
+        ...effectiveWhere,
+      },
+      attributes: ['employeeId', 'branchId', 'responsibility'],
+    }) : [],
+  ]);
+  const commandCentre = buildCommandCentre({
+    asOf: today,
+    employees,
+    branches: branchStats,
+    summary,
+    actions,
+    analytics: operationalAnalytics,
+    workspaces,
+    filterOptions,
+    filters,
+    positions,
+    assignments,
+    responsibilities,
+  });
+
   return {
     asOfDate: today,
     totalEmployees: totalEmployeesCount,
@@ -636,6 +686,7 @@ async function getDashboardAnalytics(organizationId, filters = {}, access = null
     analytics: operationalAnalytics,
     workspaces,
     filterOptions,
+    commandCentre,
   };
 }
 
