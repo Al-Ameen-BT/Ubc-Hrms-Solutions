@@ -44,15 +44,17 @@ function elementNamespace(part, local) {
 // Child sequences for the supported template subset: ? optional, * repeated, + required repeated.
 // & denotes an unordered XML choice/all group; | denotes mutually exclusive child names.
 const STRUCTURE = {
-  'xl/workbook.xml': { workbook: 'fileVersion? workbookPr? bookViews? sheets calcPr?', bookViews: 'workbookView+', sheets: 'sheet' },
+  'xl/workbook.xml': { workbook: 'fileVersion? workbookPr? bookViews? sheets definedNames? calcPr?', bookViews: 'workbookView+', sheets: 'sheet', definedNames: 'definedName*' },
   'xl/worksheets/sheet1.xml': {
-    worksheet: 'dimension? sheetViews? sheetFormatPr? cols? sheetData printOptions? pageMargins? pageSetup?',
+    worksheet: 'sheetPr? dimension? sheetViews? sheetFormatPr? cols? sheetData printOptions? pageMargins? pageSetup? headerFooter?',
+    sheetPr: 'outlinePr? pageSetUpPr?',
     sheetViews: 'sheetView+', sheetView: 'pane? selection*', cols: 'col+', sheetData: 'row*', row: 'c*', c: 'v|is?', is: 't',
+    headerFooter: 'oddHeader? oddFooter? evenHeader? evenFooter? firstHeader? firstFooter?',
   },
   'xl/sharedStrings.xml': { sst: 'si*', si: 't' },
   'xl/styles.xml': {
     styleSheet: 'numFmts? fonts? fills? borders? cellStyleXfs? cellXfs? cellStyles? dxfs? tableStyles? colors? extLst?',
-    numFmts: 'numFmt+', fonts: 'font+', fills: 'fill+', borders: 'border+', cellStyleXfs: 'xf+', cellXfs: 'xf+', cellStyles: 'cellStyle+',
+    numFmts: 'numFmt*', fonts: 'font+', fills: 'fill+', borders: 'border+', cellStyleXfs: 'xf+', cellXfs: 'xf+', cellStyles: 'cellStyle+',
     font: '&color? family? scheme? sz? name? b? i? u? strike? vertAlign? charset? outline? shadow? condense? extend?',
     fill: 'patternFill', patternFill: 'fgColor? bgColor?',
     border: 'start? end? left? right? top? bottom? diagonal? vertical? horizontal?',
