@@ -15,6 +15,7 @@ const deviceRoutes = require('./employeeDevices');
 router.use('/me/devices', deviceRoutes.employee);
 router.use('/mobile', deviceRoutes.mobile);
 router.use('/me', require('./me'));
+router.use('/notifications', require('./notifications'));
 
 // Super Admin platform administration.
 router.use('/admin', require('./admin'));

@@ -61,6 +61,7 @@ import { DpdpAcknowledgementPage } from './features/privacy/DpdpAcknowledgementP
 import { PublicPrivacyPage } from './features/privacy/PublicPrivacyPage';
 import { DpdpDocumentsPage } from './features/platform/DpdpDocumentsPage';
 import { DpdpCompliancePage } from './features/org/DpdpCompliancePage';
+import { NotificationsPage } from './features/notifications/NotificationsPage';
 
 function AppRoutes() {
   const { user, isAuthenticated, loading, isSuperAdmin, canPermission } = useAuth();
@@ -160,6 +161,7 @@ function AppRoutes() {
         <Route path="dpdp-documents" element={isSuperAdmin ? <DpdpDocumentsPage /> : <Navigate to="/" replace />} />
         <Route path="dpdp-compliance" element={<DpdpCompliancePage />} />
         <Route path="account" element={<MyAccountPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
         <Route path="my/:section" element={<EmployeeServicesPage />} />
         <Route path="employee-services/:section" element={<EmployeeServicesAdminPage />} />
         <Route path="employee-services" element={<Navigate to={hasServiceAccess('expenses', canPermission) ? '/employee-services/expenses' : hasServiceAccess('time', canPermission) ? '/employee-services/time' : hasServiceAccess('holidays', canPermission) ? '/employee-services/holidays' : '/employee-services/policy'} replace />} />

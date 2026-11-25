@@ -157,6 +157,7 @@ const ROUTES = {
   'financial-changes': [['financialChanges.view'], FINANCIAL_READERS], 'mandatory-fields': [['settings.view'], ['ORG_ADMIN']],
   'dpdp-compliance': [['dpdp.view', 'dpdp.manage', 'settings.configure'], ['ORG_ADMIN', 'DATA_PROTECTION_OFFICER']],
   audit: [['audit.view'], ['ORG_ADMIN']], 'roles-permissions': [['roles.manage'], []], users: [['users.manage'], ['ORG_ADMIN']],
+  notifications: [['self.profile', 'chart.view'], ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'ACCOUNTS_OFFICER', 'PAYROLL_OFFICER', 'APPROVING_AUTHORITY', 'DEPARTMENT_HEAD', 'EMPLOYEE']],
 };
 const SELF = { payslips: 'self.payslips', leave: 'self.leave', calendar: 'self.leave', policies: 'self.policies', expenses: 'self.claims', workplace: 'chart.view', time: 'self.attendance', privacy: 'self.profile' };
 export const SERVICE_PERMISSIONS = {

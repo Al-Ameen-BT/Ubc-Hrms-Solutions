@@ -141,18 +141,20 @@ test('organisation dashboard composes the approved operational sections in prior
   assert.ok(filterIndex > 0 && filterIndex < overviewIndex && overviewIndex < branchIndex && branchIndex < summaryIndex);
   assert.match(source, /useSearchParams/);
   assert.match(source, /commandCentreParams/);
+  assert.doesNotMatch(source, /ActionCentre|actionFilters/);
   assert.doesNotMatch(source, /Today’s HR Actions|Approvals & Alerts|dashboard-workspace/);
   assert.equal(fs.existsSync(new URL('../src/features/dashboard/WorkforceInsights.jsx', import.meta.url)), false);
 });
 
-test('organisation overview uses five drill-down donuts, horizontal distribution, segmented attendance and one trend line', () => {
+test('organisation overview uses five drill-down donuts, ranked workforce bars, segmented attendance and one trend line', () => {
   const source = fs.readFileSync(new URL('../src/features/dashboard/OrganisationOverview.jsx', import.meta.url), 'utf8');
   for (const label of ['Workforce capacity', 'Present today', 'Approved leave', 'Payroll readiness', 'Open HR actions']) assert.match(source, new RegExp(label));
   assert.match(source, /PieChart/);
-  assert.match(source, /innerRadius="70%"/);
+  assert.match(source, /innerRadius="66%"/);
   assert.match(source, /command-donut-metrics/);
-  assert.match(source, /BarChart/);
-  assert.match(source, /layout="vertical"/);
+  assert.match(source, /command-workforce-chart/);
+  assert.match(source, /distributionMaximum/);
+  assert.doesNotMatch(source, /BarChart|command-chart-links/);
   assert.match(source, /LineChart/);
   assert.match(source, /Present|Late|On Leave|Unmarked|Absent/);
   assert.match(source, /No workforce data matches this scope|Shift analytics are unavailable/);

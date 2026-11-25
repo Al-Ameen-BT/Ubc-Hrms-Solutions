@@ -140,11 +140,11 @@
 .command-kpi > b { align-self: end; margin-top: auto; padding-top: var(--space-2); color: var(--accent-strong); font-size: 11px; }
 
 .command-donut-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
-.command-donut-metric { display: grid; grid-template-columns: 82px minmax(0, 1fr); min-height: 132px; align-items: center; gap: var(--space-3); padding: var(--space-4); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.command-donut-metric { display: grid; grid-template-columns: 104px minmax(0, 1fr); min-height: 156px; align-items: center; gap: var(--space-4); padding: var(--space-4); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
 .command-donut-metric:hover { border-color: #aabbd2; background: var(--dashboard-panel-muted); }
-.command-donut-visual { position: relative; width: 82px; height: 82px; }
+.command-donut-visual { position: relative; width: 104px; height: 104px; }
 .command-donut-total { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
-.command-donut-total strong { font-family: var(--font-data); font-size: 1.125rem; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.command-donut-total strong { font-family: var(--font-data); font-size: 1.35rem; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
 .command-donut-copy { display: grid; min-width: 0; gap: 5px; }
 .command-donut-copy > strong { font-size: var(--type-card-title); font-weight: 650; line-height: 1.25; }
 .command-donut-copy small { color: var(--dashboard-text-soft); font-size: var(--type-meta); line-height: 1.4; }
@@ -161,11 +161,20 @@
 .command-segmented-control button, .command-periods button { min-height: 32px; padding: 4px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dashboard-text-soft); font: inherit; font-size: var(--type-label); cursor: pointer; white-space: nowrap; }
 .command-segmented-control button[aria-pressed='true'], .command-periods button[aria-pressed='true'] { border-color: var(--dashboard-line); background: var(--dashboard-panel); color: var(--text-primary); font-weight: 700; }
 .command-periods { margin: 0; }
-.command-horizontal-chart { height: 250px; margin: var(--space-3) var(--space-4) 0; }
-.command-chart-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--space-3); padding: var(--space-2) var(--space-5) var(--space-4); }
-.command-chart-links button, .command-exceptions button { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 7px 0; border: 0; border-bottom: 1px solid var(--dashboard-line); background: transparent; color: var(--text-primary); font: inherit; font-size: var(--type-label); text-align: left; cursor: pointer; }
-.command-chart-links span, .command-exceptions span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.command-chart-links b, .command-exceptions b { white-space: nowrap; }
+.command-workforce-chart { display: grid; gap: 2px; margin: var(--space-3) 0 0; padding: 0 var(--space-5) var(--space-5); list-style: none; }
+.command-workforce-chart li { min-width: 0; }
+.command-workforce-chart button { display: grid; grid-template-columns: 28px minmax(170px, 1.25fr) minmax(180px, 2fr) auto; align-items: center; gap: var(--space-3); width: 100%; min-height: 48px; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.command-workforce-chart button:hover { border-color: var(--dashboard-line); background: var(--dashboard-panel-muted); }
+.command-workforce-rank { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 6px; background: var(--dashboard-panel-muted); color: var(--dashboard-text-soft); font-size: var(--type-meta); font-variant-numeric: tabular-nums; }
+.command-workforce-label { min-width: 0; font-size: var(--type-label); font-weight: 600; line-height: 1.35; }
+.command-workforce-track { height: 10px; overflow: hidden; border-radius: 4px; background: var(--dashboard-panel-muted); }
+.command-workforce-track > span { display: block; height: 100%; border-radius: inherit; background: #2563eb; }
+.command-workforce-value { display: flex; min-width: 62px; align-items: baseline; justify-content: flex-end; gap: 5px; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.command-workforce-value strong { font-size: var(--type-card-title); }
+.command-workforce-value small { color: var(--dashboard-text-soft); font-size: var(--type-meta); }
+.command-exceptions button { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 7px 0; border: 0; border-bottom: 1px solid var(--dashboard-line); background: transparent; color: var(--text-primary); font: inherit; font-size: var(--type-label); text-align: left; cursor: pointer; }
+.command-exceptions span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.command-exceptions b { white-space: nowrap; }
 .command-attendance-bar { display: flex; height: 18px; overflow: hidden; margin: var(--space-5) var(--space-5) var(--space-3); border-radius: 5px; background: var(--dashboard-line); }
 .command-attendance-bar button { min-width: 0; height: 100%; border: 0; cursor: pointer; }
 .command-attendance-success { background: #168765; }
@@ -253,7 +262,7 @@
 .dashboard-skeleton-grid > div { height: 300px; }
 @keyframes dashboard-pulse { to { opacity: 0.45; } }
 
-.command-kpi:focus-visible, .command-donut-metric:focus-visible, .command-link:focus-visible, .command-segmented-control button:focus-visible, .command-periods button:focus-visible, .command-chart-links button:focus-visible, .command-attendance-bar button:focus-visible, .command-exceptions button:focus-visible, .command-table-link:focus-visible, .command-branch-cards button:focus-visible, .command-payroll-stages button:focus-visible, .command-setup-list button:focus-visible, .command-filter-chips button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.command-kpi:focus-visible, .command-donut-metric:focus-visible, .command-link:focus-visible, .command-segmented-control button:focus-visible, .command-periods button:focus-visible, .command-workforce-chart button:focus-visible, .command-attendance-bar button:focus-visible, .command-exceptions button:focus-visible, .command-table-link:focus-visible, .command-branch-cards button:focus-visible, .command-payroll-stages button:focus-visible, .command-setup-list button:focus-visible, .command-filter-chips button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .command-breadcrumbs { margin: 0 0 var(--space-3); color: var(--dashboard-text-soft); font-size: 12px; }
 .command-breadcrumbs ol { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin: 0; padding: 0; list-style: none; }
@@ -380,8 +389,9 @@
   .command-section-header { padding: var(--space-4); }
   .command-section-header { flex-direction: column; }
   .command-segmented-control { max-width: calc(100% - 32px); margin-inline: var(--space-4); }
-  .command-horizontal-chart { margin-inline: var(--space-2); }
-  .command-chart-links { grid-template-columns: 1fr; padding-inline: var(--space-4); }
+  .command-workforce-chart { padding-inline: var(--space-4); }
+  .command-workforce-chart button { grid-template-columns: 28px minmax(0, 1fr) auto; gap: var(--space-2); }
+  .command-workforce-track { grid-column: 2 / -1; }
   .command-attendance-bar { margin-inline: var(--space-4); }
   .command-attendance-legend { padding-inline: var(--space-4); }
   .command-notice, .command-exceptions { margin-inline: var(--space-4); padding-inline: 0; }

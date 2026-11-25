@@ -19,9 +19,23 @@ type Policy = { policy: { version: number; title: string; body: string } | null;
 type CalendarData = { holidays: { date: string; name: string }[]; leave: LeaveApplication[]; time: TimeEntry[] };
 type TimeEntry = { id: number; localDate: string; checkInAt: string; checkOutAt?: string | null; correctionReason?: string };
 type Claim = { id: number; expenseDate: string; category: string; purpose: string; amount: number; status: string; decisionReason?: string; paidAt?: string; paymentReference?: string };
+type NotificationMessage = { id: number; title: string; message: string; sender: string; createdAt: string; readAt?: string | null };
 
 function Feedback({ error, loading, notice }: { error?: string; loading?: boolean; notice?: string }) {
   return <>{loading && <Loading />}<ErrorText message={error} /><Notice message={notice} tone="success" /></>;
+}
+
+function Notifications({ api, session }: Props) {
+  const [refresh, setRefresh] = useState(0);
+  const { data, error, loading } = useResource<NotificationMessage[]>(api, '/notifications', session.token, refresh);
+  const read = async (row: NotificationMessage) => {
+    if (row.readAt) return;
+    await api.post(`/notifications/${row.id}/read`, {}, session.token);
+    setRefresh(value => value + 1);
+  };
+  return <Page><ScreenHeading eyebrow="Updates" title="Notifications" description="Messages from your organisation's authorised leadership." /><Feedback error={error} loading={loading} />
+    <Card>{data?.length ? data.map(row => <Pressable key={row.id} accessibilityRole="button" accessibilityLabel={`${row.title}${row.readAt ? '' : ', unread'}`} onPress={() => read(row)} style={({ pressed }) => [local.listItem, !row.readAt && local.unreadNotice, pressed && local.pressed]}><View style={local.cardHeader}><Text style={[styles.cardTitle, { flex: 1 }]}>{row.title}</Text>{!row.readAt && <StatusBadge label="New" tone="info" />}</View><Text style={styles.body}>{row.message}</Text><Text style={styles.muted}>{row.sender} · {dateText(row.createdAt)}</Text></Pressable>) : !loading && <Empty message="No notifications yet." />}</Card>
+  </Page>;
 }
 
 function useAction() {
@@ -357,6 +371,7 @@ function AppLockSettings() {
 }
 
 const moreItems = [
+  { section: 'Notifications', icon: 'policy', title: 'Notifications', detail: 'Organisation messages and updates' },
   { section: 'Policies', icon: 'policy', title: 'Bank policies', detail: 'Read and acknowledge current guidance' },
   { section: 'Calendar', icon: 'calendar', title: 'My calendar', detail: 'Holidays, leave and workdays' },
   { section: 'Workplace', icon: 'workplace', title: 'Workplace tree', detail: 'Branches, departments and roles' },
@@ -378,6 +393,7 @@ export function Services({ section, api, session, navigate, signOut }: Props & {
   if (section === 'Payslips') return <Payslips api={api} session={session} navigate={navigate} />;
   if (section === 'Leave') return <Leave api={api} session={session} navigate={navigate} />;
   if (section === 'Time') return <Time api={api} session={session} navigate={navigate} />;
+  if (section === 'Notifications') return <Notifications api={api} session={session} navigate={navigate} />;
   if (section === 'Policies') return <Policies api={api} session={session} navigate={navigate} />;
   if (section === 'Calendar') return <Calendar api={api} session={session} navigate={navigate} />;
   if (section === 'Workplace') return <Workplace api={api} session={session} navigate={navigate} />;
@@ -402,6 +418,7 @@ const local = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   ledger: { borderTopWidth: 1, borderTopColor: colors.line },
   listItem: { paddingVertical: 12, gap: 9, borderBottomWidth: 1, borderBottomColor: colors.line },
+  unreadNotice: { backgroundColor: colors.pale, paddingHorizontal: 10, borderRadius: radius.sm },
   actionGrid: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
   period: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, paddingHorizontal: 8 },
   periodButton: { width: 48, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm },

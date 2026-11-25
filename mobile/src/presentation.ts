@@ -9,7 +9,7 @@ export const navigationItems: ReadonlyArray<{ section: PrimarySection; label: st
   { section: 'More', label: 'More', accessibilityLabel: 'More employee services' },
 ];
 
-const nestedSections = new Set(['Policies', 'Calendar', 'Workplace', 'Claims', 'Profile']);
+const nestedSections = new Set(['Notifications', 'Policies', 'Calendar', 'Workplace', 'Claims', 'Privacy', 'Profile']);
 
 export function isPrimarySectionSelected(current: string, item: PrimarySection) {
   return current === item || (item === 'More' && nestedSections.has(current));

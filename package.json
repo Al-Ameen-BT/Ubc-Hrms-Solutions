@@ -34,7 +34,8 @@
     "pdfkit": "^0.20.2",
     "qrcode": "^1.5.4",
     "rate-limit-redis": "^5.0.0",
-    "sequelize": "^6.37.3"
+    "sequelize": "^6.37.3",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "sqlite3": "^5.1.7"

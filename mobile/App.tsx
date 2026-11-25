@@ -12,7 +12,7 @@ import { Services } from './src/screens/Services';
 import { isPrimarySectionSelected, navigationItems, type PrimarySection } from './src/presentation';
 import { Action, colors, ErrorText, HomeIcon, LeaveIcon, Loading, MoreIcon, Page, PayIcon, radius, ScreenHeading, styles, TimeIcon } from './src/ui';
 
-type Section = typeof navigationItems[number]['section'] | 'Policies' | 'Calendar' | 'Workplace' | 'Claims' | 'Profile';
+type Section = typeof navigationItems[number]['section'] | 'Notifications' | 'Policies' | 'Calendar' | 'Workplace' | 'Claims' | 'Privacy' | 'Profile';
 
 function TabIcon({ section, selected }: { section: PrimarySection; selected: boolean }) {
   const iconColor = selected ? colors.blue : colors.muted;

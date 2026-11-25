@@ -98,6 +98,9 @@ const DpdpRequestEvent = require('./dpdpRequestEvent');
 const DpdpNomination = require('./dpdpNomination');
 const DpdpRetentionProposal = require('./dpdpRetentionProposal');
 const DpdpDeletionResult = require('./dpdpDeletionResult');
+const NotificationBroadcast = require('./notificationBroadcast');
+const UserNotification = require('./userNotification');
+const PushSubscription = require('./pushSubscription');
 const OrganizationFeature = require('./organizationFeature');
 const BootstrapAdminHandover = require('./bootstrapAdminHandover');
 
@@ -487,7 +490,19 @@ DpdpRetentionProposal.belongsTo(Organization, { foreignKey: 'organizationId' });
 DpdpRetentionProposal.hasMany(DpdpDeletionResult, { foreignKey: 'proposalId' });
 DpdpDeletionResult.belongsTo(DpdpRetentionProposal, { foreignKey: 'proposalId' });
 
+Organization.hasMany(NotificationBroadcast, { foreignKey: 'organizationId' });
+NotificationBroadcast.belongsTo(Organization, { foreignKey: 'organizationId' });
+NotificationBroadcast.belongsTo(User, { as: 'Sender', foreignKey: 'senderUserId' });
+NotificationBroadcast.hasMany(UserNotification, { foreignKey: 'broadcastId' });
+UserNotification.belongsTo(NotificationBroadcast, { foreignKey: 'broadcastId' });
+UserNotification.belongsTo(User, { foreignKey: 'userId' });
+PushSubscription.belongsTo(User, { foreignKey: 'userId' });
+User.hasMany(PushSubscription, { foreignKey: 'userId' });
+
 module.exports = {
+  NotificationBroadcast,
+  UserNotification,
+  PushSubscription,
   BootstrapAdminHandover,
   DpdpDocument,
   DpdpAcknowledgement,

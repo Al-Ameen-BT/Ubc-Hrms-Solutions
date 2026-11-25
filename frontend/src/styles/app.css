@@ -59,7 +59,8 @@
 
 .topbar-menu-btn,
 .topbar-theme-btn,
-.topbar-logout-btn {
+.topbar-logout-btn,
+.topbar-notification-btn {
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -74,10 +75,14 @@
 
 .topbar-menu-btn:hover,
 .topbar-theme-btn:hover,
-.topbar-logout-btn:hover {
+.topbar-logout-btn:hover,
+.topbar-notification-btn:hover {
   background: var(--accent-soft);
   color: var(--text-primary);
 }
+
+.topbar-notification-btn { position: relative; text-decoration: none; }
+.topbar-notification-btn span { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding-inline: 4px; display: grid; place-items: center; border: 2px solid var(--surface-raised); border-radius: 999px; background: var(--danger); color: #fff; font-size: 9px; font-weight: 700; line-height: 1; }
 
 .topbar-brand {
   display: flex;

@@ -70,6 +70,7 @@ const NAV = {
     {
       label: 'My Workspace',
       items: [
+        { to: '/notifications', label: 'Notifications', icon: 'notifications' },
         { to: '/my/payslips', label: 'My Payslips', icon: 'payroll' },
         { to: '/my/leave', label: 'My Leave', icon: 'leave' },
         { to: '/my/calendar', label: 'My Calendar', icon: 'leave' },
@@ -97,6 +98,7 @@ const NAV = {
     {
       label: 'My Workspace',
       items: [
+        { to: '/notifications', label: 'Notifications', icon: 'notifications' },
         { to: '/', label: 'My Dashboard', icon: 'dashboard' },
         { to: '/my/payslips', label: 'My Payslips', icon: 'payroll' },
         { to: '/my/leave', label: 'My Leave', icon: 'leave' },
@@ -131,6 +133,7 @@ function NavIcon({ name }) {
         <path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" />
       </g>
     ),
+    notifications: <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />,
   };
 
   return (
