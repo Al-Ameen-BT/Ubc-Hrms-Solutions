@@ -13,7 +13,6 @@ import { Modal } from '../../components/ui/Modal';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { organizationAccessApi } from '../../api/organizationAccess';
 import { TempPasswordModal } from '../../components/TempPasswordModal';
-import { AlertTriangleIcon } from '../../components/ui/Icons';
 
 
 export function UsersPage({ embedded = false }) {
@@ -35,9 +34,8 @@ export function UsersPage({ embedded = false }) {
   const [error, setError] = useState('');
   const [credentials, setCredentials] = useState(null);
   const [statusTarget, setStatusTarget] = useState(null);
-  const [removeStep1Target, setRemoveStep1Target] = useState(null);
-  const [removeStep2Target, setRemoveStep2Target] = useState(null);
-  const [removeConfirmEmail, setRemoveConfirmEmail] = useState('');
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [handoverSuccessorId, setHandoverSuccessorId] = useState('');
   const [actionError, setActionError] = useState('');
 
   const { data, isLoading } = useQuery({
@@ -53,6 +51,7 @@ export function UsersPage({ embedded = false }) {
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => masterDataApi.employees(), enabled: !!orgId });
 
   const { data: roleData, error: roleLoadError } = useQuery({ queryKey: ['organization-roles'], queryFn: organizationAccessApi.roles, enabled: canPermission('roles.manage') });
+  const { data: handoverData } = useQuery({ queryKey: ['bootstrap-handovers', orgId], queryFn: organizationAccessApi.bootstrapHandovers, enabled: !!orgId });
   const baselineRole = roleData?.rows?.find(role => role.isProtected && role.templateCode === 'EMPLOYEE');
 
   const smtpConfigured = Boolean(smtpStatus?.smtpConfigured);
@@ -137,21 +136,25 @@ export function UsersPage({ embedded = false }) {
   });
 
   const removeMutation = useMutation({
-    mutationFn: async (target) => {
-      if (target.status === 'ACTIVE') {
-        await usersApi.remove(orgId, target.id);
-      }
-      return usersApi.remove(orgId, target.id);
-    },
+    mutationFn: target => usersApi.remove(orgId, target.id),
     onSuccess: () => {
-      setRemoveStep2Target(null);
-      setRemoveConfirmEmail('');
-      toast.add('User permanently removed from the organisation.', 'success');
+      setRemoveTarget(null);
+      toast.add('User archived. Audit trails and access history were retained.', 'success');
     },
     onError: (err) => setActionError(err.message || 'Could not remove user.'),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['users', orgId] });
     },
+  });
+  const handoverMutation = useMutation({
+    mutationFn: ({ action, id }) => action(id),
+    onSuccess: async () => {
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ['bootstrap-handovers', orgId] }), queryClient.invalidateQueries({ queryKey: ['users', orgId] })]);
+      setHandoverSuccessorId('');
+      toast.add('Organisation Admin handover updated.', 'success');
+      if (refreshMe) await refreshMe().catch(() => {});
+    },
+    onError: err => setActionError(err.message || 'Could not update the Organisation Admin handover.'),
   });
 
   const resetMutation = useMutation({
@@ -203,9 +206,10 @@ export function UsersPage({ embedded = false }) {
     return all.filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(q));
   }, [data, search]);
 
-  const removeEmailMatches = removeStep2Target
-    ? removeConfirmEmail.trim().toLowerCase() === String(removeStep2Target.email || '').trim().toLowerCase()
-    : false;
+  const handovers = handoverData?.rows || [];
+  const pendingAcceptance = handovers.find(row => row.status === 'PENDING' && String(row.successorUserId) === String(user?.id));
+  const isBootstrapAdmin = user?.role === 'ORG_ADMIN' && !user?.employeeId;
+  const successorOptions = (data?.rows || []).filter(row => row.status === 'ACTIVE' && row.employeeId && String(row.id) !== String(user?.id));
 
   const columns = [
     { field: 'name', label: 'Name' },
@@ -274,8 +278,7 @@ export function UsersPage({ embedded = false }) {
                   size="sm"
                   onClick={() => {
                     setActionError('');
-                    setRemoveConfirmEmail('');
-                    setRemoveStep1Target(row);
+                    setRemoveTarget(row);
                   }}
                 >
                   Remove
@@ -298,6 +301,10 @@ export function UsersPage({ embedded = false }) {
       {roleLoadError && <p className="auth-error" role="alert">Role templates could not be loaded: {roleLoadError.message}. Reload this page before creating an account.</p>}
       <p className="form-note">Every operational account must link to an active employee. Create an own-record account here, then <Link to="/roles-permissions">assign operational roles in Roles &amp; Permissions</Link>. Role and scope changes force browser sign-in and mobile QR relinking.</p>
       {(data?.rows || []).some(account => !account.employeeId && account.status === 'ACTIVE') && <p className="auth-notice">Unlinked accounts need resolution. Only one protected bootstrap Organisation Admin may remain unlinked during onboarding; link it before activating permission mode.</p>}
+      {(isBootstrapAdmin || pendingAcceptance) && <Card title="Protected Organisation Admin handover">
+        {isBootstrapAdmin && <><p className="form-note">Select a linked active employee account. The bootstrap account remains active until the successor signs in and accepts the protected role.</p><div className="row-actions"><select className="input" aria-label="Organisation Admin successor" value={handoverSuccessorId} onChange={event => setHandoverSuccessorId(event.target.value)}><option value="">Select successor</option>{successorOptions.map(row => <option key={row.id} value={row.id}>{row.name} · {row.email}</option>)}</select><Button disabled={!handoverSuccessorId} loading={handoverMutation.isPending} onClick={() => handoverMutation.mutate({ action: organizationAccessApi.beginBootstrapHandover, id: Number(handoverSuccessorId) })}>Send handover request</Button></div></>}
+        {pendingAcceptance && <><p className="form-note">You were selected as the protected Organisation Admin successor. Accepting activates your administrator access, archives the bootstrap account, and signs both accounts out so permissions reload safely.</p><Button loading={handoverMutation.isPending} onClick={() => handoverMutation.mutate({ action: organizationAccessApi.acceptBootstrapHandover, id: pendingAcceptance.id })}>Accept Organisation Admin role</Button></>}
+      </Card>}
       {smtpStatus && !smtpConfigured && (
         <div className="smtp-bypass-banner" role="status">
           <span>
@@ -504,73 +511,24 @@ export function UsersPage({ embedded = false }) {
       />
 
       <ConfirmationModal
-        open={removeStep1Target != null}
-        onClose={() => setRemoveStep1Target(null)}
-        onConfirm={() => {
-          const target = removeStep1Target;
-          setActionError('');
-          setRemoveConfirmEmail('');
-          setRemoveStep1Target(null);
-          setRemoveStep2Target(target);
-        }}
-        title="Remove User (Step 1 of 2)"
-        itemName={removeStep1Target?.name}
+        open={removeTarget != null}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={() => { setActionError(''); removeMutation.mutate(removeTarget); }}
+        title="Archive User Access"
+        itemName={removeTarget?.name}
         details={{
-          'Email': removeStep1Target?.email,
-          'Role': removeStep1Target?.role?.replace(/_/g, ' '),
-          'Status': removeStep1Target?.status,
-          'Employee': employeeNameById(removeStep1Target?.employeeId),
+          'Email': removeTarget?.email,
+          'Role': removeTarget?.role?.replace(/_/g, ' '),
+          'Status': removeTarget?.status,
+          'Employee': employeeNameById(removeTarget?.employeeId),
         }}
-        warningMessage="You are about to remove this user account from the organisation. All active sessions and linked mobile devices will be revoked immediately. Any linked employee HR/payroll record will remain intact. You will be asked for a final confirmation next."
-        confirmLabel="Continue to Final Confirmation"
+        warningMessage="This immediately revokes the user's browser and mobile access and ends active role assignments. The user identity, employee record, approvals, audit trail, and historical role assignments remain available for reporting."
+        confirmLabel="Confirm Archive"
         confirmVariant="danger"
+        requireVerification={false}
+        loading={removeMutation.isPending}
+        error={actionError}
       />
-
-      <Modal
-        open={removeStep2Target != null}
-        onClose={() => { if (!removeMutation.isPending) { setRemoveStep2Target(null); setRemoveConfirmEmail(''); } }}
-        title="Confirm Permanent User Removal (Step 2 of 2)"
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              disabled={removeMutation.isPending}
-              onClick={() => { setRemoveStep2Target(null); setRemoveConfirmEmail(''); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              loading={removeMutation.isPending}
-              disabled={!removeEmailMatches}
-              onClick={() => {
-                setActionError('');
-                removeMutation.mutate(removeStep2Target);
-              }}
-            >
-              Permanently Remove User
-            </Button>
-          </>
-        }
-      >
-        <div className="confirm-modal-content">
-          {actionError && <div className="auth-error" role="alert">{actionError}</div>}
-          <div className="confirm-warning-banner banner-danger">
-            <span className="confirm-warning-icon" aria-hidden="true"><AlertTriangleIcon size={18} /></span>
-            <div>
-              This permanently removes <strong>{removeStep2Target?.name}</strong> (<span className="mono">{removeStep2Target?.email}</span>) from the organisation and cannot be undone.
-            </div>
-          </div>
-          <Input
-            id="confirm-remove-email"
-            label={`Type "${removeStep2Target?.email || ''}" to confirm`}
-            value={removeConfirmEmail}
-            onChange={(e) => setRemoveConfirmEmail(e.target.value)}
-            placeholder={removeStep2Target?.email || ''}
-            autoComplete="off"
-          />
-        </div>
-      </Modal>
     </div>
   );
 }

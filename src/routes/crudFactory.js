@@ -192,6 +192,10 @@ function crudRouter(model, options) {
       if (isTenantScoped() && req.user.role !== 'SUPER_ADMIN' && String(row[orgFilterField]) !== String(req.user.organizationId)) {
         return res.status(404).json({ status: 'error', message: 'Not found' });
       }
+      if (options.deleteHandler) {
+        const result = await options.deleteHandler(req, row);
+        return res.json({ data: serialize(result?.row || row), ...(result?.meta || {}), message: result?.message || 'Archived. Historical records were retained.' });
+      }
       if (!model.rawAttributes[softDeleteField]) {
         return res.status(400).json({ status: 'error', message: `Model has no ${softDeleteField} field to soft-delete with` });
       }

@@ -13,6 +13,7 @@ const { invalidateUserAccess } = require('./userAdmin');
 
 const current = at => ({ status: 'ACTIVE', effectiveFrom: { [Op.lte]: at }, [Op.or]: [{ effectiveTo: null }, { effectiveTo: { [Op.gte]: at } }] });
 const live = at => ({ status: 'ACTIVE', [Op.or]: [{ effectiveTo: null }, { effectiveTo: { [Op.gte]: at } }] });
+const HOLDING_BRANCH_CODE = '__STANDALONE__';
 const fail = message => { throw new OrgFieldError(message); };
 const equal = (a, b) => a == null && b == null || sameId(a, b);
 function date(value) {
@@ -36,6 +37,7 @@ async function row(Model, value, organizationId, transaction, active = false) {
   const result = await Model.findOne({ where: { id: id(value, Model.name), organizationId }, transaction, lock: transaction.LOCK.UPDATE });
   if (!result) fail(`${Model.name} not found`);
   if (active && result.status !== 'ACTIVE') fail(`${Model.name} must be active`);
+  if (active && Model === Branch && result.code === HOLDING_BRANCH_CODE) fail('The protected holding branch is reserved for lifecycle reassignment');
   return result;
 }
 async function locked(options, work) {
@@ -97,6 +99,7 @@ async function branchValues(data, existing, o, headOffice) {
   const values = { ...(existing?.toJSON() || {}), ...branchFields(data), ...standardFields({ ...data, code: data.code ?? data.branchCode }, existing, []) };
   values.unitType = headOffice ? 'HEAD_OFFICE' : 'BRANCH'; values.isHeadOffice = headOffice;
   if (!values.number) fail('Branch number is required');
+  if (!existing && (values.code === HOLDING_BRANCH_CODE || values.number === HOLDING_BRANCH_CODE)) fail('The protected holding branch identifier is reserved');
   if (headOffice && values.status === 'INACTIVE') fail('Head Office cannot be deactivated');
   await unique(Branch, values, ['code', 'number'], o, existing?.id);
   return values;
@@ -120,6 +123,7 @@ async function createBranch(options) {
 async function updateBranch(options) {
   return mutate(options, 'branches.manage', async o => {
     const result = await row(Branch, o.id, o.organizationId, o.transaction);
+    if (result.code === HOLDING_BRANCH_CODE) fail('The protected holding branch can only be managed by the branch lifecycle workflow');
     const values = await branchValues(o.data || {}, result, o, result.unitType === 'HEAD_OFFICE' || result.isHeadOffice);
     if (values.status === 'INACTIVE') {
       await hasDependents(Department, { branchId: result.id }, o, 'departments');

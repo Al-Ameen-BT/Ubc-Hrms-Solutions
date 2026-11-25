@@ -406,6 +406,11 @@ const employeeCrud = crudRouter(Employee, {
     ],
     softDeleteField: 'status',
     softDeleteValue: 'INACTIVE',
+    deleteHandler: async (req, row) => {
+      const result = await require('../services/organizationLifecycle').archiveEmployee({ organizationId: row.organizationId, actor: req.user, employeeId: row.id });
+      await row.reload();
+      return { row, meta: { archived: true, changed: result.changed, archivedUsers: result.archivedUsers }, message: result.changed ? 'Employee and linked access archived. Historical records were retained.' : 'Employee was already archived.' };
+    },
     orgFilterField: 'organizationId',
     writeRoles: ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'],
     refs: {

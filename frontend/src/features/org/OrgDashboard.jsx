@@ -58,7 +58,7 @@ export function OrgDashboard() {
 
   return <div className="page dashboard-page command-centre-page">
     <header className="command-page-header">
-      <div><span className="command-eyebrow">Daily command centre</span><h1>HR Operations</h1><p>Identify and resolve today’s workforce, attendance, payroll and compliance priorities.</p></div>
+      <div><h1>HR Operations</h1><p>Your daily command centre for workforce, attendance, payroll and compliance priorities.</p></div>
       <div className="command-header-context"><div aria-label={`Today ${displayDate(filters.date)}, current time ${currentTime(now)}`}><strong>Today: {displayDate(filters.date)}</strong><span>Current time: {currentTime(now)}</span></div><Button variant="secondary" size="sm" onClick={() => navigate('/account')}>{user?.name || 'My profile'}</Button></div>
     </header>
     <DashboardFilterBar filters={filters} options={data?.filterOptions || response?.filterOptions} onFilter={updateFilter} onClear={clearFilters} />

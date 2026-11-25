@@ -7,6 +7,7 @@ const structure = require('../services/organizationStructure');
 const { organizationChart, photoHandler } = require('../services/organizationChart');
 const workbook = require('../services/branchWorkbook');
 const structureWorkbook = require('../services/structureWorkbook');
+const lifecycle = require('../services/organizationLifecycle');
 const { scopedWhere } = require('../services/accessControl');
 const { inputShape, tenantResource, sendError, UserAdminError } = require('../services/userAdmin');
 const router = express.Router(), legacy = express.Router();
@@ -52,6 +53,10 @@ router.get('/branch-options', requirePermission('people.create'), handle(req => 
 router.get('/position-options', requirePermission('people.create'), handle(req => structure.onboardingPositionOptions(req.access, { branchId: req.query.branchId, departmentId: req.query.departmentId })));
 router.get('/board/:id/photo', requirePermission('chart.view'), photoHandler('board'));
 router.post('/head-office', requirePermission('branches.manage'), boundary('branches', models.OrganizationBranch), handle(async req => safe(await structure.configureHeadOffice({ organizationId: req.user.organizationId, actor: req.user, data: req.body }), 'branches'), 201));
+router.post('/departments/:id/archive', requirePermission('departments.manage'), handle(req => lifecycle.archiveDepartment({ organizationId: req.user.organizationId, actor: req.user, departmentId: req.params.id, effectiveDate: req.body?.effectiveDate })));
+router.post('/branches/merge/preview', requirePermission('branches.manage'), handle(req => lifecycle.previewBranchMerge({ organizationId: req.user.organizationId, actor: req.user, sourceBranchId: req.body?.sourceBranchId, destinationBranchId: req.body?.destinationBranchId })));
+router.post('/branches/merge/apply', requirePermission('branches.manage'), handle(req => lifecycle.mergeBranch({ organizationId: req.user.organizationId, actor: req.user, sourceBranchId: req.body?.sourceBranchId, destinationBranchId: req.body?.destinationBranchId, departmentMappings: req.body?.departmentMappings, positionMappings: req.body?.positionMappings, geofenceAction: req.body?.geofenceAction, effectiveDate: req.body?.effectiveDate })));
+router.post('/branches/:id/retire', requirePermission('branches.manage'), handle(req => lifecycle.retireBranch({ organizationId: req.user.organizationId, actor: req.user, branchId: req.params.id, destinationBranchId: req.body?.destinationBranchId, useStandalone: req.body?.useStandalone === true, effectiveDate: req.body?.effectiveDate })));
 router.get('/branches/import/template', requirePermission('branches.manage'), async (req, res) => {
   try { res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').attachment('branches.xlsx').send(await workbook.writeBranchTemplate()); } catch (error) { sendError(res, error); }
 });

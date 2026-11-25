@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { masterDataApi, fmt } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { Card } from '../../components/ui/Card';
@@ -7,12 +7,18 @@ import { Table } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { useToast } from '../../components/ui/Toast';
 
 export function EmployeesPage({ embedded = false }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { canPermission } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const [search, setSearch] = useState('');
+  const [archiveTarget, setArchiveTarget] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['employees'],
@@ -26,6 +32,11 @@ export function EmployeesPage({ embedded = false }) {
   });
 
   const postName = (id) => (posts?.rows || []).find((p) => String(p.id) === String(id))?.name || '—';
+  const archiveMutation = useMutation({
+    mutationFn: employee => masterDataApi.archiveEmployee(employee.id),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['employees'] }); setArchiveTarget(null); setArchiveError(''); toast.add('Employee and linked access archived. Historical records were retained.', 'success'); },
+    onError: error => setArchiveError(error.message || 'Could not archive this employee.'),
+  });
 
   const rows = useMemo(() => {
     const all = data?.rows || [];
@@ -62,6 +73,7 @@ export function EmployeesPage({ embedded = false }) {
     { field: 'currentBasicPay', label: 'Basic Pay', mono: true, align: 'right', render: (row) => fmt.money(row.currentBasicPay) },
     { field: 'status', label: 'Status', render: (row) => <Badge variant={row.status === 'ACTIVE' ? 'success' : 'default'}>{row.status}</Badge> },
     { field: 'doj', label: 'Date of Joining', mono: true, render: (row) => fmt.date(row.doj) },
+    ...(canPermission('people.edit', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER']) ? [{ field: 'actions', label: '', sortable: false, render: row => row.status === 'ACTIVE' ? <Button size="sm" variant="danger" onClick={event => { event.stopPropagation(); setArchiveError(''); setArchiveTarget(row); }}>Archive</Button> : null }] : []),
   ];
 
   return (
@@ -95,6 +107,20 @@ export function EmployeesPage({ embedded = false }) {
           <span className="mono">{rows.length} employee{rows.length === 1 ? '' : 's'}</span>
         </div>
       </Card>
+      <ConfirmationModal
+        open={archiveTarget != null}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={() => archiveMutation.mutate(archiveTarget)}
+        title="Archive Employee"
+        itemName={archiveTarget?.name}
+        details={{ 'Employee code': archiveTarget?.empCode, 'Branch': archiveTarget?.branchName, 'Department': archiveTarget?.department }}
+        warningMessage="This ends the employee's active organisation assignment, responsibilities, roles, and linked login access. Payroll, attendance, leave, service, approval, and audit history remain unchanged and available for reporting."
+        confirmLabel="Confirm Archive"
+        confirmVariant="danger"
+        requireVerification={false}
+        loading={archiveMutation.isPending}
+        error={archiveError}
+      />
     </div>
   );
 }

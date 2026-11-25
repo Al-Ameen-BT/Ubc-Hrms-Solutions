@@ -49,6 +49,14 @@ test('branch identities are normalized, tenant-local unique, and never authorize
   await assert.rejects(s.createBranch({ organizationId: f.org.id, actor: user, data: { name: 'Forbidden', code: 'NO', number: '003' } }), /permission|authoriz/i);
 });
 
+test('the lifecycle holding branch cannot be edited or used for ordinary assignments', async () => {
+  const f = await fixture();
+  const holding = await OrganizationBranch.create({ organizationId: f.org.id, number: '__STANDALONE__', code: '__STANDALONE__', name: 'Unassigned / Standalone', unitType: 'BRANCH' });
+  await assert.rejects(s.updateBranch({ ...f.args, id: holding.id, data: { name: 'Ordinary Branch' } }), /protected|holding/i);
+  const { e } = await f.employee();
+  await assert.rejects(s.assignEmployeeOrganization({ ...f.args, data: { employeeId: e.id, branchId: holding.id, effectiveFrom: todayIST() } }), /protected|holding/i);
+});
+
 test('department and position ownership validate active same-tenant identifiers and local uniqueness', async () => {
   const f = await fixture(), other = await fixture();
   await assert.rejects(s.createDepartment({ ...f.args, data: { branchId: other.branch.id, code: 'OPS', name: 'Foreign' } }), /not found/i);

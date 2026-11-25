@@ -22,10 +22,20 @@ body {
   transition: background-color var(--duration) var(--ease), color var(--duration) var(--ease);
 }
 
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
 h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
   font-weight: 600;
-  line-height: 1.2;
+  line-height: var(--leading-heading);
   color: var(--text-primary);
+  text-wrap: balance;
 }
 
 h1 { font-size: var(--text-xl); }

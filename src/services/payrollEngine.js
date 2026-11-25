@@ -17,7 +17,7 @@ const { hasProtectedConflict } = require('./accessControl');
  * rewrite pay history" rule already used for pay stages/fixation.
  */
 
-const { sequelize, Organization, BankRuleCatalogue, Employee, PostCadre, PayScale, PayrollRun, PayrollRunLine, EmployeeBankAccount, EmployeeCompensationAssignment, OrganizationCatalogueAdoption } = require('../models');
+const { sequelize, Organization, OrganizationBranch, BankRuleCatalogue, Employee, PostCadre, PayScale, PayrollRun, PayrollRunLine, EmployeeBankAccount, EmployeeCompensationAssignment, OrganizationCatalogueAdoption } = require('../models');
 const { Op } = require('sequelize');
 const { getSettings } = require('./payrollSettings');
 const loans = require('./loans');
@@ -116,6 +116,10 @@ async function processRun({ organizationId, year, month, userId }) {
 
   const settings = await getSettings(organizationId);
   const inputFingerprint = currentAdoption ? await payrollInputFingerprint(organizationId, year, month) : null;
+  const holdingBranch = await OrganizationBranch.findOne({ where: { organizationId, code: '__STANDALONE__', status: 'ACTIVE' }, attributes: ['id'] });
+  if (holdingBranch && await Employee.count({ where: { organizationId, branchId: holdingBranch.id, status: 'ACTIVE', employmentStatus: 'ACTIVE' } })) {
+    throw new PayrollEngineError('Resolve every employee holding-branch assignment before processing payroll.', 409);
+  }
   const employees = await Employee.findAll({
     where: { organizationId, status: 'ACTIVE', employmentStatus: 'ACTIVE' },
     include: [

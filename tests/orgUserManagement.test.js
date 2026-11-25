@@ -162,7 +162,7 @@ test('PUT /organizations/:orgId/users/:userId links and unlinks already-created 
   assert.equal(unlinkedRes.body.data.employeeId, null);
 });
 
-test('DELETE /organizations/:orgId/users/:userId is restricted strictly to that org ORG_ADMIN and preserves linked Employee', async () => {
+test('DELETE /organizations/:orgId/users/:userId archives access and preserves linked Employee and user history', async () => {
   // Relink unlinkedUser to emp2 before deletion to confirm Employee record survives user deletion
   const relink = await request(`/organizations/${org.id}/users/${unlinkedUser.id}`, orgAdminToken, 'PUT', {
     employeeId: emp2.id,
@@ -181,18 +181,19 @@ test('DELETE /organizations/:orgId/users/:userId is restricted strictly to that 
   const selfAttempt = await request(`/organizations/${org.id}/users/${orgAdmin.id}`, orgAdminToken, 'DELETE');
   assert.equal(selfAttempt.status, 400);
 
-  // Step 1: ACTIVE user -> deactivated (INACTIVE, deleted: false)
+  // ACTIVE user -> archived in place.
   const step1 = await request(`/organizations/${org.id}/users/${unlinkedUser.id}`, orgAdminToken, 'DELETE');
   assert.equal(step1.status, 200);
-  assert.equal(step1.body.deleted, false);
+  assert.equal(step1.body.archived, true);
   assert.equal(step1.body.data.status, 'INACTIVE');
 
-  // Step 2: INACTIVE user -> permanently deleted (deleted: true)
+  // Repeating the action is idempotent and never removes history.
   const step2 = await request(`/organizations/${org.id}/users/${unlinkedUser.id}`, orgAdminToken, 'DELETE');
   assert.equal(step2.status, 200);
-  assert.equal(step2.body.deleted, true);
+  assert.equal(step2.body.archived, true);
+  assert.equal(step2.body.changed, false);
 
-  assert.equal(await User.findByPk(unlinkedUser.id), null);
+  assert.ok(await User.findByPk(unlinkedUser.id));
   const survivingEmployee = await Employee.findByPk(emp2.id);
   assert.ok(survivingEmployee, 'Linked Employee record must remain intact after user deletion');
 });

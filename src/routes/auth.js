@@ -209,6 +209,7 @@ router.get('/me', markDpdpPendingAllowed, authenticate, async (req, res) => {
       bootstrapRestricted: !!access.bootstrapRestricted,
       permissionCodes: access.permissionCodes,
       scopeSummary: access.scopeSummary,
+      homeAssignment: access.homeAssignment,
       enabledFeatures,
     },
   });

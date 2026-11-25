@@ -66,6 +66,8 @@ test('union combines scoped roles but never permissions or scopes beyond source 
   assert.deepEqual(await ids(access, 'people.edit'), []);
   assert.deepEqual(Object.keys(access.scopeSummary).sort(), ['branchIds', 'departmentIds', 'organization', 'own']);
   assert.equal(JSON.stringify(access.scopeSummary).includes('Employee'), false);
+  assert.deepEqual(access.homeAssignment, { branchId: b.branch.id, departmentId: b.department.id, positionId: null, effectiveFrom: at });
+  assert.deepEqual(access.scopeSummary.branchIds, [b.branch.id]);
 });
 
 test('department predicates require active tenant-owned departments and their active branches', async () => {

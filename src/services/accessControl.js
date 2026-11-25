@@ -55,7 +55,7 @@ async function effectiveAccess(userOrId, at = todayIST(), transaction, accessVer
     if (cached) return cached;
   }
 
-  const access = { userId, organizationId: null, employeeId: null, accessControlMode: null, grants: [], permissionCodes: [], scopeSummary: { own: false, organization: false, branchIds: [], departmentIds: [] }, activeBranchIds: [], activeDepartmentIds: [] };
+  const access = { userId, organizationId: null, employeeId: null, homeAssignment: null, accessControlMode: null, grants: [], permissionCodes: [], scopeSummary: { own: false, organization: false, branchIds: [], departmentIds: [] }, activeBranchIds: [], activeDepartmentIds: [] };
   const user = await User.findByPk(userId, { transaction: tx });
   if (!user || user.status !== 'ACTIVE' || user.role === 'SUPER_ADMIN' || !user.organizationId) return access;
   access.organizationId = user.organizationId;
@@ -66,6 +66,10 @@ async function effectiveAccess(userOrId, at = todayIST(), transaction, accessVer
   const employee = user.employeeId && await Employee.findOne({ where: { id: user.employeeId, organizationId: user.organizationId, status: 'ACTIVE' }, attributes: ['id'], transaction: tx });
   const linked = employee && await User.count({ where: { organizationId: user.organizationId, employeeId: employee.id, status: 'ACTIVE' }, transaction: tx }) === 1;
   if (linked) access.employeeId = employee.id;
+  if (linked) {
+    const home = await EmployeeOrganizationAssignment.findOne({ where: { organizationId: user.organizationId, employeeId: employee.id, ...current(date) }, attributes: ['branchId', 'departmentId', 'positionId', 'effectiveFrom'], order: [['effectiveFrom', 'DESC'], ['id', 'DESC']], transaction: tx });
+    access.homeAssignment = home ? { branchId: home.branchId, departmentId: home.departmentId, positionId: home.positionId, effectiveFrom: home.effectiveFrom } : null;
+  }
   const branches = await OrganizationBranch.findAll({ where: { organizationId: user.organizationId, status: 'ACTIVE' }, attributes: ['id'], transaction: tx });
   access.activeBranchIds = branches.map(b => b.id);
   const departments = await OrganizationDepartment.findAll({ where: { organizationId: user.organizationId, status: 'ACTIVE', branchId: { [Op.in]: access.activeBranchIds } }, attributes: ['id', 'branchId'], transaction: tx });

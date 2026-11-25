@@ -52,6 +52,16 @@ test('platform attention prioritises expired and suspended organisations before 
   assert.deepEqual(dashboardModel.prioritisePlatformAttention(rows).map((row) => row.id), [2, 3, 1]);
 });
 
+test('platform dashboard uses a compact mixed-chart portfolio and keeps exceptions operational', () => {
+  const source = fs.readFileSync(new URL('../src/features/platform/PlatformDashboard.jsx', import.meta.url), 'utf8');
+  for (const label of ['Portfolio health', 'Bank-class coverage', 'Active user footprint', 'Needs attention', 'Organisation attention register']) assert.match(source, new RegExp(label));
+  assert.match(source, /PieChart/);
+  assert.match(source, /BarChart/);
+  assert.match(source, /innerRadius="68%"/);
+  assert.match(source, /layout="vertical"/);
+  assert.match(source, /Add organisation/);
+});
+
 test('tab keyboard navigation wraps across the available views', () => {
   assert.equal(dashboardModel.nextTabIndex(0, 'ArrowRight', 5), 1);
   assert.equal(dashboardModel.nextTabIndex(4, 'ArrowRight', 5), 0);
@@ -135,15 +145,28 @@ test('organisation dashboard composes the approved operational sections in prior
   assert.equal(fs.existsSync(new URL('../src/features/dashboard/WorkforceInsights.jsx', import.meta.url)), false);
 });
 
-test('organisation overview uses six drill-down KPIs, horizontal distribution, segmented attendance and one trend line', () => {
+test('organisation overview uses five drill-down donuts, horizontal distribution, segmented attendance and one trend line', () => {
   const source = fs.readFileSync(new URL('../src/features/dashboard/OrganisationOverview.jsx', import.meta.url), 'utf8');
-  for (const label of ['Total Workforce', 'Present Today', 'On Leave', 'Open Positions', 'Payroll Readiness', 'HR Actions']) assert.match(source, new RegExp(label));
+  for (const label of ['Workforce capacity', 'Present today', 'Approved leave', 'Payroll readiness', 'Open HR actions']) assert.match(source, new RegExp(label));
+  assert.match(source, /PieChart/);
+  assert.match(source, /innerRadius="70%"/);
+  assert.match(source, /command-donut-metrics/);
   assert.match(source, /BarChart/);
   assert.match(source, /layout="vertical"/);
   assert.match(source, /LineChart/);
   assert.match(source, /Present|Late|On Leave|Unmarked|Absent/);
   assert.match(source, /No workforce data matches this scope|Shift analytics are unavailable/);
-  assert.doesNotMatch(source, /PieChart|Donut|radial/i);
+});
+
+test('dashboard typography and controls use the shared role system without an overlaying filter bar', () => {
+  const tokens = fs.readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../src/features/dashboard/Dashboard.css', import.meta.url), 'utf8');
+  const globalStyles = fs.readFileSync(new URL('../src/styles/global.css', import.meta.url), 'utf8');
+  for (const role of ['--font-display', '--font-data', '--type-page-title', '--type-section-title', '--type-card-title', '--type-label', '--type-meta']) assert.match(tokens, new RegExp(role));
+  assert.match(globalStyles, /button,[\s\S]*select[\s\S]*font: inherit/);
+  assert.match(styles, /\.command-filter-bar \{ position: relative/);
+  assert.doesNotMatch(styles, /\.command-filter-bar \{ position: sticky/);
+  assert.match(styles, /\.explorer-branch-grid > button > \.badge \{ align-self: start; justify-self: end; \}/);
 });
 
 test('branch health and secondary summaries expose text status, mobile actions and contextual empty states', () => {

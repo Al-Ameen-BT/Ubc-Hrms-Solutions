@@ -15,6 +15,8 @@
 .org-structure-page section > .card { margin-bottom: var(--space-4); }
 .org-structure-form { display: grid; gap: var(--space-4); }
 .org-structure-form > .form-grid { margin-bottom: 0; }
+.org-structure-form > .btn,
+.org-structure-form > .row-actions { justify-self: start; }
 .org-structure-page .form-grid > * { min-width: 0; }
 .org-section-state { padding: var(--space-4); color: var(--text-secondary); }
 .org-structure-error { margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: var(--radius); background: var(--danger-soft); color: var(--text-primary); overflow-wrap: anywhere; }

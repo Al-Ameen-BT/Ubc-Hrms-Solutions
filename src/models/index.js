@@ -99,6 +99,7 @@ const DpdpNomination = require('./dpdpNomination');
 const DpdpRetentionProposal = require('./dpdpRetentionProposal');
 const DpdpDeletionResult = require('./dpdpDeletionResult');
 const OrganizationFeature = require('./organizationFeature');
+const BootstrapAdminHandover = require('./bootstrapAdminHandover');
 
 // ----------------------------------------------------------------------------
 // Associations — this is the literal implementation of the required chain:
@@ -108,6 +109,10 @@ const OrganizationFeature = require('./organizationFeature');
 // Organization is the tenant root
 Organization.hasMany(OrganizationFeature, { foreignKey: 'organizationId', as: 'features' });
 OrganizationFeature.belongsTo(Organization, { foreignKey: 'organizationId' });
+Organization.hasMany(BootstrapAdminHandover, { foreignKey: 'organizationId', onDelete: 'RESTRICT' });
+BootstrapAdminHandover.belongsTo(Organization, { foreignKey: 'organizationId', onDelete: 'RESTRICT' });
+BootstrapAdminHandover.belongsTo(User, { as: 'BootstrapUser', foreignKey: 'bootstrapUserId', onDelete: 'RESTRICT' });
+BootstrapAdminHandover.belongsTo(User, { as: 'SuccessorUser', foreignKey: 'successorUserId', onDelete: 'RESTRICT' });
 
 Organization.hasMany(GovernmentOrder, { foreignKey: 'organizationId' });
 Organization.hasMany(RuleReference, { foreignKey: 'organizationId' });
@@ -483,6 +488,7 @@ DpdpRetentionProposal.hasMany(DpdpDeletionResult, { foreignKey: 'proposalId' });
 DpdpDeletionResult.belongsTo(DpdpRetentionProposal, { foreignKey: 'proposalId' });
 
 module.exports = {
+  BootstrapAdminHandover,
   DpdpDocument,
   DpdpAcknowledgement,
   DpdpDataRequest,

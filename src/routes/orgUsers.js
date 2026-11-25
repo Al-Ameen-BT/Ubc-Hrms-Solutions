@@ -140,9 +140,8 @@ router.post('/:userId/reset-mfa', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
-// DELETE /:userId — only ORG_ADMIN may remove users from their organisation.
-// Two-step: an ACTIVE account is disabled (soft delete); calling DELETE again
-// on an already-INACTIVE account permanently removes it.
+// DELETE /:userId archives access while retaining the account identity,
+// role history, employee link and audit references.
 router.delete('/:userId', async (req, res) => {
   try {
     if (req.user.role === 'SUPER_ADMIN') {
@@ -150,13 +149,9 @@ router.delete('/:userId', async (req, res) => {
     }
     const user = await loadUserInOrgOr404(req, res);
     if (!user) return;
-    if (user.id === req.user.id) return res.status(400).json({ status: 'error', message: 'You cannot deactivate or delete your own account.' });
-    if (user.status === 'INACTIVE') {
-      await users.hardDelete(req, user);
-      return res.json({ status: 'ok', deleted: true, message: 'User permanently deleted.' });
-    }
-    await users.setStatus(req, user, 'INACTIVE');
-    res.json({ data: publicUser(user), deleted: false, message: 'User deactivated. Delete again to permanently remove the account.' });
+    const result = await require('../services/organizationLifecycle').archiveUser({ organizationId: req.params.orgId, actor: req.user, userId: user.id, reason: req.body?.reason });
+    await user.reload();
+    res.json({ data: publicUser(user), archived: true, changed: result.changed, message: result.changed ? 'User archived. Historical records and audit trails were retained.' : 'User was already archived.' });
   } catch (err) { sendError(res, err); }
 });
 

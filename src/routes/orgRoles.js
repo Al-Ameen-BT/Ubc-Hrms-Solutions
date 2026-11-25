@@ -1,6 +1,6 @@
 'use strict';
 const express = require('express');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, requireAnyPermission } = require('../middleware/permissions');
 const { authenticate } = require('../middleware/auth');
 const users = require('../services/userAdmin');
 const router = express.Router();
@@ -29,6 +29,10 @@ router.post('/role-assignments', authenticate, requirePermission('roles.manage')
 router.put('/role-assignments/:id', authenticate, requirePermission('roles.manage'), handle(req => users.changeRoleAssignment(options(req))));
 router.delete('/role-assignments/:id', authenticate, requirePermission('roles.manage'), handle(req => users.changeRoleAssignment({ ...options(req), data: { status: 'INACTIVE' } })));
 router.get('/access-preview/:userId', authenticate, requirePermission('roles.manage'), handle(req => users.previewUserAccess(options(req))));
+const lifecycle = require('../services/organizationLifecycle');
+router.get('/bootstrap-handovers', authenticate, requireAnyPermission('roles.manage', 'self.profile'), handle(req => lifecycle.listBootstrapHandovers({ organizationId: req.user.organizationId, actor: req.user })));
+router.post('/bootstrap-handovers', authenticate, requirePermission('roles.manage'), handle(req => lifecycle.beginBootstrapHandover({ organizationId: req.user.organizationId, actor: req.user, successorUserId: req.body?.successorUserId }), 201));
+router.post('/bootstrap-handovers/:id/accept', authenticate, requireAnyPermission('roles.manage', 'self.profile'), handle(req => lifecycle.acceptBootstrapHandover({ organizationId: req.user.organizationId, actor: req.user, handoverId: req.params.id })));
 
 const dpdpGovernance = require('../services/dpdpGovernance');
 const { requireFeaturePermission } = require('../middleware/permissions');

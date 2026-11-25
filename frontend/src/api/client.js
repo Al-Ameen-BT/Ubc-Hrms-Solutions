@@ -346,6 +346,7 @@ export const masterDataApi = {
   employee: (id) => api.get(`/employees/${id}`),
   createEmployee: (data) => api.post('/employees', data),
   updateEmployee: (id, data) => api.put(`/employees/${id}`, data),
+  archiveEmployee: id => api.delete(`/employees/${id}`),
   updateDirectPaySalary: (id, data) => api.put(`/employees/${id}/direct-pay-salary`, data),
   serviceBook: (id) => api.get(`/employees/${id}/service-book`),
   addServiceBookEvent: (id, data) => api.post(`/employees/${id}/service-book/events`, data),
