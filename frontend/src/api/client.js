@@ -349,6 +349,8 @@ export const masterDataApi = {
   updateDirectPaySalary: (id, data) => api.put(`/employees/${id}/direct-pay-salary`, data),
   serviceBook: (id) => api.get(`/employees/${id}/service-book`),
   addServiceBookEvent: (id, data) => api.post(`/employees/${id}/service-book/events`, data),
+  employeeMasterInformation: (id) => api.get(`/employees/${id}/master-information`),
+  updateEmployeeMasterInformation: (id, data) => api.put(`/employees/${id}/master-information`, data),
 
   /* Bulk employee creation from CSV or Excel (see routes/serviceBook.js). */
   bulkImport: (data) => api.postRaw('/employees/bulk-import', data),

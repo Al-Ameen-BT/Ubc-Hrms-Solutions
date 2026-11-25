@@ -41,6 +41,7 @@ const {
   LeaveType,
   BankRuleCatalogue,
   OrgLeaveSetting,
+  EmployeeBankAccount,
 } = require('../models');
 
 const StageNumberMigration = sequelize.define('StageNumberMigration', {
@@ -78,7 +79,10 @@ async function migrateStageNumbers() {
 async function addColumnIfMissing(queryInterface, table, column, spec) {
   const desc = await queryInterface.describeTable(table);
   if (desc[column]) return false;
-  await queryInterface.addColumn(table, column, spec);
+  const targetSpec = queryInterface.sequelize.getDialect() === 'sqlite' && spec && spec.unique
+    ? { ...spec, unique: false }
+    : spec;
+  await queryInterface.addColumn(table, column, targetSpec);
   return true;
 }
 
@@ -336,6 +340,9 @@ const COLUMN_STEPS = [
   // Controlled catalogue and employee import pipelines.
   ['employee', 'physically_handicapped', Employee.rawAttributes.physicallyHandicapped],
   ['employee', 'education_verified', Employee.rawAttributes.educationVerified],
+  ['employee_bank_account', 'cbs_branch_code', EmployeeBankAccount.rawAttributes.cbsBranchCode],
+  ['employee_bank_account', 'cbs_account_type', EmployeeBankAccount.rawAttributes.cbsAccountType],
+  ['employee_bank_account', 'pay_mode', EmployeeBankAccount.rawAttributes.payMode],
   ['allowance_type', 'calculation_type', AllowanceType.rawAttributes.calculationType],
   ['allowance_type', 'percentage_base', AllowanceType.rawAttributes.percentageBase],
   ['allowance_type', 'percentage_value', AllowanceType.rawAttributes.percentageValue],
@@ -356,6 +363,26 @@ const COLUMN_STEPS = [
   // Slice: Leave calculation settings & sandwich rule (common holidays included in leaves other than CL and LOP)
   ['leave_type', 'include_holidays', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
   ['leave_type', 'is_lop', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }],
+  // Slice: DPDP document, data request, and incident management tracking columns
+  ['dpdp_document', 'body_ml', DpdpDocument.rawAttributes.bodyMl],
+  ['dpdp_document', 'summary_ml', DpdpDocument.rawAttributes.summaryMl],
+  ['dpdp_data_request', 'case_id', DpdpDataRequest.rawAttributes.caseId],
+  ['dpdp_data_request', 'principal_type', DpdpDataRequest.rawAttributes.principalType],
+  ['dpdp_data_request', 'principal_reference', DpdpDataRequest.rawAttributes.principalReference],
+  ['dpdp_data_request', 'principal_name', DpdpDataRequest.rawAttributes.principalName],
+  ['dpdp_data_request', 'principal_contact', DpdpDataRequest.rawAttributes.principalContact],
+  ['dpdp_data_request', 'owner_user_id', DpdpDataRequest.rawAttributes.ownerUserId],
+  ['dpdp_data_request', 'identity_verified_at', DpdpDataRequest.rawAttributes.identityVerifiedAt],
+  ['dpdp_data_request', 'identity_verified_by', DpdpDataRequest.rawAttributes.identityVerifiedBy],
+  ['dpdp_data_request', 'identity_verification_method', DpdpDataRequest.rawAttributes.identityVerificationMethod],
+  ['dpdp_data_request', 'due_at', DpdpDataRequest.rawAttributes.dueAt],
+  ['dpdp_data_request', 'closed_at', DpdpDataRequest.rawAttributes.closedAt],
+  ['dpdp_incident', 'aware_at', DpdpIncident.rawAttributes.awareAt],
+  ['dpdp_incident', 'board_detailed_due_at', DpdpIncident.rawAttributes.boardDetailedDueAt],
+  ['dpdp_incident', 'root_cause', DpdpIncident.rawAttributes.rootCause],
+  ['dpdp_incident', 'corrective_actions', DpdpIncident.rawAttributes.correctiveActions],
+  ['dpdp_incident', 'affected_principal_notification_status', DpdpIncident.rawAttributes.affectedPrincipalNotificationStatus],
+  ['dpdp_incident', 'board_notification_status', DpdpIncident.rawAttributes.boardNotificationStatus],
 ];
 
 /**

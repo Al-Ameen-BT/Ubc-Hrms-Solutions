@@ -65,6 +65,9 @@ const OrgLeaveSetting = require('./orgLeaveSetting');
 const EmployeeLeaveBalance = require('./employeeLeaveBalance');
 const LeaveApplication = require('./leaveApplication');
 const EmployeeBankAccount = require('./employeeBankAccount');
+const EmployeeOfficeInformation = require('./employeeOfficeInformation');
+const EmployeeServiceInformation = require('./employeeServiceInformation');
+const EmployeeContactAddress = require('./employeeContactAddress');
 const EmployeePayrollAdjustment = require('./employeePayrollAdjustment');
 const BankRuleCatalogue = require('./bankRuleCatalogue');
 const OrganizationCatalogueAdoption = require('./organizationCatalogueAdoption');
@@ -160,6 +163,12 @@ Employee.belongsTo(PayFixationPolicy, { foreignKey: 'payFixationPolicyId' });
 Employee.hasMany(EmployeePayrollAdjustment, { foreignKey: 'employeeId' });
 EmployeePayrollAdjustment.belongsTo(Employee, { foreignKey: 'employeeId' });
 EmployeePayrollAdjustment.belongsTo(Organization, { foreignKey: 'organizationId' });
+Employee.hasOne(EmployeeOfficeInformation, { foreignKey: 'employeeId', as: 'OfficeInformation', onDelete: 'CASCADE' });
+EmployeeOfficeInformation.belongsTo(Employee, { foreignKey: 'employeeId', onDelete: 'CASCADE' });
+Employee.hasOne(EmployeeServiceInformation, { foreignKey: 'employeeId', as: 'ServiceInformation', onDelete: 'CASCADE' });
+EmployeeServiceInformation.belongsTo(Employee, { foreignKey: 'employeeId', onDelete: 'CASCADE' });
+Employee.hasMany(EmployeeContactAddress, { foreignKey: 'employeeId', as: 'ContactAddresses', onDelete: 'CASCADE' });
+EmployeeContactAddress.belongsTo(Employee, { foreignKey: 'employeeId', onDelete: 'CASCADE' });
 
 IncrementPolicy.hasMany(Employee, { foreignKey: 'incrementPolicyId' });
 PayFixationPolicy.hasMany(Employee, { foreignKey: 'payFixationPolicyId' });
@@ -562,6 +571,9 @@ module.exports = {
   EmployeeLeaveBalance,
   LeaveApplication,
   EmployeeBankAccount,
+  EmployeeOfficeInformation,
+  EmployeeServiceInformation,
+  EmployeeContactAddress,
   EmployeePayrollAdjustment,
   EmployeePolicy,
   EmployeePolicyAcknowledgement,

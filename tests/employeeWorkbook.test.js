@@ -10,9 +10,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const Excel = require('exceljs');
-const { sequelize, Organization, PostCadre, PayRevision, PayScale, Employee, User } = require('../src/models');
+const { sequelize, Organization, PostCadre, PayRevision, PayScale, Employee, User, AuditLog, EmployeeOfficeInformation, EmployeeServiceInformation, EmployeeContactAddress } = require('../src/models');
 const { signToken } = require('../src/services/authService');
-const { writeEmployeeBulkTemplate, parseEmployeeWorkbook, EMPLOYEE_FIELD_GROUPS } = require('../src/services/employeeWorkbook');
+const { writeEmployeeBulkTemplate, parseEmployeeWorkbook, EMPLOYEE_FIELD_GROUPS, FLAT_FIELDS } = require('../src/services/employeeWorkbook');
 const routes = require('../src/routes');
 
 let server;
@@ -178,7 +178,68 @@ test('GET /employees/bulk-references returns active posts, scales and structured
   assert.ok(Array.isArray(res.body.data.scales));
   assert.ok(res.body.data.scales.some((s) => s.code === 'SCALE_TEST'));
   assert.ok(Array.isArray(res.body.data.fieldGroups));
-  assert.equal(res.body.data.fieldGroups.length, 7);
+  assert.equal(res.body.data.fieldGroups.length, 10);
+});
+
+test('employee workbook accepts supplied office, service and legacy contact headers', async () => {
+  const wb = new Excel.Workbook();
+  const ws = wb.addWorksheet('Employee Master');
+  ws.addRow(['EmpCode', 'Emp Name', 'PFAppl', 'VPFPerc', 'Probation period', 'Confirmation date', 'ResAddr_Address1', 'ResContact_EmailId', 'PerContact_ContactNo']);
+  ws.addRow(['E900', 'Import Worker', '0007-A', '7.5', '365', '2027-01-01', 'House 1', 'worker@example.invalid', '9876543210']);
+  const rows = await parseEmployeeWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+  assert.equal(rows[0].pfApplicationNumber, '0007-A');
+  assert.equal(rows[0].vpfDeclaredPercent, '7.5');
+  assert.equal(rows[0].probationPeriodDays, '365');
+  assert.equal(rows[0].confirmationDate, '2027-01-01');
+  assert.equal(rows[0].residentialAddress1, 'House 1');
+  assert.equal(rows[0].residentialEmail, 'worker@example.invalid');
+  assert.equal(rows[0].permanentContactNumber, '9876543210');
+});
+
+test('every heading in the generated employee workbook round-trips to its canonical field key', async () => {
+  const buffer = await writeEmployeeBulkTemplate({ organizationId: org.id });
+  const wb = new Excel.Workbook();
+  await wb.xlsx.load(buffer);
+  const sheet = wb.getWorksheet('Employee Master');
+  FLAT_FIELDS.forEach((field, index) => { sheet.getRow(3).getCell(index + 1).value = `value-${index + 1}`; });
+  const rows = await parseEmployeeWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+  for (const field of FLAT_FIELDS) assert.equal(Object.hasOwn(rows[0], field.key), true, `Missing parsed key ${field.key}`);
+});
+
+test('employee master-information API validates, persists, masks and audits grouped data', async () => {
+  const invalid = await request(`/employees/${hrUser.employeeId}/master-information`, hrToken, 'PUT', { confirmationDate: '2019-01-01', permanentEmail: 'invalid' });
+  assert.equal(invalid.status, 400);
+  assert.ok(Array.isArray(invalid.body.errors));
+
+  const saved = await request(`/employees/${hrUser.employeeId}/master-information`, hrToken, 'PUT', {
+    pfApplicationNumber: 'PF-APP-001', probationPeriodDays: 365, confirmationDate: '2022-01-01',
+    pfJoiningDate: '2021-01-01', selfHandicap: true, vpfDeclaredPercent: 7.5,
+    permanentAddress1: 'House 10', permanentCity: 'Manjeri', permanentEmail: 'hr@example.invalid',
+  });
+  assert.equal(saved.status, 200);
+  assert.equal((await EmployeeOfficeInformation.findOne({ where: { employeeId: hrUser.employeeId } })).pfApplicationNumber, 'PF-APP-001');
+  assert.equal((await EmployeeServiceInformation.findOne({ where: { employeeId: hrUser.employeeId } })).probationPeriodDays, 365);
+  assert.equal((await EmployeeContactAddress.findOne({ where: { employeeId: hrUser.employeeId, addressType: 'PERMANENT' } })).city, 'Manjeri');
+  assert.equal(await AuditLog.count({ where: { action: 'employee.master_information.update', targetId: String(hrUser.employeeId) } }), 1);
+
+  const partial = await request(`/employees/${hrUser.employeeId}/master-information`, hrToken, 'PUT', { permanentCity: 'Kozhikode' });
+  assert.equal(partial.status, 200);
+  const retained = await EmployeeContactAddress.findOne({ where: { employeeId: hrUser.employeeId, addressType: 'PERMANENT' } });
+  assert.equal(retained.city, 'Kozhikode');
+  assert.equal(retained.address1, 'House 10');
+  assert.equal(retained.email, 'hr@example.invalid');
+
+  const badChronology = await request(`/employees/${hrUser.employeeId}/master-information`, hrToken, 'PUT', { pfExitDate: '2020-01-01' });
+  assert.equal(badChronology.status, 400);
+  assert.match(badChronology.body.errors.join(' '), /PF Exit Date/i);
+
+  const loaded = await request(`/employees/${hrUser.employeeId}/master-information`, hrToken);
+  assert.equal(loaded.status, 200);
+  assert.match(loaded.body.data.office.pfApplicationNumber, /001$/);
+  assert.equal(loaded.body.data.contacts[0].address1, 'Masked');
+  assert.equal(loaded.body.data.contacts[0].city, 'Masked');
+  assert.equal(loaded.body.data.office.selfHandicap, 'Masked');
+  assert.equal(loaded.body.data.office.vpfDeclaredPercent, 'Masked');
 });
 
 test('bulk import page consumes the reference API posts and scales fields', () => {

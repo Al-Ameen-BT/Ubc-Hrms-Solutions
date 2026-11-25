@@ -18,7 +18,7 @@ const ACCOUNT_TYPES = [
   { value: 'OTHER', label: 'Other' },
 ];
 
-const BLANK = { accountType: 'SB', accountNumber: '', bankName: '', ifsc: '', branchName: '', remarks: '', status: 'ACTIVE' };
+const BLANK = { accountType: 'SB', accountNumber: '', bankName: '', ifsc: '', branchName: '', cbsBranchCode: '', cbsAccountType: '', payMode: '', remarks: '', status: 'ACTIVE' };
 
 export function EmployeeBankAccountsTab({ employeeId }) {
   const { canPermission } = useAuth();
@@ -48,11 +48,13 @@ export function EmployeeBankAccountsTab({ employeeId }) {
   const save = useMutation({
     mutationFn: (payload) => (editing
       ? serviceBookApi.updateBankAccount(employeeId, editing.id, {
-        bankName: payload.bankName, ifsc: payload.ifsc, branchName: payload.branchName, remarks: payload.remarks, status: payload.status,
+        bankName: payload.bankName, ifsc: payload.ifsc, branchName: payload.branchName, cbsBranchCode: payload.cbsBranchCode,
+        cbsAccountType: payload.cbsAccountType, payMode: payload.payMode, remarks: payload.remarks, status: payload.status,
       })
       : serviceBookApi.addBankAccount(employeeId, {
         accountType: payload.accountType, accountNumber: payload.accountNumber, bankName: payload.bankName,
-        ifsc: payload.ifsc, branchName: payload.branchName, remarks: payload.remarks,
+        ifsc: payload.ifsc, branchName: payload.branchName, cbsBranchCode: payload.cbsBranchCode,
+        cbsAccountType: payload.cbsAccountType, payMode: payload.payMode, remarks: payload.remarks,
       })),
     onSuccess: () => { invalidate(); toast.add(editing ? 'Account updated.' : 'Account added.', 'success'); close(); },
     onError: (err) => setError(err.message || 'Could not save.'),
@@ -83,6 +85,8 @@ export function EmployeeBankAccountsTab({ employeeId }) {
     { field: 'bankName', label: 'Bank', render: (r) => r.bankName || '—' },
     { field: 'ifsc', label: 'IFSC', mono: true, render: (r) => r.ifsc || '—' },
     { field: 'branchName', label: 'Branch', render: (r) => r.branchName || '—' },
+    { field: 'cbsBranchCode', label: 'CBS Branch', mono: true, render: (r) => r.cbsBranchCode || '—' },
+    { field: 'cbsAccountType', label: 'CBS Type', render: (r) => r.cbsAccountType || '—' },
     {
       field: 'status', label: 'Status',
       render: (r) => <Badge variant={r.status === 'ACTIVE' ? 'success' : 'default'}>{r.status}</Badge>,
@@ -99,7 +103,7 @@ export function EmployeeBankAccountsTab({ employeeId }) {
         <div className="row-actions">
           <Button variant="secondary" size="sm" onClick={() => {
             setEditing(r);
-            setForm({ accountType: r.accountType, accountNumber: r.accountNumber, bankName: r.bankName || '', ifsc: r.ifsc || '', branchName: r.branchName || '', remarks: r.remarks || '', status: r.status });
+            setForm({ accountType: r.accountType, accountNumber: r.accountNumber, bankName: r.bankName || '', ifsc: r.ifsc || '', branchName: r.branchName || '', cbsBranchCode: r.cbsBranchCode || '', cbsAccountType: r.cbsAccountType || '', payMode: r.payMode || '', remarks: r.remarks || '', status: r.status });
             setError(''); setOpen(true);
           }}>Edit</Button>
           <Button
@@ -157,6 +161,9 @@ export function EmployeeBankAccountsTab({ employeeId }) {
             <Input id="ba-bank" label="Bank Name" value={form.bankName} onChange={f('bankName')} />
             <Input id="ba-ifsc" label="IFSC" value={form.ifsc} onChange={f('ifsc')} mono />
             <Input id="ba-branch" label="Branch" value={form.branchName} onChange={f('branchName')} />
+            <Input id="ba-cbs-branch" label="CBS Branch Code" value={form.cbsBranchCode} onChange={f('cbsBranchCode')} mono hint="Use the exact branch code configured in CBS." />
+            <Input id="ba-cbs-type" label="CBS Account Type" value={form.cbsAccountType} onChange={f('cbsAccountType')} hint="Use the exact account type configured in CBS." />
+            <Input id="ba-pay-mode" label="Pay Mode" value={form.payMode} onChange={f('payMode')} />
             {editing && (
               <div className="field">
                 <label className="field-label" htmlFor="ba-status">Status</label>

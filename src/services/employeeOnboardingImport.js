@@ -5,10 +5,13 @@ const {
   sequelize, Organization, Employee, User, PostCadre, OrganizationBranch,
   OrganizationDepartment, OrganizationPosition, EmployeeOrganizationAssignment,
   OrganizationRole, OrganizationRolePermission, UserRoleAssignment, AuditLog,
+  EmployeeOfficeInformation, EmployeeServiceInformation, EmployeeContactAddress,
+  EmployeeBankAccount,
 } = require('../models');
 const { hashPassword, generateTempPassword } = require('./authService');
 const { template } = require('./permissionCatalog');
 const { can } = require('./accessControl');
+const { normalizeEmployeeMasterData, hasValues } = require('./employeeMasterData');
 
 class EmployeeOnboardingImportError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -20,6 +23,12 @@ const yes = value => ['YES', 'Y', 'TRUE', '1'].includes(String(value || '').trim
 const no = value => ['', 'NO', 'N', 'FALSE', '0'].includes(String(value || '').trim().toUpperCase());
 const clean = value => String(value || '').trim();
 const upper = value => clean(value).toUpperCase();
+const validDate = value => {
+  const text = clean(value);
+  if (!datePattern.test(text)) return false;
+  const parsed = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
+};
 
 function summarize(rows) { return { total: rows.length, valid: rows.filter(row => !row.errors.length).length, invalid: rows.filter(row => row.errors.length).length }; }
 
@@ -46,12 +55,22 @@ async function validatePreview(inputRows, { organizationId, source, access }) {
     values.empCode = upper(raw.empCode); values.name = clean(raw.name); values.postCode = upper(raw.postCode);
     values.branchCode = upper(raw.branchCode); values.departmentCode = upper(raw.departmentCode); values.positionCode = upper(raw.positionCode);
     values.loginEmail = clean(raw.loginEmail).toLowerCase(); values.createLogin = yes(raw.createLogin);
+    values.panNumber = upper(raw.panNumber);
+    values.aadhaarNumber = clean(raw.aadhaarNumber).replace(/\s+/g, '');
+    values.uanNumber = clean(raw.uanNumber).replace(/\s+/g, '');
+    values.pfNumber = clean(raw.pfNumber);
     if (!values.empCode) errors.push('Employee Code is required.');
     else if (existingCodes.has(values.empCode) || batchCodes.has(values.empCode)) errors.push('Employee Code already exists or is duplicated in this workbook.');
     batchCodes.add(values.empCode);
     if (!values.name) errors.push('Full Name is required.');
-    if (!datePattern.test(clean(raw.doj))) errors.push('Date of Joining must be YYYY-MM-DD.');
-    if (raw.dob && !datePattern.test(clean(raw.dob))) errors.push('Date of Birth must be YYYY-MM-DD.');
+    if (!validDate(raw.doj)) errors.push('Date of Joining must be a valid date in YYYY-MM-DD format.');
+    if (raw.dob && !validDate(raw.dob)) errors.push('Date of Birth must be a valid date in YYYY-MM-DD format.');
+    if (raw.doa && !validDate(raw.doa)) errors.push('Date of Appointment must be a valid date in YYYY-MM-DD format.');
+    if (validDate(raw.dob) && validDate(raw.doj) && clean(raw.dob) >= clean(raw.doj)) errors.push('Date of Birth must be before Date of Joining.');
+    if (validDate(raw.doa) && validDate(raw.doj) && clean(raw.doa) < clean(raw.doj)) errors.push('Date of Appointment must not be before Date of Joining.');
+    if (values.panNumber && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(values.panNumber)) errors.push('PAN Number must use the format AAAAA0000A.');
+    if (values.aadhaarNumber && !/^\d{12}$/.test(values.aadhaarNumber)) errors.push('Aadhaar Number must contain exactly 12 digits.');
+    if (values.uanNumber && !/^\d{12}$/.test(values.uanNumber)) errors.push('UAN Number must contain exactly 12 digits.');
     if (!clean(raw.educationalQualification)) errors.push('Educational Qualification is required.');
     if (!yes(raw.educationVerified)) errors.push('Education Verified must be YES.');
     const post = postByCode.get(values.postCode);
@@ -71,6 +90,9 @@ async function validatePreview(inputRows, { organizationId, source, access }) {
       else if (existingEmails.has(values.loginEmail) || batchEmails.has(values.loginEmail)) errors.push('Login Email already exists or is duplicated in this workbook.');
       batchEmails.add(values.loginEmail);
     }
+    const masterData = normalizeEmployeeMasterData(raw, { dob: raw.dob, doj: raw.doj });
+    errors.push(...masterData.errors);
+    values.masterData = { office: masterData.office, service: masterData.service, contacts: masterData.contacts };
     Object.assign(values, { postCadreId: post?.id || null, branchId: branch?.id || null, departmentId: department?.id || null, positionId: position?.id || null, educationVerified: true });
     return { sourceRow: index + 3, naturalKey: `EMPLOYEE:${values.empCode}`, values, errors, warnings: [] };
   });
@@ -125,7 +147,28 @@ async function applyPreview(preview, actor, access) {
           officeEmail: clean(v.officeEmail) || null, personalEmail: clean(v.personalEmail) || null,
           panNumber: clean(v.panNumber) || null, aadhaarNumber: clean(v.aadhaarNumber) || null, uanNumber: clean(v.uanNumber) || null, pfNumber: clean(v.pfNumber) || null,
           bankName: clean(v.bankName) || null, bankAccountNumber: clean(v.bankAccountNumber) || null, bankIfsc: upper(v.bankIfsc) || null,
+          dateOfConfirmation: v.masterData.service.confirmationDate,
+          lastPromotionDate: v.masterData.service.lastPromotionDate,
+          dateOfRetirement: v.masterData.service.retirementDate,
+          physicallyHandicapped: v.masterData.office.selfHandicap,
         }, { transaction });
+        if (hasValues(v.masterData.office)) await EmployeeOfficeInformation.create({ employeeId: employee.id, ...v.masterData.office }, { transaction });
+        if (hasValues(v.masterData.service)) await EmployeeServiceInformation.create({ employeeId: employee.id, ...v.masterData.service }, { transaction });
+        for (const contact of v.masterData.contacts) await EmployeeContactAddress.create({ employeeId: employee.id, ...contact }, { transaction });
+        const accountNumber = v.masterData.office.salaryAccountNumber || clean(v.bankAccountNumber) || null;
+        if (accountNumber) {
+          const cbsType = upper(v.masterData.office.cbsAccountType);
+          const accountType = ['OD', 'OVERDRAFT'].includes(cbsType) ? 'OD' : ['RD', 'RECURRING DEPOSIT'].includes(cbsType) ? 'RD' : ['SB', 'SAVINGS', 'SAVINGS BANK'].includes(cbsType) ? 'SB' : 'OTHER';
+          const account = await EmployeeBankAccount.create({
+            employeeId: employee.id, accountType,
+            bankName: v.masterData.office.salaryBankName || clean(v.bankName) || null,
+            accountNumber, ifsc: upper(v.bankIfsc) || null,
+            cbsBranchCode: v.masterData.office.cbsBranchCode,
+            cbsAccountType: v.masterData.office.cbsAccountType,
+            payMode: v.masterData.office.payMode,
+          }, { transaction });
+          await employee.update({ salaryCreditAccountId: account.id }, { transaction });
+        }
         if (v.branchId) await EmployeeOrganizationAssignment.create({ organizationId: organization.id, employeeId: employee.id, branchId: v.branchId, departmentId: v.departmentId, positionId: v.positionId, effectiveFrom: v.doj, assignedBy: actor.id }, { transaction });
         let user = null;
         if (v.createLogin) {

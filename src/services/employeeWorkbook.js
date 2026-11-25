@@ -103,11 +103,83 @@ const EMPLOYEE_FIELD_GROUPS = [
       { key: 'taxOtherDeductions', label: 'Tax Other Deductions 80C/80D (₹)', required: false, width: 28, example: '0', description: 'Annual 80C/80D deductions in rupees (OLD regime only).' },
     ],
   },
+  {
+    name: '8. Office Information', code: 'office', colorHex: '334155', bgHex: 'E2E8F0', fields: [
+      { key: 'pensionNumber', label: 'Pension No', width: 18, description: 'Optional pension reference.' },
+      { key: 'ptNumber', label: 'PT No', width: 18, description: 'Optional professional-tax reference.' },
+      { key: 'esicNumber', label: 'ESIC No', width: 18, description: 'Optional ESIC reference.' },
+      { key: 'lwfNumber', label: 'LWF No', width: 18, description: 'Optional labour-welfare-fund reference.' },
+      { key: 'edliNumber', label: 'EDLI No', width: 18, description: 'Optional EDLI reference.' },
+      { key: 'vcNumber', label: 'VC No', width: 18, description: 'Optional VC reference.' },
+      { key: 'ppNumber', label: 'PP No', width: 18, description: 'Optional passport/reference number.' },
+      { key: 'dlNumber', label: 'DL No', width: 18, description: 'Optional driving-licence number.' },
+      { key: 'rcNumber', label: 'RC No', width: 18, description: 'Optional registration-certificate number.' },
+      { key: 'giNumber', label: 'GI No', width: 18, description: 'Optional group-insurance reference.' },
+      { key: 'payMode', label: 'Pay Mode', width: 18, description: 'Salary payment mode.' },
+      { key: 'salaryBankName', label: 'Bank', width: 24, description: 'Salary-credit bank name.' },
+      { key: 'cbsBranchCode', label: 'CBS Branch Code', width: 20, description: 'Exact branch code used in CBS software.' },
+      { key: 'cbsAccountType', label: 'CBS Account Type', width: 20, description: 'Exact account type used in CBS software.' },
+      { key: 'salaryAccountNumber', label: 'Account No', width: 24, description: 'Salary account number; enter as text.' },
+      { key: 'pfApplicationNumber', label: 'PF Application No', width: 22, description: 'Optional PF application/reference number; not an applicability flag.' },
+      { key: 'selfHandicap', label: 'Self Handicap (YES / NO)', width: 24, dropdown: ['YES', 'NO'], description: 'Employee disability declaration.' },
+      { key: 'familyHandicap', label: 'Family Handicap (YES / NO)', width: 26, dropdown: ['YES', 'NO'], description: 'Family disability declaration.' },
+      { key: 'handicapRemark', label: 'Handicap Remark', width: 30, description: 'Supporting disability remark.' },
+      { key: 'ptApplicationNumber', label: 'PT Application No', width: 22, description: 'Optional PT application/reference number.' },
+      { key: 'esicApplicationNumber', label: 'ESIC Application No', width: 22, description: 'Optional ESIC application/reference number.' },
+      { key: 'lwfApplicationNumber', label: 'LWF Application No', width: 22, description: 'Optional LWF application/reference number.' },
+      { key: 'vpfApplicationNumber', label: 'VPF Application No', width: 22, description: 'Optional VPF application/reference number.' },
+      { key: 'vpfDeclaredAmount', label: 'VPF Amount', width: 18, description: 'Declared VPF amount; does not bypass payroll approval.' },
+      { key: 'vpfDeclaredPercent', label: 'VPF Percentage', width: 18, description: 'Declared VPF percentage from 0 to 100.' },
+    ],
+  },
+  {
+    name: '9. Service Information', code: 'service', colorHex: '155E75', bgHex: 'CFFAFE', fields: [
+      { key: 'probationPeriodDays', label: 'Probation Period (Days)', width: 24, description: 'Recorded probation period in whole days.' },
+      { key: 'probationDate', label: 'Probation Date (YYYY-MM-DD)', width: 26, description: 'Recorded probation milestone date.' },
+      { key: 'confirmationPeriodDays', label: 'Confirmation Period (Days)', width: 26, description: 'Recorded confirmation period in whole days.' },
+      { key: 'confirmationDate', label: 'Confirmation Date (YYYY-MM-DD)', width: 28, description: 'Confirmation date.' },
+      { key: 'lastIncrementDate', label: 'Last Increment Date (YYYY-MM-DD)', width: 30, description: 'Last completed increment date.' },
+      { key: 'lastPromotionDate', label: 'Last Promotion Date (YYYY-MM-DD)', width: 30, description: 'Last promotion date.' },
+      { key: 'lastTransferDate', label: 'Last Transfer Date (YYYY-MM-DD)', width: 30, description: 'Last transfer date.' },
+      { key: 'seniorityDate', label: 'Seniority Date (YYYY-MM-DD)', width: 26, description: 'Seniority effective date.' },
+      { key: 'seniorityNumber', label: 'Seniority No', width: 18, description: 'Seniority-list reference.' },
+      { key: 'retirementDate', label: 'Retirement Date (YYYY-MM-DD)', width: 28, description: 'Expected or recorded retirement date.' },
+      { key: 'resignationDate', label: 'Resignation Date (YYYY-MM-DD)', width: 28, description: 'Required only when the employee resigned.' },
+      { key: 'resignationReason', label: 'Resignation Reason', width: 32, description: 'Reason for leaving service.' },
+      { key: 'serviceLastDate', label: 'Service Last Date (YYYY-MM-DD)', width: 28, description: 'Last date in bank service.' },
+      { key: 'pfJoiningDate', label: 'PF Joining Date (YYYY-MM-DD)', width: 28, description: 'Employee PF joining date.' },
+      { key: 'pensionJoiningDate', label: 'Pension Joining Date (YYYY-MM-DD)', width: 32, description: 'Pension joining date.' },
+      { key: 'pfExitDate', label: 'PF Exit Date (YYYY-MM-DD)', width: 26, description: 'PF exit date for a former employee.' },
+      { key: 'pensionExitDate', label: 'Pension Exit Date (YYYY-MM-DD)', width: 30, description: 'Pension exit date for a former employee.' },
+    ],
+  },
+  {
+    name: '10. Address & Contact', code: 'addresses', colorHex: '3F3F46', bgHex: 'F4F4F5', fields: [
+      ...['Residential', 'Permanent', 'Correspondence'].flatMap((label) => {
+        const prefix = label.toLowerCase();
+        return [
+          { key: `${prefix}Address1`, label: `${label} Address 1`, width: 28, description: `${label} address line 1.` },
+          { key: `${prefix}Address2`, label: `${label} Address 2`, width: 28, description: `${label} address line 2.` },
+          { key: `${prefix}Address3`, label: `${label} Address 3`, width: 28, description: `${label} address line 3.` },
+          { key: `${prefix}Landmark`, label: `${label} Landmark`, width: 24, description: `${label} landmark.` },
+          { key: `${prefix}Area`, label: `${label} Area`, width: 20, description: `${label} area.` },
+          { key: `${prefix}City`, label: `${label} City`, width: 20, description: `${label} city.` },
+          { key: `${prefix}Taluka`, label: `${label} Taluka`, width: 20, description: `${label} taluka.` },
+          { key: `${prefix}State`, label: `${label} State`, width: 20, description: `${label} state.` },
+          { key: `${prefix}Email`, label: `${label} Email`, width: 28, description: `${label} email address.` },
+          { key: `${prefix}Website`, label: `${label} Website`, width: 30, description: `${label} website (HTTP/HTTPS).` },
+          { key: `${prefix}FaxNumber`, label: `${label} Fax No`, width: 20, description: `${label} fax number.` },
+          { key: `${prefix}ContactNumber`, label: `${label} Contact No`, width: 22, description: `${label} contact number.` },
+        ];
+      }),
+    ],
+  },
 ];
 
 const FLAT_FIELDS = EMPLOYEE_FIELD_GROUPS.flatMap((group) =>
   group.fields.map((f) => ({ ...f, groupName: group.name, groupBg: group.bgHex, groupColor: group.colorHex }))
 );
+const GENERATED_HEADER_KEYS = new Map(FLAT_FIELDS.map(field => [normalizeHeader(field.label), field.key]));
 
 /**
  * Format Excel cell value to string or clean value.
@@ -460,7 +532,10 @@ async function parseEmployeeWorkbook(buffer) {
     row.eachCell({ includeEmpty: true }, (cell) => {
       rowValues.push(cellToString(cell.value));
     });
-    const normalized = rowValues.map(normalizeHeader);
+    const normalized = rowValues.map(value => {
+      const header = normalizeHeader(value);
+      return GENERATED_HEADER_KEYS.get(header) || header;
+    });
     if (normalized.includes('empCode')) {
       headerRowIndex = r;
       headers = normalized;

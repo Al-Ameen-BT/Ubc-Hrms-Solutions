@@ -24,6 +24,9 @@ const EmployeeBankAccount = sequelize.define('EmployeeBankAccount', {
   accountNumber: { type: DataTypes.STRING(32), allowNull: false, field: 'account_number' },
   ifsc: { type: DataTypes.STRING(16), allowNull: true },
   branchName: { type: DataTypes.STRING(255), allowNull: true, field: 'branch_name' },
+  cbsBranchCode: { type: DataTypes.STRING(64), allowNull: true, field: 'cbs_branch_code' },
+  cbsAccountType: { type: DataTypes.STRING(64), allowNull: true, field: 'cbs_account_type' },
+  payMode: { type: DataTypes.STRING(32), allowNull: true, field: 'pay_mode' },
   remarks: { type: DataTypes.STRING(500), allowNull: true },
   status: { type: DataTypes.ENUM('ACTIVE', 'INACTIVE'), allowNull: false, defaultValue: 'ACTIVE' },
 }, {

@@ -17,11 +17,12 @@ import { EmployeeLoansTab } from './EmployeeLoansTab';
 import { EmployeeAttendanceTab } from './EmployeeAttendanceTab';
 import { EmployeeDocumentsTab } from './EmployeeDocumentsTab';
 import { EmployeePayslipTab } from './EmployeePayslipTab';
+import { EmployeeMasterInformationTab } from './EmployeeMasterInformationTab';
 import { ServiceBookPayslips } from './ServiceBookPayslips';
 import { organizationAccessApi } from '../../api/organizationAccess';
 import { compensationApi } from '../../api/compensation';
 
-const TABS = ['Service Book', 'Pay History', 'Leave', 'Attendance', 'Bank Accounts', 'Loans', 'Documents', 'Payslip'];
+const TABS = ['Service Book', 'Master Information', 'Pay History', 'Leave', 'Attendance', 'Bank Accounts', 'Loans', 'Documents', 'Payslip'];
 const NON_PAY_EVENTS = ['APPOINTMENT', 'PROBATION', 'CONFIRMATION', 'TRANSFER', 'SUSPENSION', 'LWA', 'BREAK_IN_SERVICE', 'DISCIPLINARY', 'RETIREMENT', 'OTHER'];
 
 export function EmployeeDetailPage() {
@@ -505,6 +506,7 @@ export function EmployeeDetailPage() {
       )}
 
       {tab === 'Attendance' && <EmployeeAttendanceTab employeeId={id} />}
+      {tab === 'Master Information' && <EmployeeMasterInformationTab employeeId={id} canEdit={canPermission('people.edit', ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'])} />}
       {tab === 'Bank Accounts' && <EmployeeBankAccountsTab employeeId={id} />}
       {tab === 'Loans' && <EmployeeLoansTab employeeId={id} />}
       {tab === 'Documents' && <EmployeeDocumentsTab employeeId={id} />}

@@ -9,6 +9,8 @@ const {
   sequelize, Organization, PostCadre, OrganizationBranch, OrganizationDepartment,
   OrganizationPosition, Employee, User, OrganizationRole, UserRoleAssignment,
   EmployeeOrganizationAssignment,
+  EmployeeOfficeInformation, EmployeeServiceInformation, EmployeeContactAddress,
+  EmployeeBankAccount,
 } = require('../src/models');
 const onboarding = require('../src/services/employeeOnboardingImport');
 
@@ -32,6 +34,10 @@ function rows() {
     branchCode: 'HO', departmentCode: 'OPS', positionCode: 'CLERK-01',
     educationalQualification: 'B.Com', educationVerified: 'YES', createLogin: 'YES',
     loginEmail: 'employee.only@example.invalid', role: 'ORG_ADMIN',
+    pfApplicationNumber: '0007-A', cbsBranchCode: '001', cbsAccountType: 'SAVINGS',
+    salaryBankName: 'Onboarding Bank', salaryAccountNumber: '0000123456', bankIfsc: 'TEST0000001',
+    probationPeriodDays: '365', confirmationDate: '2027-11-01',
+    residentialAddress1: 'House 1', residentialCity: 'Manjeri', residentialEmail: 'employee@example.invalid',
   }];
 }
 
@@ -49,6 +55,14 @@ test('controlled onboarding creates only an EMPLOYEE own-scope account and autho
   assert.equal(role.isProtected, true);
   assert.equal((await UserRoleAssignment.findOne({ where: { userId: user.id } })).scopeType, 'OWN');
   assert.equal(await EmployeeOrganizationAssignment.count({ where: { employeeId: employee.id } }), 1);
+  assert.equal((await EmployeeOfficeInformation.findOne({ where: { employeeId: employee.id } })).pfApplicationNumber, '0007-A');
+  assert.equal((await EmployeeServiceInformation.findOne({ where: { employeeId: employee.id } })).probationPeriodDays, 365);
+  assert.equal((await EmployeeContactAddress.findOne({ where: { employeeId: employee.id, addressType: 'RESIDENTIAL' } })).city, 'Manjeri');
+  const bankAccount = await EmployeeBankAccount.findOne({ where: { employeeId: employee.id } });
+  assert.equal(bankAccount.accountNumber, '0000123456');
+  assert.equal(bankAccount.accountType, 'SB');
+  assert.equal(bankAccount.cbsBranchCode, '001');
+  assert.equal((await employee.reload()).salaryCreditAccountId, bankAccount.id);
 });
 
 test('controlled onboarding rejects positions outside the creator branch scope', async () => {
@@ -65,6 +79,19 @@ test('controlled onboarding rejects positions outside the creator branch scope',
   };
   const preview = await onboarding.validatePreview([{ ...rows()[0], empCode: 'E099', loginEmail: 'scope@example.invalid' }], { organizationId: organization.id, source, access });
   assert.match(preview.rows[0].errors.join(' '), /outside your permitted organisation scope/i);
+});
+
+test('controlled onboarding validates impossible dates and statutory identifier formats before writes', async () => {
+  const preview = await onboarding.validatePreview([{
+    ...rows()[0], empCode: 'E098', loginEmail: 'invalid-fields@example.invalid',
+    dob: '2025-02-30', panNumber: 'BADPAN', aadhaarNumber: '123', uanNumber: 'ABC',
+  }], { organizationId: organization.id, source });
+  assert.equal(preview.summary.invalid, 1);
+  assert.match(preview.rows[0].errors.join(' '), /Date of Birth/i);
+  assert.match(preview.rows[0].errors.join(' '), /PAN Number/i);
+  assert.match(preview.rows[0].errors.join(' '), /Aadhaar Number/i);
+  assert.match(preview.rows[0].errors.join(' '), /UAN Number/i);
+  assert.equal(await Employee.count({ where: { organizationId: organization.id, empCode: 'E098' } }), 0);
 });
 
 test('retry does not create duplicate employees or reveal another password', async () => {

@@ -25,8 +25,12 @@ const {
   EmployeeDocument,
   ServiceHistoryDocument,
   EmployeeBankAccount,
+  EmployeeOfficeInformation,
+  EmployeeServiceInformation,
+  EmployeeContactAddress,
   PayrollRun,
   PayrollRunLine,
+  AuditLog,
   sequelize,
 } = require('../models');
 const documents = require('../services/documents');
@@ -48,6 +52,7 @@ const loans = require('../services/loans');
 const orgFields = require('../services/orgFields');
 const { parseCsv, toCsv } = require('../services/csv');
 const { maskEmployeeSensitive } = require('../services/dpdpSensitiveAccess');
+const { normalizeEmployeeMasterData } = require('../services/employeeMasterData');
 
 // ---------------------------------------------------------------------
 // Bulk employee creation via CSV. Registered BEFORE the generic crudRouter
@@ -446,6 +451,85 @@ const employeeCrud = crudRouter(Employee, {
     },
   });
 
+const MASTER_READERS = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'EMPLOYEE'];
+const MASTER_WRITERS = ['ORG_ADMIN', 'HR_ADMIN', 'HR_OFFICER'];
+const MASTER_BANK_FIELDS = ['payMode', 'salaryBankName', 'cbsBranchCode', 'cbsAccountType', 'salaryAccountNumber'];
+const maskTail = value => value ? `••••${String(value).slice(-4)}` : value;
+function maskMasterInformation(office, service, contacts) {
+  const maskedOffice = office?.toJSON ? office.toJSON() : { ...(office || {}) };
+  for (const key of ['pensionNumber', 'ptNumber', 'esicNumber', 'lwfNumber', 'edliNumber', 'vcNumber', 'ppNumber', 'dlNumber', 'rcNumber', 'giNumber', 'salaryAccountNumber', 'pfApplicationNumber', 'ptApplicationNumber', 'esicApplicationNumber', 'lwfApplicationNumber', 'vpfApplicationNumber']) {
+    if (maskedOffice[key]) maskedOffice[key] = maskTail(maskedOffice[key]);
+  }
+  for (const key of ['selfHandicap', 'familyHandicap', 'handicapRemark', 'vpfDeclaredAmount', 'vpfDeclaredPercent']) if (maskedOffice[key] !== null && maskedOffice[key] !== undefined) maskedOffice[key] = 'Masked';
+  const maskedContacts = (contacts || []).map(row => {
+    const value = row.toJSON ? row.toJSON() : { ...row };
+    for (const key of ['address1', 'address2', 'address3', 'landmark', 'area', 'city', 'taluka', 'state', 'email', 'website', 'faxNumber', 'contactNumber']) if (value[key]) value[key] = 'Masked';
+    return value;
+  });
+  return { office: maskedOffice, service: service?.toJSON ? service.toJSON() : service, contacts: maskedContacts };
+}
+
+router.get('/:id/master-information', authenticate, requireFeaturePermission(['hr.view', 'self.profile'], MASTER_READERS, resource('Employee')), async (req, res) => {
+  try {
+    const employee = await loadOwnEmployee(req, res); if (!employee) return;
+    if (req.user.role === 'EMPLOYEE' && String(req.user.employeeId) !== String(employee.id)) return res.status(404).json({ status: 'error', message: 'Employee not found' });
+    const [office, service, contacts] = await Promise.all([
+      EmployeeOfficeInformation.findOne({ where: { employeeId: employee.id } }),
+      EmployeeServiceInformation.findOne({ where: { employeeId: employee.id } }),
+      EmployeeContactAddress.findAll({ where: { employeeId: employee.id }, order: [['addressType', 'ASC']] }),
+    ]);
+    res.json({ data: maskMasterInformation(office, service, contacts) });
+  } catch (error) { res.status(500).json({ status: 'error', message: 'Could not load employee master information.' }); }
+});
+
+router.put('/:id/master-information', authenticate, requireFeaturePermission('people.edit', MASTER_WRITERS, resource('Employee')), async (req, res) => {
+  try {
+    const employee = await loadOwnEmployee(req, res); if (!employee) return;
+    if (MASTER_BANK_FIELDS.some(key => Object.hasOwn(req.body || {}, key))) return res.status(409).json({ status: 'error', message: 'Use Bank Accounts to change payment mode or CBS account details.' });
+    await sequelize.transaction(async transaction => {
+      const existingService = await EmployeeServiceInformation.findOne({ where: { employeeId: employee.id }, transaction, lock: transaction.LOCK.UPDATE });
+      const mergedInput = { ...(existingService?.toJSON() || {}), ...(req.body || {}) };
+      const normalized = normalizeEmployeeMasterData(mergedInput, employee);
+      if (normalized.errors.length) throw Object.assign(new Error('Employee master information validation failed.'), { status: 400, validationErrors: normalized.errors });
+      const officeKeys = Object.keys(normalized.office).filter(key => Object.hasOwn(req.body || {}, key));
+      const serviceKeys = Object.keys(normalized.service).filter(key => Object.hasOwn(req.body || {}, key));
+      const contactPrefixes = { RESIDENTIAL: 'residential', PERMANENT: 'permanent', CORRESPONDENCE: 'correspondence' };
+      if (officeKeys.length) {
+        const [row] = await EmployeeOfficeInformation.findOrCreate({ where: { employeeId: employee.id }, defaults: { employeeId: employee.id }, transaction });
+        await row.update(Object.fromEntries(officeKeys.map(key => [key, normalized.office[key]])), { transaction });
+        if (officeKeys.includes('selfHandicap')) await employee.update({ physicallyHandicapped: normalized.office.selfHandicap }, { transaction });
+      }
+      if (serviceKeys.length) {
+        const [row] = await EmployeeServiceInformation.findOrCreate({ where: { employeeId: employee.id }, defaults: { employeeId: employee.id }, transaction });
+        await row.update(Object.fromEntries(serviceKeys.map(key => [key, normalized.service[key]])), { transaction });
+        const canonical = {};
+        if (serviceKeys.includes('confirmationDate')) canonical.dateOfConfirmation = normalized.service.confirmationDate;
+        if (serviceKeys.includes('lastPromotionDate')) canonical.lastPromotionDate = normalized.service.lastPromotionDate;
+        if (serviceKeys.includes('retirementDate')) canonical.dateOfRetirement = normalized.service.retirementDate;
+        if (Object.keys(canonical).length) await employee.update(canonical, { transaction });
+      }
+      for (const contact of normalized.contacts) {
+        const prefix = contactPrefixes[contact.addressType];
+        if (!Object.keys(req.body || {}).some(key => key.startsWith(prefix))) continue;
+        const [row] = await EmployeeContactAddress.findOrCreate({ where: { employeeId: employee.id, addressType: contact.addressType }, defaults: { employeeId: employee.id, addressType: contact.addressType }, transaction });
+        const contactPatch = {};
+        for (const [key, value] of Object.entries(contact)) {
+          if (key === 'addressType') continue;
+          const requestKey = `${prefix}${key[0].toUpperCase()}${key.slice(1)}`;
+          if (Object.hasOwn(req.body || {}, requestKey)) contactPatch[key] = value;
+        }
+        if (Object.keys(contactPatch).length) await row.update(contactPatch, { transaction });
+      }
+      await AuditLog.create({
+        organizationId: employee.organizationId, actorUserId: req.user.id, actorEmail: req.user.email,
+        action: 'employee.master_information.update', targetType: 'employee', targetId: String(employee.id),
+        details: { fields: Object.keys(req.body || {}).sort() }, ip: req.ip || null,
+      }, { transaction });
+    });
+    res.json({ status: 'ok' });
+  } catch (error) { res.status(error.status || 400).json({ status: 'error', message: error.message, ...(error.validationErrors ? { errors: error.validationErrors } : {}) }); }
+});
+
 router.put('/:id/direct-pay-salary', authenticate, requireFeaturePermission('compensation.prepare', HR_RECORDERS, resource('Employee')), async (req, res) => {
   if (req.access?.accessControlMode === 'PERMISSIONS') return res.status(409).json({ status: 'error', message: 'Propose a compensation assignment for separate approval.' });
   try {
@@ -807,6 +891,7 @@ router.post('/:id/bank-accounts', authenticate, requireFeaturePermission('compen
     const row = await EmployeeBankAccount.create({
       employeeId: employee.id, accountType: b.accountType, accountNumber: String(b.accountNumber).trim(),
       bankName: b.bankName || null, ifsc: b.ifsc || null, branchName: b.branchName || null,
+      cbsBranchCode: b.cbsBranchCode || null, cbsAccountType: b.cbsAccountType || null, payMode: b.payMode || null,
       remarks: b.remarks ? String(b.remarks).slice(0, 500) : null,
     });
     await require('../services/audit').audit(req, 'employee.bank_account.add', { organizationId: employee.organizationId, targetType: 'employee', targetId: employee.id, details: { accountType: b.accountType } });
@@ -826,6 +911,9 @@ router.put('/:id/bank-accounts/:accountId', authenticate, requireFeaturePermissi
     if (b.bankName !== undefined) row.bankName = b.bankName || null;
     if (b.ifsc !== undefined) row.ifsc = b.ifsc || null;
     if (b.branchName !== undefined) row.branchName = b.branchName || null;
+    if (b.cbsBranchCode !== undefined) row.cbsBranchCode = b.cbsBranchCode || null;
+    if (b.cbsAccountType !== undefined) row.cbsAccountType = b.cbsAccountType || null;
+    if (b.payMode !== undefined) row.payMode = b.payMode || null;
     if (b.remarks !== undefined) row.remarks = b.remarks ? String(b.remarks).slice(0, 500) : null;
     if (b.status && ['ACTIVE', 'INACTIVE'].includes(b.status)) row.status = b.status;
     await row.save();

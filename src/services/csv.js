@@ -24,14 +24,46 @@ const HEADER_ALIASES = {
   'name': 'name',
   'full name': 'name',
   'employee name': 'name',
+  'emp name': 'name',
 
   'dob': 'dob',
   'date of birth': 'dob',
   'birth date': 'dob',
+  'birthdate': 'dob',
 
   'doj': 'doj',
   'date of joining': 'doj',
   'joining date': 'doj',
+  'joiningdate': 'doj',
+
+  'pan no': 'panNumber', 'panno': 'panNumber',
+  'adhar no': 'aadhaarNumber', 'adharno': 'aadhaarNumber', 'aadhaar no': 'aadhaarNumber',
+  'uan no': 'uanNumber', 'uanno': 'uanNumber', 'pf no': 'pfNumber', 'pfno': 'pfNumber',
+  'pension no': 'pensionNumber', 'pt no': 'ptNumber', 'esic no': 'esicNumber',
+  'lwf no': 'lwfNumber', 'edli no': 'edliNumber', 'vc no': 'vcNumber',
+  'pp no': 'ppNumber', 'dl no': 'dlNumber', 'rc no': 'rcNumber', 'gi no': 'giNumber',
+  'pay mode': 'payMode', 'bank': 'salaryBankName', 'branch': 'cbsBranchCode',
+  'cbs branch code': 'cbsBranchCode', 'account type': 'cbsAccountType', 'cbs account type': 'cbsAccountType',
+  'account no': 'salaryAccountNumber', 'accountno': 'salaryAccountNumber',
+  'pf appl': 'pfApplicationNumber', 'pfappl': 'pfApplicationNumber', 'pf application no': 'pfApplicationNumber',
+  'pt appl': 'ptApplicationNumber', 'ptappl': 'ptApplicationNumber', 'pt application no': 'ptApplicationNumber',
+  'esic appl': 'esicApplicationNumber', 'esicappl': 'esicApplicationNumber', 'esic application no': 'esicApplicationNumber',
+  'lwf appl': 'lwfApplicationNumber', 'lwfappl': 'lwfApplicationNumber', 'lwf application no': 'lwfApplicationNumber',
+  'vpf appl': 'vpfApplicationNumber', 'vpfappl': 'vpfApplicationNumber', 'vpf application no': 'vpfApplicationNumber',
+  'self handicap': 'selfHandicap', 'family handicap': 'familyHandicap', 'handicap remark': 'handicapRemark',
+  'vpf amt': 'vpfDeclaredAmount', 'vpf amount': 'vpfDeclaredAmount',
+  'vpf perc': 'vpfDeclaredPercent', 'vpfperc': 'vpfDeclaredPercent', 'vpf percentage': 'vpfDeclaredPercent',
+
+  'probation period': 'probationPeriodDays', 'probation period days': 'probationPeriodDays',
+  'probation date': 'probationDate', 'confirm period': 'confirmationPeriodDays',
+  'confirmation period days': 'confirmationPeriodDays', 'confirmation date': 'confirmationDate',
+  'last increment date': 'lastIncrementDate', 'last promotion date': 'lastPromotionDate',
+  'last transfer date': 'lastTransferDate', 'seniority date': 'seniorityDate',
+  'seniority no': 'seniorityNumber', 'retirement date': 'retirementDate',
+  'resignation date': 'resignationDate', 'resign reason': 'resignationReason',
+  'resignation reason': 'resignationReason', 'service last date': 'serviceLastDate',
+  'pf joining date': 'pfJoiningDate', 'pension joining date': 'pensionJoiningDate',
+  'pf exit date': 'pfExitDate', 'pension exit date': 'pensionExitDate',
 
   'doa': 'doa',
   'date of appointment': 'doa',
@@ -119,7 +151,20 @@ function normalizeHeader(raw) {
     .replace(/[*#₹%]/g, '')
     .replace(/[\s/_-]+/g, ' ')
     .trim();
-  return HEADER_ALIASES[s] || raw.trim();
+  if (HEADER_ALIASES[s]) return HEADER_ALIASES[s];
+  const friendlyContact = s.match(/^(residential|permanent|correspondence) (address [123]|landmark|area|city|taluka|state|email|website|fax no|contact no)$/);
+  if (friendlyContact) {
+    const suffix = friendlyContact[2].replace(/ (\d)$/, '$1').replace('fax no', 'fax number').replace('contact no', 'contact number');
+    return friendlyContact[1] + suffix.replace(/(?:^|\s)(.)/g, (_, char) => char.toUpperCase());
+  }
+  const legacyContact = s.match(/^(resaddr|rescontact|peraddr|percontact|coraddr|corcontact) (address[123]|landmark|area|city|taluka|state|emailid|website|faxno|contactno)$/);
+  if (legacyContact) {
+    const prefix = legacyContact[1].startsWith('res') ? 'residential' : legacyContact[1].startsWith('per') ? 'permanent' : 'correspondence';
+    const suffixes = { emailid: 'Email', faxno: 'FaxNumber', contactno: 'ContactNumber' };
+    const suffix = suffixes[legacyContact[2]] || legacyContact[2][0].toUpperCase() + legacyContact[2].slice(1);
+    return `${prefix}${suffix}`;
+  }
+  return raw.trim();
 }
 
 /**
