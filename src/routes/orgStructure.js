@@ -6,6 +6,7 @@ const models = require('../models');
 const structure = require('../services/organizationStructure');
 const { organizationChart, photoHandler } = require('../services/organizationChart');
 const workbook = require('../services/branchWorkbook');
+const structureWorkbook = require('../services/structureWorkbook');
 const { scopedWhere } = require('../services/accessControl');
 const { inputShape, tenantResource, sendError, UserAdminError } = require('../services/userAdmin');
 const router = express.Router(), legacy = express.Router();
@@ -66,6 +67,30 @@ router.post('/branches/import/apply', requirePermission('branches.manage'), hand
   const created = await workbook.applyBranchWorkbook(req.body, req.user);
   return created.map(row => safe(row, 'branches'));
 }, 201));
+router.get('/branches/export', requirePermission('branches.view'), async (req, res) => {
+  try { res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').attachment('branches-export.xlsx').send(await structureWorkbook.exportStructureWorkbook('branches', req.user.organizationId)); } catch (error) { sendError(res, error); }
+});
+for (const [entity, cfg] of Object.entries(structureWorkbook.ENTITY_CONFIG)) {
+  const viewPerm = entity === 'staffing' || entity === 'responsibilities' ? 'assignments.view' : `${entity}.view`;
+  router.get(`/${entity}/export`, requirePermission(viewPerm), async (req, res) => {
+    try { res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').attachment(`${entity}-export.xlsx`).send(await structureWorkbook.exportStructureWorkbook(entity, req.user.organizationId)); } catch (error) { sendError(res, error); }
+  });
+  router.get(`/${entity}/import/template`, requirePermission(cfg.permission), async (req, res) => {
+    try { res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').attachment(cfg.filename).send(await structureWorkbook.writeStructureTemplate(entity)); } catch (error) { sendError(res, error); }
+  });
+  router.post(`/${entity}/import/preview`, requirePermission(cfg.permission), (req, res, next) => {
+    if (!req.is('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) return res.status(415).json({ status: 'error', message: 'Upload an .xlsx workbook' });
+    express.raw({ type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', limit: 2 * 1024 * 1024 })(req, res, error => error ? sendError(res, error) : next());
+  }, handle(async req => {
+    if (!Buffer.isBuffer(req.body) || req.body.length > 2 * 1024 * 1024) throw new UserAdminError(400, 'Upload an .xlsx workbook buffer');
+    return structureWorkbook.previewStructureWorkbook(entity, req.body, req.user);
+  }));
+  router.post(`/${entity}/import/apply`, requirePermission(cfg.permission), handle(async req => {
+    const outGroup = entity === 'staffing' ? 'assignments' : entity;
+    const created = await structureWorkbook.applyStructureWorkbook(entity, req.body, req.user);
+    return created.map(row => safe(row, outGroup));
+  }, 201));
+}
 for (const [group, modelName, singular] of [['branches', 'OrganizationBranch', 'Branch'], ['departments', 'OrganizationDepartment', 'Department'], ['positions', 'OrganizationPosition', 'Position'], ['assignments', 'EmployeeOrganizationAssignment', 'EmployeeOrganization'], ['responsibilities', 'OrganizationResponsibilityAssignment', 'Responsibility']]) {
   const Model = models[modelName], permission = group === 'responsibilities' ? 'assignments' : group;
   const mount = (target, path) => {

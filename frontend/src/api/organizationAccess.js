@@ -92,6 +92,17 @@ export const organizationAccessApi = {
   downloadBranchTemplate: () => downloadFile(`${structurePath}/branches/import/template`, 'branches.xlsx'),
   previewBranchImport,
   applyBranchImport: body => api.post(`${structurePath}/branches/import/apply`, body),
+  downloadStructureTemplate: entity => downloadFile(`${structurePath}/${entity}/import/template`, `${entity}.xlsx`),
+  previewStructureImport: async (entity, file) => {
+    if (!file || !/\.xlsx$/i.test(file.name || '') || file.size > 2 * 1024 * 1024) throw new ApiError('Choose an .xlsx workbook of at most 2 MiB.', 400, null);
+    const response = await structureBinary(`${structurePath}/${entity}/import/preview`, {
+      method: 'POST', headers: { 'Content-Type': workbookType }, body: file,
+    });
+    const payload = await response.json();
+    return payload?.data ?? payload;
+  },
+  applyStructureImport: (entity, body) => api.post(`${structurePath}/${entity}/import/apply`, body),
+  exportStructureData: entity => downloadFile(`${structurePath}/${entity}/export`, `${entity}-export.xlsx`),
   loadPhoto: loadStructurePhoto,
   transfers: () => api.get('/org/transfers'),
   createTransfer: body => api.post('/org/transfers', body),
