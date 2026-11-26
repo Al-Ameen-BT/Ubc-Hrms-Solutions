@@ -17,7 +17,6 @@ import { useToast } from '../../components/ui/Toast';
 import { AreaBulkImportModal, AREA_IMPORT_CONFIG } from './AreaBulkImportModal';
 import './OrganisationStructurePage.css';
 
-const ROW_FIELDS = ['number', 'code', 'name', 'address', 'phone'];
 const RESPONSIBILITIES = ['BRANCH_MANAGER', 'SENIOR_MANAGER', 'GENERAL_MANAGER'];
 const LEGACY_ACTION_ROLES = {
   'branches.view': ['ORG_ADMIN'], 'branches.manage': ['ORG_ADMIN'],
@@ -37,7 +36,6 @@ const TABS = [
   ['positions', 'Positions', 'positions.view'],
   ['assignments', 'Staffing', 'assignments.view'],
   ['responsibilities', 'Responsibilities', 'assignments.view'],
-  ['import', 'Excel import', 'branches.manage'],
   ['transfers', 'Transfers', 'transfers.view'],
   ['chart', 'Organisation chart', 'chart.view'],
 ];
@@ -105,10 +103,6 @@ export function OrganisationStructurePage() {
   const [positionEditing, setPositionEditing] = useState(null);
   const [assignmentForm, setAssignmentForm] = useState({ employeeId: '', branchId: '', departmentId: '', positionId: '', effectiveFrom: '', effectiveTo: '' });
   const [responsibilityForm, setResponsibilityForm] = useState({ employeeId: '', responsibility: 'BRANCH_MANAGER', scopeType: 'BRANCH', branchId: '', effectiveFrom: '', effectiveTo: '' });
-  const [importEntity, setImportEntity] = useState('branches');
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const fileInput = useRef(null);
   const [chartLayout, setChartLayout] = useState('tree');
   const [transferForm, setTransferForm] = useState({ ...blankTransfer, employeeId: initialEmployeeId });
   const [roleStart, setRoleStart] = useState({ roleId: '', scopeType: '', branchId: '', departmentId: '' });
@@ -173,23 +167,6 @@ export function OrganisationStructurePage() {
     },
     onError: error => setPageError(error.message || 'Could not save the organisation structure.'),
   });
-  const previewMutation = useMutation({
-    mutationFn: ({ entity, workbookFile }) => entity === 'branches'
-      ? organizationAccessApi.previewBranchImport(workbookFile)
-      : organizationAccessApi.previewStructureImport(entity, workbookFile),
-    onSuccess: data => { setPreview(data); setPageError(''); },
-    onError: error => { setPreview(null); setPageError(error.message || 'Could not preview this workbook.'); },
-  });
-  const applyImport = useMutation({
-    mutationFn: ({ entity, payload }) => entity === 'branches'
-      ? organizationAccessApi.applyBranchImport(payload)
-      : organizationAccessApi.applyStructureImport(entity, payload),
-    onSuccess: () => {
-      invalidateStructure(); setPreview(null); setFile(null); setPageError('');
-      if (fileInput.current) fileInput.current.value = '';
-    },
-    onError: error => setPageError(`${error.message || 'Could not apply this import.'} Resolve the reported conflict and preview the workbook again.`),
-  });
   const transferMutation = useMutation({
     mutationFn: ({ action, input }) => action(input),
     onSuccess: () => { invalidateStructure(); setPageError(''); setRoleStarts([]); setCloseRoleIds([]); setRetainRoleIds([]); },
@@ -218,8 +195,7 @@ export function OrganisationStructurePage() {
     });
   };
 
-  const canAnyImport = can('branches.manage') || can('departments.manage') || can('positions.manage') || can('assignments.manage');
-  const visibleTabs = TABS.filter(([id, , permission]) => can(permission) || id === 'branches' && can('branches.manage') || id === 'departments' && can('departments.manage') || id === 'positions' && can('positions.manage') || id === 'assignments' && can('assignments.manage') || id === 'responsibilities' && can('assignments.manage') || id === 'import' && canAnyImport || id === 'transfers' && can('transfers.manage'));
+  const visibleTabs = TABS.filter(([id, , permission]) => can(permission) || id === 'branches' && can('branches.manage') || id === 'departments' && can('departments.manage') || id === 'positions' && can('positions.manage') || id === 'assignments' && can('assignments.manage') || id === 'responsibilities' && can('assignments.manage') || id === 'transfers' && can('transfers.manage'));
   useEffect(() => { if (!visibleTabs.some(([id]) => id === tab)) setTab(visibleTabs[0]?.[0] || 'branches'); }, [visibleTabs, tab]);
 
   const allowedBranches = branches.filter(branch => active(branch) && branch.code !== '__STANDALONE__');
@@ -611,57 +587,6 @@ export function OrganisationStructurePage() {
       </Card>}
       <Card title="Responsibility history" noPadding>{responsibilityQuery.isLoading ? <p className="org-section-state">Loading responsibilities…</p> : responsibilities.length ? <div className="org-table-scroll"><table className="table"><thead><tr><th>Employee</th><th>Responsibility</th><th>Scope</th><th>Effective from</th><th>Effective to</th><th>Status</th></tr></thead><tbody>{responsibilities.map(row => <tr key={row.id}><td>{employeeById(row.employeeId)?.name || `Employee #${row.employeeId}`}</td><td>{row.responsibility.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase())}</td><td>{row.scopeType === 'ORGANISATION' ? 'Organisation' : branchById(row.branchId)?.name || `Branch #${row.branchId}`}</td><td className="mono">{row.effectiveFrom}</td><td className="mono">{row.effectiveTo || 'Current'}</td><td><Badge variant={isCurrent(row) ? 'success' : 'default'}>{isCurrent(row) ? 'Current' : row.status}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="No responsibilities assigned" description="Assign branch, senior, or general manager responsibility with an explicit scope and date." />}</Card>
     </section>}
-
-    {tab === 'import' && (() => {
-      const IMPORT_CONFIG = {
-        branches: { label: 'Head Office & Branches', perm: 'branches.manage', cols: ROW_FIELDS },
-        departments: { label: 'Departments', perm: 'departments.manage', cols: ['branchCode', 'code', 'name', 'displayOrder'] },
-        positions: { label: 'Positions', perm: 'positions.manage', cols: ['branchCode', 'departmentCode', 'code', 'name', 'postCadreCode', 'capacity', 'reportsToCode', 'leadershipVisible'] },
-        staffing: { label: 'Staffing (Assignments)', perm: 'assignments.manage', cols: ['empCode', 'branchCode', 'departmentCode', 'positionCode', 'effectiveFrom', 'effectiveTo'] },
-        responsibilities: { label: 'Responsibilities', perm: 'assignments.manage', cols: ['empCode', 'responsibility', 'scopeType', 'branchCode', 'effectiveFrom', 'effectiveTo'] },
-      };
-      const cfg = IMPORT_CONFIG[importEntity] || IMPORT_CONFIG.branches;
-      const canImportEntity = can(cfg.perm);
-      const isSigned = Boolean(preview?.previewSignature);
-      const needsHo = importEntity === 'branches' && headOffices.length !== 1;
-      const downloadTemplate = () => (importEntity === 'branches'
-        ? organizationAccessApi.downloadBranchTemplate()
-        : organizationAccessApi.downloadStructureTemplate(importEntity)
-      ).catch(error => setPageError(error.message));
-      const applyPayload = importEntity === 'branches'
-        ? { rows: preview?.rows, errors: preview?.errors, previewSignature: preview?.previewSignature }
-        : preview;
-
-      return <section aria-labelledby="org-import-heading">
-        <div className="org-section-heading"><h2 id="org-import-heading">Organisation structure workbook import</h2><p>Bulk import branches, departments, positions, staffing assignments, and responsibilities from `.xlsx` templates.</p></div>
-        <LoadError error={previewMutation.error} recovery="Correct the workbook and preview it again." />
-        <Card title="Select structure type & preview workbook">
-          <div className="field" style={{ maxWidth: '320px', marginBottom: '1rem' }}>
-            <label className="field-label" htmlFor="structure-import-entity">Structure type</label>
-            <select id="structure-import-entity" className="input" value={importEntity} onChange={event => { setImportEntity(event.target.value); setFile(null); setPreview(null); setPageError(''); if (fileInput.current) fileInput.current.value = ''; }}>
-              {Object.entries(IMPORT_CONFIG).map(([key, item]) => (
-                <option key={key} value={key} disabled={!can(item.perm)}>{item.label}</option>
-              ))}
-            </select>
-          </div>
-          <p className="form-note">Use one `.xlsx` sheet with 1–1,000 rows and no more than 2 MiB. The workbook is processed for preview and is not stored.</p>
-          <div className="org-import-actions">
-            <Button variant="secondary" onClick={downloadTemplate} disabled={!canImportEntity}>Download .xlsx template</Button>
-            <Button variant="secondary" onClick={() => organizationAccessApi.exportStructureData(importEntity).catch(error => setPageError(error.message))} disabled={!canImportEntity}>Export current data (.xlsx)</Button>
-            <Input ref={fileInput} id="branch-workbook" className="org-file-picker" label="Select .xlsx workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={!canImportEntity} onChange={event => { const next = event.target.files?.[0] || null; setFile(next); setPreview(null); setPageError(''); }} />
-            <Button variant="secondary" onClick={() => file && previewMutation.mutate({ entity: importEntity, workbookFile: file })} loading={previewMutation.isPending} disabled={!canImportEntity || !file || needsHo}>Preview workbook</Button>
-          </div>
-          {needsHo && <p className="field-hint">Configure exactly one active Head Office before importing branches.</p>}
-          {file && <p className="field-hint">Selected: {file.name} · {(file.size / (1024 * 1024)).toFixed(2)} MiB. Limits: 2 MiB and 1,000 rows.</p>}
-          {preview && <div className="org-import-preview" aria-live="polite">
-            <div className="org-preview-heading"><strong>{preview.errors?.length ? 'Preview needs corrections' : 'Server preview is ready'}</strong><span>{preview.rows?.length || 0} rows · {preview.errors?.length || 0} errors</span>{isSigned && <Badge variant="success">Signed preview</Badge>}</div>
-            {preview.errors?.length > 0 && <div className="org-import-errors"><h3>Row errors</h3><ul>{preview.errors.map((row, index) => <li key={`${row.row}-${row.field}-${index}`}>Row {row.row} · {row.field}: {row.message}</li>)}</ul></div>}
-            {preview.rows?.length > 0 && <div className="org-table-scroll"><table className="table"><thead><tr>{cfg.cols.map(field => <th key={field}>{field === 'code' ? 'Code' : field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}</th>)}</tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index}>{cfg.cols.map(field => <td key={field}>{String(row[field] ?? '') || '—'}</td>)}</tr>)}</tbody></table></div>}
-            <Button onClick={() => applyImport.mutate({ entity: importEntity, payload: applyPayload })} loading={applyImport.isPending} disabled={!canImportEntity || !isSigned || !!preview.errors?.length}>Apply import</Button>
-          </div>}
-        </Card>
-      </section>;
-    })()}
 
     {tab === 'transfers' && <section aria-labelledby="org-transfers-heading">
       <div className="org-section-heading"><h2 id="org-transfers-heading">Employee transfers</h2><p>Branch, department, position, pay reference, and role scopes move together on the effective date.</p></div>
