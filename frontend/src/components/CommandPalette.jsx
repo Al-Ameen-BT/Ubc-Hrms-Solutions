@@ -37,6 +37,7 @@ const SCREENS = [
   { label: 'Bank Classes & Rules', to: '/bank-rules' },
   { label: 'DPDP Documents', to: '/dpdp-documents' },
   { label: 'Platform Settings', to: '/platform-settings' },
+  { label: 'Role & Feature Control (Platform)', to: '/platform-role-control' },
   { label: 'Notifications', to: '/notifications' },
   { label: 'My Payslips', to: '/my/payslips' },
   { label: 'My Leave', to: '/my/leave' },

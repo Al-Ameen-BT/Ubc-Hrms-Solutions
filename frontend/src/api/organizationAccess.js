@@ -199,7 +199,7 @@ const SELF_FEATURES = {
   privacy: 'dpdp_compliance',
 };
 
-const PLATFORM = ['organisations', 'platform-users', 'platform-settings', 'bank-rules', 'dpdp-documents', 'audit'];
+const PLATFORM = ['organisations', 'platform-users', 'platform-settings', 'platform-role-control', 'bank-rules', 'dpdp-documents', 'audit'];
 
 export function canVisitRoute(path, canPermission, isSuperAdmin = false, isFeatureEnabled = () => true) {
   const [root, section, extra] = path.split('/').filter(Boolean);

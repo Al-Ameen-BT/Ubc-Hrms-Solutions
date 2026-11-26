@@ -28,6 +28,7 @@ const NAV = {
         label: 'Administration',
         icon: 'settings',
         items: [
+          { to: '/platform-role-control', label: 'Role & Feature Control', icon: 'roles' },
           { to: '/platform-settings', label: 'Platform Settings', icon: 'settings' },
         ],
       },

@@ -60,6 +60,7 @@ import { RolesPermissionsPage } from './features/org/RolesPermissionsPage';
 import { DpdpAcknowledgementPage } from './features/privacy/DpdpAcknowledgementPage';
 import { PublicPrivacyPage } from './features/privacy/PublicPrivacyPage';
 import { DpdpDocumentsPage } from './features/platform/DpdpDocumentsPage';
+import { PlatformRoleControlPage } from './features/platform/PlatformRoleControlPage';
 import { DpdpCompliancePage } from './features/org/DpdpCompliancePage';
 import { NotificationsPage } from './features/notifications/NotificationsPage';
 
@@ -118,6 +119,7 @@ function AppRoutes() {
         <Route path="organisations/:id" element={<OrganisationDetailPage />} />
         <Route path="platform-users" element={<PlatformUsersPage />} />
         <Route path="platform-settings" element={<PlatformSettingsPage />} />
+        <Route path="platform-role-control" element={isSuperAdmin ? <PlatformRoleControlPage /> : <Navigate to="/" replace />} />
         <Route path="bank-rules" element={isSuperAdmin ? <BankRulesPage /> : <Navigate to="/" replace />} />
         <Route path="bank-rules/:id" element={isSuperAdmin ? <BankRulesPage /> : <Navigate to="/" replace />} />
 
