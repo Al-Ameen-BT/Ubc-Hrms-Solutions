@@ -16,7 +16,8 @@
 
 const express = require('express');
 const { Op, fn, col, where: sqlWhere } = require('sequelize');
-const { Organization, User, AuditLog, PostCadre, sequelize } = require('../models');
+const { Organization, User, AuditLog, PostCadre, OrganizationRole, OrganizationRolePermission, sequelize } = require('../models');
+const { PERMISSIONS, ROLE_TEMPLATES } = require('../services/permissionCatalog');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { licenseSummary, todayIST, daysBetween } = require('../services/orgAccess');
 const license = require('../services/license');
@@ -611,6 +612,89 @@ router.put('/organizations/:id/features/:featureCode', async (req, res) => {
       details: { orgCode: org.code, feature: req.params.featureCode, enabled: Boolean(enabled), notes },
     });
     res.json({ data: row });
+  } catch (err) { sendError(res, err); }
+});
+
+// ---------------------------------------------------------------- Organisation Role Permissions (Platform Provider Control)
+router.get('/permission-catalogue', (req, res) => {
+  res.json({
+    data: {
+      permissions: PERMISSIONS,
+      templates: ROLE_TEMPLATES,
+    },
+  });
+});
+
+router.get('/organizations/:id/roles', async (req, res) => {
+  try {
+    const org = await Organization.findByPk(req.params.id);
+    if (!org) return res.status(404).json({ status: 'error', message: 'Organisation not found' });
+    const roles = await OrganizationRole.findAll({
+      where: { organizationId: org.id },
+      order: [['isProtected', 'DESC'], ['id', 'ASC']],
+    });
+    const roleIds = roles.map((r) => r.id);
+    const allPermissions = roleIds.length
+      ? await OrganizationRolePermission.findAll({
+          where: { organizationId: org.id, roleId: { [Op.in]: roleIds } },
+          attributes: ['roleId', 'permissionCode'],
+        })
+      : [];
+    const permMap = new Map();
+    allPermissions.forEach((p) => {
+      const list = permMap.get(p.roleId) || [];
+      list.push(p.permissionCode);
+      permMap.set(p.roleId, list);
+    });
+    const data = roles.map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      templateCode: r.templateCode,
+      isProtected: Boolean(r.isProtected),
+      status: r.status,
+      permissionCodes: permMap.get(r.id) || [],
+    }));
+    res.json({ data });
+  } catch (err) { sendError(res, err); }
+});
+
+router.put('/organizations/:id/roles/:roleId/permissions', async (req, res) => {
+  try {
+    const org = await Organization.findByPk(req.params.id);
+    if (!org) return res.status(404).json({ status: 'error', message: 'Organisation not found' });
+    const role = await OrganizationRole.findOne({
+      where: { id: req.params.roleId, organizationId: org.id },
+    });
+    if (!role) return res.status(404).json({ status: 'error', message: 'Role not found for this organisation' });
+    const { permissionCodes } = req.body || {};
+    if (!Array.isArray(permissionCodes)) {
+      return res.status(400).json({ status: 'error', message: 'permissionCodes array is required' });
+    }
+    const cleanCodes = [...new Set(permissionCodes.map(String).filter(Boolean))];
+    await sequelize.transaction(async (t) => {
+      await OrganizationRolePermission.destroy({
+        where: { organizationId: org.id, roleId: role.id },
+        transaction: t,
+      });
+      if (cleanCodes.length) {
+        await OrganizationRolePermission.bulkCreate(
+          cleanCodes.map((code) => ({
+            organizationId: org.id,
+            roleId: role.id,
+            permissionCode: code,
+          })),
+          { transaction: t }
+        );
+      }
+    });
+    await audit(req, 'org.role.permissions.super_admin_update', {
+      organizationId: org.id,
+      targetType: 'organization_role',
+      targetId: role.id,
+      details: { roleCode: role.code, roleName: role.name, count: cleanCodes.length, permissionCodes: cleanCodes },
+    });
+    res.json({ data: { roleId: role.id, code: role.code, name: role.name, permissionCodes: cleanCodes } });
   } catch (err) { sendError(res, err); }
 });
 

@@ -397,7 +397,7 @@ test('GET branch dashboard returns reconciled safe data and hides foreign, inact
   assert.equal(accessible.status, 200);
   assert.deepEqual(Object.keys(accessible.body.data), [
     'schemaVersion', 'branch', 'overview', 'departmentDistribution', 'attendanceTrend', 'upcomingLeave',
-    'vacancies', 'onboardingIssues', 'payrollBlockers', 'complianceIssues', 'employeeIssues', 'asOf',
+    'vacancies', 'onboardingIssues', 'payrollBlockers', 'complianceIssues', 'employeeIssues', 'actions', 'asOf',
   ]);
   assert.equal(accessible.body.data.overview.totalWorkforce.value, 2);
   assert.equal(accessible.body.data.branch.id, branch1.id);

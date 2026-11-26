@@ -107,6 +107,7 @@ router.get('/dashboard-analytics/branches/:branchId', requireFeaturePermission('
       payrollBlockers: byCategory('PAYROLL'),
       complianceIssues: byCategory('COMPLIANCE'),
       employeeIssues: centre.actions,
+      actions: centre.actions,
       asOf: centre.asOf,
     } });
   } catch (err) { sendError(res, err); }

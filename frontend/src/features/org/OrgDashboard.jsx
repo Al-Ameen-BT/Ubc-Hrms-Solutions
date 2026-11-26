@@ -8,7 +8,6 @@ import { DashboardError, DashboardSkeleton } from '../dashboard/DashboardPrimiti
 import { DashboardFilterBar } from '../dashboard/DashboardFilterBar';
 import { DashboardDonuts } from '../dashboard/DashboardDonuts';
 import { DashboardKPIs } from '../dashboard/DashboardKPIs';
-import { ActionCentre } from '../dashboard/ActionCentre';
 import { BranchHealth } from '../dashboard/BranchHealth';
 import { OperationalSummary } from '../dashboard/OperationalSummary';
 import { OrganisationExplorer } from '../dashboard/OrganisationExplorer';
@@ -34,10 +33,10 @@ export function OrgDashboard() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [now, setNow] = useState(new Date());
-  const [actionFilters, setActionFilters] = useState({ tab: 'all', priority: '', owner: '', due: '', branchId: '' });
 
+  const defaultDate = indiaDate();
   const urlFilters = useMemo(() => commandCentreParams(searchParams), [searchParams]);
-  const filters = { date: indiaDate(), period: '7d', ...urlFilters };
+  const filters = { date: defaultDate, period: '7d', ...urlFilters };
   const deferredSearch = useDeferredValue(filters.search || '');
   const params = { ...filters, search: deferredSearch };
 
@@ -81,6 +80,8 @@ export function OrgDashboard() {
 
       <DashboardFilterBar
         filters={filters}
+        appliedFilters={urlFilters}
+        defaultDate={defaultDate}
         options={data?.filterOptions || response?.filterOptions}
         onFilter={updateFilter}
         onClear={clearFilters}
@@ -113,19 +114,11 @@ export function OrgDashboard() {
           <DashboardKPIs
             overview={data.overview}
             onNavigate={navigate}
-            onScrollToActionCentre={() => {
-              const el = document.getElementById('action-centre');
+            onScrollToSection={() => {
+              const el = document.getElementById('branch-health-title');
               if (el) el.scrollIntoView({ behavior: 'smooth' });
+              else navigate('/organisation-explorer');
             }}
-          />
-
-          {/* Action Centre */}
-          <ActionCentre
-            actions={data.actions}
-            filters={actionFilters}
-            onFiltersChange={setActionFilters}
-            onNavigate={navigate}
-            branches={data.explorer?.branches}
           />
 
           {/* Organisation Explorer */}

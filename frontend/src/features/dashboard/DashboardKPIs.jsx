@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function DashboardKPIs({ overview = {}, onNavigate, onScrollToActionCentre }) {
+export function DashboardKPIs({ overview = {}, onNavigate, onScrollToSection }) {
   const total = overview.totalWorkforce?.value ?? 0;
   const present = overview.presentToday?.value ?? 0;
   const presentPct = overview.presentToday?.percentage ?? (total > 0 ? Math.round((present / total) * 100) : 0);
@@ -10,13 +10,15 @@ export function DashboardKPIs({ overview = {}, onNavigate, onScrollToActionCentr
   const hrActions = overview.hrActions?.value ?? 0;
   const criticalActions = overview.hrActions?.critical ?? 0;
 
-  const handleActionCentreClick = () => {
-    if (onScrollToActionCentre) {
-      onScrollToActionCentre();
+  const handlePriorityClick = () => {
+    if (onScrollToSection) {
+      onScrollToSection();
     } else {
-      const el = document.getElementById('action-centre');
+      const el = document.getElementById('branch-health-title');
       if (el) {
         el.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        onNavigate?.('/organisation-explorer');
       }
     }
   };
@@ -90,19 +92,19 @@ export function DashboardKPIs({ overview = {}, onNavigate, onScrollToActionCentr
         <b>Run payroll →</b>
       </button>
 
-      {/* 6. HR Actions */}
+      {/* 6. Operational Priorities */}
       <button
         type="button"
         className="command-surface command-kpi"
-        onClick={handleActionCentreClick}
-        title="Jump to Action Centre"
+        onClick={handlePriorityClick}
+        title="Inspect Branch Operational Health"
       >
-        <span>HR Actions</span>
+        <span>Operational Priorities</span>
         <strong style={criticalActions > 0 ? { color: '#ef4444' } : undefined}>
           {hrActions}
         </strong>
-        <small>{criticalActions > 0 ? `${criticalActions} critical priority` : 'Pending review items'}</small>
-        <b>Action centre ↓</b>
+        <small>{criticalActions > 0 ? `${criticalActions} critical priority` : 'Across all bank branches'}</small>
+        <b>Branch status ↓</b>
       </button>
     </section>
   );

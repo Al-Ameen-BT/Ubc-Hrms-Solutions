@@ -13,6 +13,8 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { WorkplaceTree } from '../../components/WorkplaceTree';
+import { useToast } from '../../components/ui/Toast';
+import { AreaBulkImportModal, AREA_IMPORT_CONFIG } from './AreaBulkImportModal';
 import './OrganisationStructurePage.css';
 
 const ROW_FIELDS = ['number', 'code', 'name', 'address', 'phone'];
@@ -77,7 +79,21 @@ export function OrganisationStructurePage() {
   const queryClient = useQueryClient();
   const initialEmployeeId = params.get('employee') || '';
   const [tab, setTab] = useState(initialEmployeeId ? 'transfers' : 'branches');
-  const [pageError, setPageError] = useState('');
+  const toast = useToast();
+  const [importModalEntity, setImportModalEntity] = useState(null);
+  const [exportingEntity, setExportingEntity] = useState(null);
+
+  const handleExport = async (entity) => {
+    try {
+      setExportingEntity(entity);
+      await organizationAccessApi.exportStructureData(entity);
+      toast.add(`Exported ${AREA_IMPORT_CONFIG[entity]?.label || entity} data.`, 'success');
+    } catch (err) {
+      setPageError(err.message || 'Could not export data.');
+    } finally {
+      setExportingEntity(null);
+    }
+  };
   const [branchForm, setBranchForm] = useState(blankBranch);
   const [branchEditing, setBranchEditing] = useState(null);
   const [headOfficeForm, setHeadOfficeForm] = useState(blankBranch);
@@ -321,7 +337,38 @@ export function OrganisationStructurePage() {
     </nav>
 
     {tab === 'branches' && <section aria-labelledby="org-units-heading">
-      <div className="org-section-heading"><h2 id="org-units-heading">Head Office and branches</h2><p>Branch identity and status are owned by Organisation Admins.</p></div>
+      <div className="org-section-heading">
+        <div className="org-section-heading-text">
+          <h2 id="org-units-heading">Head Office and branches</h2>
+          <p>Branch identity and status are owned by Organisation Admins.</p>
+        </div>
+        <div className="org-section-heading-actions">
+          {can('branches.view') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={exportingEntity === 'branches'}
+              loading={exportingEntity === 'branches'}
+              onClick={() => handleExport('branches')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export (.xlsx)
+            </Button>
+          )}
+          {can('branches.manage') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setImportModalEntity('branches')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Bulk Import
+            </Button>
+          )}
+        </div>
+      </div>
       <LoadError error={branchQuery.error} recovery="Refresh the page or ask an Organisation Admin to check branch access." />
       {can('branches.manage') && !can('branches.view') && <p className="org-structure-error" role="status">Viewing existing units requires branches.view. Ask an organisation administrator to grant it before changing Head Office or branch configuration.</p>}
       {can('branches.manage') && can('branches.view') && !branchQuery.error && !branchQuery.isLoading && headOffices.length === 0 && <Card title="Configure the Head Office">
@@ -373,7 +420,38 @@ export function OrganisationStructurePage() {
     </section>}
 
     {tab === 'departments' && <section aria-labelledby="org-departments-heading">
-      <div className="org-section-heading"><h2 id="org-departments-heading">Departments</h2><p>Each department belongs to Head Office or one active branch.</p></div>
+      <div className="org-section-heading">
+        <div className="org-section-heading-text">
+          <h2 id="org-departments-heading">Departments</h2>
+          <p>Each department belongs to Head Office or one active branch.</p>
+        </div>
+        <div className="org-section-heading-actions">
+          {can('departments.view') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={exportingEntity === 'departments'}
+              loading={exportingEntity === 'departments'}
+              onClick={() => handleExport('departments')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export (.xlsx)
+            </Button>
+          )}
+          {can('departments.manage') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setImportModalEntity('departments')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              Bulk Import
+            </Button>
+          )}
+        </div>
+      </div>
       <LoadError error={departmentQuery.error} recovery="Department access requires the matching organisation permission." />
       {can('departments.manage') && (!can('branches.view') || !can('departments.view')) && <p className="org-structure-error" role="status">Department changes require branches.view and departments.view to select a real unit and check existing records.</p>}
       {can('departments.manage') && can('branches.view') && can('departments.view') && <Card title={departmentEditing ? 'Edit department' : 'Add department'}>
@@ -387,7 +465,38 @@ export function OrganisationStructurePage() {
     </section>}
 
     {tab === 'positions' && <section aria-labelledby="org-positions-heading">
-      <div className="org-section-heading"><h2 id="org-positions-heading">Positions and reporting lines</h2><p>Reporting is position-based. Capacity is enforced when assignments overlap.</p></div>
+      <div className="org-section-heading">
+        <div className="org-section-heading-text">
+          <h2 id="org-positions-heading">Positions and reporting lines</h2>
+          <p>Reporting is position-based. Capacity is enforced when assignments overlap.</p>
+        </div>
+        <div className="org-section-heading-actions">
+          {can('positions.view') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={exportingEntity === 'positions'}
+              loading={exportingEntity === 'positions'}
+              onClick={() => handleExport('positions')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export (.xlsx)
+            </Button>
+          )}
+          {can('positions.manage') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setImportModalEntity('positions')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              Bulk Import
+            </Button>
+          )}
+        </div>
+      </div>
       <LoadError error={positionQuery.error} recovery="Check position access and active department assignments." />
       {can('positions.manage') && (!can('branches.view') || !can('departments.view') || !can('positions.view')) && <p className="org-structure-error" role="status">Position changes require branch, department, and position view permissions to choose reporting parents and check existing records.</p>}
       {can('positions.manage') && can('branches.view') && can('departments.view') && can('positions.view') && <Card title={positionEditing ? 'Edit position' : 'Add position'}>
@@ -407,7 +516,38 @@ export function OrganisationStructurePage() {
     </section>}
 
     {tab === 'assignments' && <section aria-labelledby="org-staffing-heading">
-      <div className="org-section-heading"><h2 id="org-staffing-heading">Employee assignments</h2><p>One primary organisation assignment applies on an effective date. Use Transfers for employees who already have a current assignment.</p></div>
+      <div className="org-section-heading">
+        <div className="org-section-heading-text">
+          <h2 id="org-staffing-heading">Employee assignments</h2>
+          <p>One primary organisation assignment applies on an effective date. Use Transfers for employees who already have a current assignment.</p>
+        </div>
+        <div className="org-section-heading-actions">
+          {can('assignments.view') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={exportingEntity === 'staffing'}
+              loading={exportingEntity === 'staffing'}
+              onClick={() => handleExport('staffing')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export (.xlsx)
+            </Button>
+          )}
+          {can('assignments.manage') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setImportModalEntity('staffing')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              Bulk Import
+            </Button>
+          )}
+        </div>
+      </div>
       <LoadError error={assignmentQuery.error || employeeQuery.error} recovery="Check employee and assignment permissions, then retry." />
       {can('assignments.manage') && (!can('assignments.view') || !can('branches.view')) && <p className="org-structure-error" role="status">Safe assignment requires assignments.view and branches.view so current assignments and destination units can be checked.</p>}
       {can('assignments.manage') && can('assignments.view') && can('branches.view') && <Card title="Assign an unassigned employee">
@@ -424,7 +564,38 @@ export function OrganisationStructurePage() {
     </section>}
 
     {tab === 'responsibilities' && <section aria-labelledby="org-responsibilities-heading">
-      <div className="org-section-heading"><h2 id="org-responsibilities-heading">Controlled responsibilities</h2><p>Authority comes from these dated assignments, never from a title, position, or pay grade.</p></div>
+      <div className="org-section-heading">
+        <div className="org-section-heading-text">
+          <h2 id="org-responsibilities-heading">Controlled responsibilities</h2>
+          <p>Authority comes from these dated assignments, never from a title, position, or pay grade.</p>
+        </div>
+        <div className="org-section-heading-actions">
+          {can('assignments.view') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={exportingEntity === 'responsibilities'}
+              loading={exportingEntity === 'responsibilities'}
+              onClick={() => handleExport('responsibilities')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export (.xlsx)
+            </Button>
+          )}
+          {can('assignments.manage') && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setImportModalEntity('responsibilities')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: '6px' }}><path d="M17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              Bulk Import
+            </Button>
+          )}
+        </div>
+      </div>
       <LoadError error={responsibilityQuery.error || employeeQuery.error} recovery="Check assignment and employee permissions, then retry." />
       {can('assignments.manage') && (!can('branches.view') || !can('assignments.view')) && <p className="org-structure-error" role="status">Responsibility assignment requires branches.view and assignments.view to choose a real scope and check existing records.</p>}
       {can('assignments.manage') && can('branches.view') && can('assignments.view') && <Card title="Assign responsibility">
@@ -576,6 +747,14 @@ export function OrganisationStructurePage() {
       confirmVariant="danger"
       requireVerification={false}
       loading={structureWrite.isPending}
+    />
+
+    <AreaBulkImportModal
+      open={!!importModalEntity}
+      entity={importModalEntity || 'departments'}
+      headOffices={headOffices}
+      onClose={() => setImportModalEntity(null)}
+      onSuccess={invalidateStructure}
     />
   </div>;
 }

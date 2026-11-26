@@ -309,3 +309,49 @@ test('auth me gives the client safe access mode and bootstrap restriction withou
   assert.equal(active.accessControlMode, 'PERMISSIONS');
   assert.deepEqual(active.permissionCodes, (await require('../src/services/accessControl').effectiveAccess(f.admin.id)).permissionCodes);
 });
+
+test('platform provider can view permission catalogue, list organisation roles and control role permissions', async () => {
+  const f = await fixture();
+  const superAdmin = await m.User.create({
+    organizationId: null,
+    email: `platform_admin_${++serial}@banihal.in`,
+    name: 'Platform Super Admin',
+    role: 'SUPER_ADMIN',
+    passwordHash: 'hash',
+  });
+  async function adminReq(path, method = 'GET', body) {
+    const r = await fetch(`${base}/admin${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${signToken(superAdmin)}`,
+        'content-type': 'application/json',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: r.status, body: await r.json() };
+  }
+
+  const cat = await adminReq('/permission-catalogue');
+  assert.equal(cat.status, 200);
+  assert.ok(Array.isArray(cat.body.data.permissions));
+  assert.ok(Array.isArray(cat.body.data.templates));
+  assert.ok(cat.body.data.permissions.some(p => p.code === 'leave.approve'));
+
+  const rolesRes = await adminReq(`/organizations/${f.org.id}/roles`);
+  assert.equal(rolesRes.status, 200);
+  assert.ok(Array.isArray(rolesRes.body.data));
+  const bm = rolesRes.body.data.find(r => r.code === 'BRANCH_MANAGER');
+  assert.ok(bm);
+  assert.ok(Array.isArray(bm.permissionCodes));
+
+  const updateRes = await adminReq(`/organizations/${f.org.id}/roles/${bm.id}/permissions`, 'PUT', {
+    permissionCodes: ['leave.view', 'leave.approve', 'attendance.view'],
+  });
+  assert.equal(updateRes.status, 200);
+  assert.deepEqual(updateRes.body.data.permissionCodes, ['leave.view', 'leave.approve', 'attendance.view']);
+
+  const rolesAfter = await adminReq(`/organizations/${f.org.id}/roles`);
+  const bmAfter = rolesAfter.body.data.find(r => r.code === 'BRANCH_MANAGER');
+  assert.deepEqual(bmAfter.permissionCodes.sort(), ['attendance.view', 'leave.approve', 'leave.view']);
+});
+
