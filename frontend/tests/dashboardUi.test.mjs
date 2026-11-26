@@ -135,29 +135,15 @@ test('today actions are ordered by priority and then employee name', () => {
 test('organisation dashboard composes the approved operational sections in priority order', () => {
   const source = fs.readFileSync(new URL('../src/features/org/OrgDashboard.jsx', import.meta.url), 'utf8');
   const filterIndex = source.indexOf('<DashboardFilterBar');
-  const overviewIndex = source.indexOf('<OrganisationOverview');
-  const branchIndex = source.indexOf('<BranchHealth');
+  const explorerIndex = source.indexOf('<OrganisationExplorer');
   const summaryIndex = source.indexOf('<OperationalSummary');
-  assert.ok(filterIndex > 0 && filterIndex < overviewIndex && overviewIndex < branchIndex && branchIndex < summaryIndex);
+  assert.ok(filterIndex > 0 && filterIndex < explorerIndex && explorerIndex < summaryIndex);
+  assert.match(source, /<h1>Overview<\/h1>/);
   assert.match(source, /useSearchParams/);
   assert.match(source, /commandCentreParams/);
-  assert.doesNotMatch(source, /ActionCentre|actionFilters/);
+  assert.doesNotMatch(source, /ActionCentre|actionFilters|BranchHealth|OrganisationOverview/);
   assert.doesNotMatch(source, /Today’s HR Actions|Approvals & Alerts|dashboard-workspace/);
   assert.equal(fs.existsSync(new URL('../src/features/dashboard/WorkforceInsights.jsx', import.meta.url)), false);
-});
-
-test('organisation overview uses five drill-down donuts, ranked workforce bars, segmented attendance and one trend line', () => {
-  const source = fs.readFileSync(new URL('../src/features/dashboard/OrganisationOverview.jsx', import.meta.url), 'utf8');
-  for (const label of ['Workforce capacity', 'Present today', 'Approved leave', 'Payroll readiness', 'Open HR actions']) assert.match(source, new RegExp(label));
-  assert.match(source, /PieChart/);
-  assert.match(source, /innerRadius="66%"/);
-  assert.match(source, /command-donut-metrics/);
-  assert.match(source, /command-workforce-chart/);
-  assert.match(source, /distributionMaximum/);
-  assert.doesNotMatch(source, /BarChart|command-chart-links/);
-  assert.match(source, /LineChart/);
-  assert.match(source, /Present|Late|On Leave|Unmarked|Absent/);
-  assert.match(source, /No workforce data matches this scope|Shift analytics are unavailable/);
 });
 
 test('dashboard typography and controls use the shared role system without an overlaying filter bar', () => {

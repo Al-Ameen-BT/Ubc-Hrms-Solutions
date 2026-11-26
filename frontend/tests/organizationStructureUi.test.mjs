@@ -62,12 +62,17 @@ test('branch import uses a labeled xlsx picker and requires a clean signed previ
 
 test('position management shows capacity and active reporting parents while chart lists current occupants only', () => {
   const page = source('features/org/OrganisationStructurePage.jsx');
+  const tree = source('components/WorkplaceTree.jsx');
   matches(page, /reportsToPositionId/, 'parent is stored as a position identifier');
   matches(page, /position\.status === 'ACTIVE'/, 'parent choices are active positions');
   matches(page, /id="assignment-position"[\s\S]{0,500}position\?\.departmentId/, 'choosing an assignment position also submits its required department');
   matches(page, /branchById\(positionForm\.branchId\)\?\.unitType === 'HEAD_OFFICE'/, 'leadership visibility follows the selected position unit');
   matches(page, /capacity/, 'capacity is shown in management');
   matches(page, /chart\.employees/, 'chart uses current employees from the API');
+  matches(page, /<WorkplaceTree/, 'organisation chart uses the shared workplace hierarchy');
+  for (const level of ['Workplace tree', 'Units', 'Departments', 'Positions', 'Employees']) matches(tree, new RegExp(level), `${level} is represented in the workplace tree`);
+  matches(tree, /reportsToPositionId/, 'position reporting relationships are visible');
+  matches(tree, /Find in tree/, 'large workplace trees can be searched');
   assert.doesNotMatch(page, /Vacant position|Empty position|vacancy card/i);
 });
 
@@ -109,4 +114,5 @@ test('employee chart copy names own branch and Head Office leadership and handle
   matches(page, /context\?\.assigned/, 'unassigned employee fallback is rendered');
   matches(page, /photoRef/, 'authenticated photo references are consumed');
   matches(page, /leadership/, 'manual leadership is rendered');
+  matches(page, /<WorkplaceTree/, 'employee workplace uses the same hierarchy as the admin chart');
 });

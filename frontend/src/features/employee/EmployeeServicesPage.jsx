@@ -14,13 +14,13 @@ import { masterDataApi } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { organizationAccessApi } from '../../api/organizationAccess';
 import { PrivacyRequestsPage } from './PrivacyRequestsPage';
+import { WorkplaceTree } from '../../components/WorkplaceTree';
 
 const labels = { payslips: 'My Payslips', leave: 'My Leave', policies: 'Bank Policies', calendar: 'My Calendar', workplace: 'Workplace', time: 'Check-in & Check-out', expenses: 'Reimbursement Claims', privacy: 'Privacy & Data Rights' };
 const bankTime = value => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 const dateNow = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 function Notice({ error }) { return error ? <p className="auth-error" role="alert">{error}</p> : null; }
 function Status({ value }) { return <Badge variant={['APPROVED', 'PAID'].includes(value) ? 'success' : ['REJECTED', 'WITHDRAWN'].includes(value) ? 'danger' : 'warning'}>{value}</Badge>; }
-function groupBy(rows, key) { return rows.reduce((groups, row) => { (groups[key(row)] ||= []).push(row); return groups; }, {}); }
 
 function WorkplacePhoto({ path, name }) {
   const [url, setUrl] = useState('');
@@ -83,23 +83,12 @@ function Workplace() {
   const { data, error, isLoading } = useQuery({ queryKey: ['me', 'chart'], queryFn: employeeApi.chart });
   const employees = data?.employees || [];
   const assigned = data?.context?.assigned === true;
-  const ownBranchId = data?.context?.branch?.id;
-  const ownBranchRows = assigned ? employees.filter(row => String(row.branch?.id) === String(ownBranchId)) : [];
-  const headOfficeRows = employees.filter(row => row.branch?.unitType === 'HEAD_OFFICE' && (!assigned || String(row.branch.id) !== String(ownBranchId)));
   const leadership = data?.leadership || [];
   return <>
     <Notice error={error?.message} />
-    <p>This chart shows your own branch and current employees in Head Office leadership positions marked visible to staff. Board and leadership profiles appear separately. Only work identity is shown.</p>
     {isLoading && <p>Loading your workplace chart…</p>}
     {!isLoading && !assigned && <div className="auth-notice" role="status">Your branch assignment is not available. Only Head Office leadership is shown until the assignment is resolved.</div>}
-    {assigned && <Card title={`Your branch · ${data?.context?.branch?.name || 'Current branch'}`}>
-      {ownBranchRows.length ? <div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Department</th><th>Position</th></tr></thead><tbody>{ownBranchRows.map(row => <tr key={row.id}><td><span className="ess-workplace-person"><WorkplacePhoto path={row.photoRef} name={row.name} />{row.name}</span></td><td>{row.empCode}</td><td>{row.department?.name || 'Unassigned department'}</td><td>{row.position?.name || 'Unassigned position'}</td></tr>)}</tbody></table></div> : <EmptyState title="No current branch occupants" description="Current employees with active assignments in your branch appear here." />}
-    </Card>}
-    <Card title="Head Office leadership">
-      {headOfficeRows.length ? <div className="ess-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Department</th><th>Position</th></tr></thead><tbody>{headOfficeRows.map(row => <tr key={row.id}><td><span className="ess-workplace-person"><WorkplacePhoto path={row.photoRef} name={row.name} />{row.name}</span></td><td>{row.empCode}</td><td>{row.department?.name || 'Unassigned department'}</td><td>{row.position?.name || 'Unassigned position'}</td></tr>)}</tbody></table></div> : <EmptyState title="No employee leadership positions are visible" description="Current Head Office occupants marked visible to employees appear here." />}
-      {leadership.length > 0 && <div className="ess-leadership-list"><h3>Board and external leadership</h3><ul>{leadership.map(row => <li key={row.id}><WorkplacePhoto path={row.photoRef} name={row.name} /><span><strong>{row.name}</strong><small>{row.roleOther || row.role}</small></span></li>)}</ul></div>}
-      {leadership.length === 0 && <p className="form-note">No manual board or external leadership profiles are published.</p>}
-    </Card>
+    {!isLoading && <WorkplaceTree employees={employees} leadership={leadership} renderPhoto={person => <WorkplacePhoto path={person.photoRef} name={person.name} />} scopeDescription={assigned ? `Your own branch (${data?.context?.branch?.name || 'current branch'}) and published Head Office leadership positions.` : 'Published Head Office leadership positions available to employees.'} />}
   </>;
 }
 

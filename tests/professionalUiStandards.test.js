@@ -51,3 +51,15 @@ test('application UI uses the shared typography tokens instead of raw generic fo
   assert.deepEqual(rawGenericFonts, [], 'Use var(--font-sans) or var(--font-mono) from the design system.');
 });
 
+test('application pages use the compact operational spacing system', () => {
+  const tokens = fs.readFileSync(path.join(ROOT, 'frontend/src/styles/tokens.css'), 'utf8');
+  const layout = fs.readFileSync(path.join(ROOT, 'frontend/src/styles/app.css'), 'utf8');
+
+  assert.match(tokens, /--space-5:\s*20px/);
+  assert.match(tokens, /--space-6:\s*24px/);
+  assert.match(tokens, /--space-7:\s*32px/);
+  assert.match(layout, /\.page\s*\{[\s\S]*?max-width:\s*1600px/);
+  assert.match(layout, /\.app-main\s*\{[\s\S]*?padding:\s*var\(--space-4\)/);
+  assert.match(layout, /\.card-body\s*\{[\s\S]*?padding:\s*var\(--space-4\)/);
+});
+

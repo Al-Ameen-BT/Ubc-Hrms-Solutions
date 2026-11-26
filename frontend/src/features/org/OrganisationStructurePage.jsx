@@ -12,6 +12,7 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { WorkplaceTree } from '../../components/WorkplaceTree';
 import './OrganisationStructurePage.css';
 
 const ROW_FIELDS = ['number', 'code', 'name', 'address', 'phone'];
@@ -304,7 +305,6 @@ export function OrganisationStructurePage() {
 
   const chart = chartQuery.data || {};
   const chartEmployees = chart.employees || [];
-  const chartUnits = [...new Map(chartEmployees.map(row => [String(row.branch.id), row.branch])).values()];
   const currentOccupants = (positionId, branchId) => currentAssignments.filter(row => String(row.positionId) === String(positionId) && String(row.branchId) === String(branchId)).length;
   const roleName = id => roles.find(role => String(role.id) === String(id))?.name || `Role #${id}`;
 
@@ -556,26 +556,7 @@ export function OrganisationStructurePage() {
       <div className="org-section-heading org-chart-heading"><div><h2 id="org-chart-heading">Organisation chart</h2><p>Current occupants only. Personal, payroll, bank, and statutory details are not shown.</p></div><div className="org-chart-layout" aria-label="Chart view"><button type="button" aria-pressed={chartLayout === 'tree'} className={chartLayout === 'tree' ? 'is-active' : ''} onClick={() => setChartLayout('tree')}>Tree</button><button type="button" aria-pressed={chartLayout === 'list'} className={chartLayout === 'list' ? 'is-active' : ''} onClick={() => setChartLayout('list')}>List</button></div></div>
       <LoadError error={chartQuery.error} recovery="Ask an administrator for chart.view access if this chart should be available." />
       {chartQuery.isLoading ? <p className="org-section-state">Loading organisation chart…</p> : <>
-        <Card title="Head Office leadership">
-          {chart.leadership?.length ? <ul className="org-leadership-list">{chart.leadership.map(row => <li key={row.id}><AuthenticatedPhoto path={row.photoRef} name={row.name} /><span><strong>{row.name}</strong><small>{row.roleOther || row.role}</small></span></li>)}</ul> : <EmptyState title="No manual leadership profiles" description="Board and external leadership profiles are maintained in Organisation Profile." />}
-          {profileLinks.canManage && <Link to="/org-profile">Manage board and external leadership profiles</Link>}
-        </Card>
-        <Card title="Current employees">
-          {!chartEmployees.length ? <EmptyState title="No current occupants in this chart" description="Only active employees with current organisation assignments appear here." /> : chartLayout === 'tree' ? <ul className="org-chart-tree" aria-label="Current organisation chart">{chartUnits.map(branch => {
-            const branchEmployees = chartEmployees.filter(row => String(row.branch.id) === String(branch.id));
-            const deptIds = [...new Set(branchEmployees.map(row => row.department?.id || 'none'))];
-            return <li key={branch.id}><details open><summary>{branch.name} <span>{branch.unitType === 'HEAD_OFFICE' ? 'Head Office' : 'Branch'}</span></summary><ul>{deptIds.map(departmentId => {
-              const deptRows = branchEmployees.filter(row => String(row.department?.id || 'none') === String(departmentId));
-              const departmentName = deptRows[0]?.department?.name || 'Unassigned department';
-              const positionIds = [...new Set(deptRows.map(row => row.position?.id || 'none'))];
-              return <li key={`${branch.id}-${departmentId}`}><details open><summary>{departmentName}</summary><ul>{positionIds.map(positionId => {
-                const occupants = deptRows.filter(row => String(row.position?.id || 'none') === String(positionId));
-                const position = occupants[0]?.position;
-                return <li key={`${departmentId}-${positionId}`}><details open><summary>{position?.name || 'Unassigned position'}{position?.reportsToPositionId && <small>Reports to {positionById(position.reportsToPositionId)?.name || `Position #${position.reportsToPositionId}`}</small>}</summary><ul>{occupants.map(person => <li key={person.id} className="org-chart-person"><AuthenticatedPhoto path={person.photoRef} name={person.name} /><span><strong>{person.name}</strong><small>{person.empCode} · {branch.name} · {departmentName}</small></span></li>)}</ul></details></li>;
-              })}</ul></details></li>;
-            })}</ul></details></li>;
-          })}</ul> : <div className="org-table-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Position</th><th>Department</th><th>Branch</th><th>Reports to</th></tr></thead><tbody>{chartEmployees.map(person => <tr key={person.id}><td><span className="org-chart-list-person"><AuthenticatedPhoto path={person.photoRef} name={person.name} />{person.name}</span></td><td className="mono">{person.empCode}</td><td>{person.position?.name || 'Unassigned position'}</td><td>{person.department?.name || 'Unassigned department'}</td><td>{person.branch.name}</td><td>{positionById(person.position?.reportsToPositionId)?.name || '—'}</td></tr>)}</tbody></table></div>}
-        </Card>
+        {chartLayout === 'tree' ? <WorkplaceTree employees={chartEmployees} leadership={chart.leadership || []} renderPhoto={person => <AuthenticatedPhoto path={person.photoRef} name={person.name} />} resolvePositionName={id => positionById(id)?.name} scopeDescription="Current Head Office and branch structure, grouped by department and reporting position." leadershipAction={profileLinks.canManage && <Link to="/org-profile">Manage profiles</Link>} /> : <Card title="Current employees" noPadding>{chartEmployees.length ? <div className="org-table-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Position</th><th>Department</th><th>Branch</th><th>Reports to</th></tr></thead><tbody>{chartEmployees.map(person => <tr key={person.id}><td><span className="org-chart-list-person"><AuthenticatedPhoto path={person.photoRef} name={person.name} />{person.name}</span></td><td className="mono">{person.empCode}</td><td>{person.position?.name || 'Unassigned position'}</td><td>{person.department?.name || 'Unassigned department'}</td><td>{person.branch.name}</td><td>{positionById(person.position?.reportsToPositionId)?.name || '—'}</td></tr>)}</tbody></table></div> : <EmptyState title="No current occupants in this chart" description="Only active employees with current organisation assignments appear here." />}</Card>}
       </>}
     </section>}
 

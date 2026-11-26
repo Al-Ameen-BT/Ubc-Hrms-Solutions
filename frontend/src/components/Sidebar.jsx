@@ -24,7 +24,7 @@ const NAV = {
   ],
 
   org: [
-    { label: 'Overview', items: [{ to: '/', label: 'HR Operations', icon: 'dashboard' }, { to: '/organisation-explorer', label: 'Organisation Explorer', icon: 'orgs' }] },
+    { label: 'Overview', items: [{ to: '/', label: 'Overview', icon: 'dashboard' }, { to: '/organisation-explorer', label: 'Organisation Explorer', icon: 'orgs' }] },
     {
       label: 'Workforce',
       items: [

@@ -7,8 +7,8 @@
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .stat-ledger {
@@ -26,7 +26,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 .employee-breadcrumbs {
@@ -69,7 +69,7 @@
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-4);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -154,11 +154,11 @@
   background: var(--surface-sunken);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .meta-strip-item {
@@ -237,7 +237,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   gap: var(--space-3);
   flex-wrap: wrap;
@@ -302,8 +302,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -317,15 +317,15 @@
 .stack {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 /* ---------- Payslip preview ---------- */
 .payslip-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-5);
-  padding: var(--space-5);
+  gap: var(--space-4);
+  padding: var(--space-4);
 }
 
 @media (max-width: 720px) {
@@ -363,7 +363,7 @@
 
 /* ---------- Service Book Timeline ---------- */
 .service-book-timeline {
-  padding: var(--space-5);
+  padding: var(--space-4);
 }
 
 .timeline-entry {
@@ -419,8 +419,8 @@
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
   position: relative;
   box-shadow: var(--shadow-glass);
 }
@@ -520,13 +520,13 @@
 
 /* A form-note introducing a block of fields needs breathing room before it. */
 .form-note + .form-grid {
-  margin-top: var(--space-4);
+  margin-top: var(--space-3);
 }
 
 /* Buttons that follow a DNS-record block sit clear of it. */
 .domain-record-grid + .card-actions,
 .domain-record-grid + .domain-status {
-  margin-top: var(--space-5);
+  margin-top: var(--space-4);
 }
 
 .domain-status {
@@ -564,7 +564,7 @@
   display: flex;
   list-style: none;
   gap: 0;
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
   background: var(--bg-glass);
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);

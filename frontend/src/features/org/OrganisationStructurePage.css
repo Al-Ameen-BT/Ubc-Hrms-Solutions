@@ -57,18 +57,8 @@
 .org-chart-layout { display: inline-flex; flex: 0 0 auto; padding: 3px; border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface-sunken); }
 .org-chart-layout button { min-height: 34px; padding: 0 var(--space-3); border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; }
 .org-chart-layout button.is-active { background: var(--surface-raised); color: var(--text-primary); box-shadow: var(--shadow-sm); }
-.org-chart-tree, .org-chart-tree ul { margin: 0; padding-left: var(--space-5); list-style: none; }
-.org-chart-tree { padding-left: 0; }
-.org-chart-tree li { margin: var(--space-2) 0; }
-.org-chart-tree details > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2); cursor: pointer; }
-.org-chart-tree details > summary::marker { color: var(--accent-strong); }
-.org-chart-tree summary > span, .org-chart-tree summary > small { color: var(--text-secondary); }
-.org-chart-person, .org-leadership-list li { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: var(--space-2) 0; }
-.org-chart-person > span, .org-leadership-list li > span { display: grid; min-width: 0; gap: 2px; }
-.org-chart-person small, .org-leadership-list small { color: var(--text-secondary); overflow-wrap: anywhere; }
 .org-chart-photo, .org-chart-initial { width: 38px; height: 38px; flex: 0 0 38px; border: 1px solid var(--border-subtle); border-radius: 50%; object-fit: cover; }
 .org-chart-initial { display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
-.org-leadership-list { margin: 0 0 var(--space-3); padding: 0; list-style: none; }
 .org-chart-list-person { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 190px; }
 .org-chart-list-person .org-chart-photo, .org-chart-list-person .org-chart-initial { width: 32px; height: 32px; flex-basis: 32px; }
 
@@ -78,6 +68,4 @@
   .org-import-actions { grid-template-columns: 1fr; align-items: stretch; }
   .org-import-actions .field { width: 100%; }
   .org-role-assignment { align-items: flex-start; flex-direction: column; }
-  .org-chart-tree, .org-chart-tree ul { padding-left: var(--space-3); }
-  .org-chart-tree { padding-left: 0; }
 }
