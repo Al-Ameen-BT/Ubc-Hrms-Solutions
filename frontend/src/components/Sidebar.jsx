@@ -181,10 +181,24 @@ export function Sidebar({ collapsed }) {
   useEffect(() => { sessionStorage.setItem('ucb:sidebar-groups', JSON.stringify(expandedGroups)); }, [expandedGroups]);
   useEffect(() => { setActiveResult(0); }, [employeeSearch]);
 
-  const toggleGroup = (groupLabel) => {
+  const TOP_FOUR_GROUPS = ['Overview', 'Workforce', 'Time & Attendance', 'Pay & Benefits'];
+  const areTopFourCollapsed = TOP_FOUR_GROUPS.every((label) => expandedGroups[label] === false);
+
+  const toggleTopFour = () => {
+    setExpandedGroups((prev) => {
+      const next = { ...prev };
+      const targetState = areTopFourCollapsed ? true : false;
+      TOP_FOUR_GROUPS.forEach((label) => {
+        next[label] = targetState;
+      });
+      return next;
+    });
+  };
+
+  const toggleGroup = (groupLabel, currentIsOpen) => {
     setExpandedGroups((prev) => ({
       ...prev,
-      [groupLabel]: !prev[groupLabel],
+      [groupLabel]: !currentIsOpen,
     }));
   };
 
@@ -210,36 +224,78 @@ export function Sidebar({ collapsed }) {
           {employeeQuery.isLoading ? <p role="status">Searching employees…</p> : employeeQuery.isError ? <p role="alert">Employee search is unavailable.</p> : employeeResults.length ? employeeResults.map((employee, index) => <button id={`sidebar-employee-${employee.id}`} key={employee.id} type="button" role="option" aria-selected={index === activeResult} onMouseEnter={() => setActiveResult(index)} onClick={() => openEmployee(employee)}><span><strong>{employee.name}</strong><small>{employee.empCode} · {employee.status}</small></span><small>{employee.branch} · {employee.department} · {employee.position}</small></button>) : <p>No matching employees.</p>}
         </div>}
       </div>}
+      {!collapsed && operational && (
+        <div className="sidebar-top4-bar">
+          <button
+            type="button"
+            className="sidebar-top4-btn"
+            onClick={toggleTopFour}
+            title={areTopFourCollapsed ? 'Expand top 4 feature sections' : 'Collapse top 4 feature sections'}
+          >
+            <span>{areTopFourCollapsed ? 'Show Top 4' : 'Hide Top 4'}</span>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              className={`sidebar-top4-icon ${areTopFourCollapsed ? 'is-collapsed' : ''}`}
+              aria-hidden="true"
+            >
+              <path d="M5 7.5L10 12.5L15 7.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      )}
       <div className="sidebar-nav">
         {groups.map((group) => {
           const authorizedItems = group.items.filter((item) => canVisitRoute(item.to, canPermission, isSuperAdmin, isFeatureEnabled));
           if (!authorizedItems.length) return null;
           const hasActiveItem = authorizedItems.some((item) => item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to));
-          const isOpen = hasActiveItem || expandedGroups[group.label] !== false;
+          const isOpen = expandedGroups[group.label] !== undefined
+            ? Boolean(expandedGroups[group.label])
+            : true;
 
           return (
             <div className={`sidebar-group ${isOpen ? 'is-expanded' : ''}`} key={group.label}>
               {!collapsed && (
-                <button type="button" className="sidebar-group-label sidebar-group-toggle" onClick={() => toggleGroup(group.label)} aria-expanded={isOpen} aria-controls={`sidebar-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>
+                <button
+                  type="button"
+                  className="sidebar-group-label sidebar-group-toggle"
+                  onClick={() => toggleGroup(group.label, isOpen)}
+                  aria-expanded={isOpen}
+                  aria-controls={`sidebar-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                >
                   <span>{group.label}</span>
-                  <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M5 7.5L10 12.5L15 7.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="M5 7.5L10 12.5L15 7.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </button>
               )}
 
-              <div id={`sidebar-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className="sidebar-group-items" hidden={!collapsed && !isOpen}>{authorizedItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  className={({ isActive }) => `sidebar-item ${isActive || (item.to === '/people' && location.pathname.startsWith('/employees/')) ? 'active' : ''}`}
-                  title={collapsed ? item.label : undefined}
-                >
-                  <span className="sidebar-item-icon">
-                    <NavIcon name={item.icon} />
-                  </span>
-                  {!collapsed && <span className="sidebar-item-label">{item.label}</span>}
-                </NavLink>
-              ))}</div>
+              <div
+                id={`sidebar-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                className={`sidebar-group-body ${isOpen ? 'is-expanded' : 'is-collapsed'}`}
+                aria-hidden={!collapsed && !isOpen}
+              >
+                <div className="sidebar-group-inner">
+                  {authorizedItems.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/'}
+                      className={({ isActive }) => `sidebar-item ${isActive || (item.to === '/people' && location.pathname.startsWith('/employees/')) ? 'active' : ''}`}
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <span className="sidebar-item-icon">
+                        <NavIcon name={item.icon} />
+                      </span>
+                      {!collapsed && <span className="sidebar-item-label">{item.label}</span>}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
             </div>
           );
         })}

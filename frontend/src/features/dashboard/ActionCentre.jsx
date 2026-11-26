@@ -18,12 +18,15 @@ function applicationId(action) {
 
 function destinationFor(action) {
   const destination = action.destination || '/people';
-  const separator = destination.includes('?') ? '&' : '?';
+  if (destination.startsWith('#')) return destination;
+  const [path, hash] = destination.split('#');
+  const separator = path.includes('?') ? '&' : '?';
   const context = new URLSearchParams();
   if (action.employeeId) context.set('employeeId', action.employeeId);
   if (action.branchId) context.set('branchId', action.branchId);
   if (action.dueDate) context.set('date', action.dueDate);
-  return context.size ? `${destination}${separator}${context}` : destination;
+  const query = context.size ? `${separator}${context}` : '';
+  return `${path}${query}${hash ? `#${hash}` : ''}`;
 }
 
 function dueMatches(action, due) {
@@ -56,7 +59,15 @@ export function ActionCentre({ actions = [], filters, onFiltersChange, onNavigat
     onError: (error) => toast.add(error.message || 'The leave decision was refused.', 'error'),
   });
   const decide = (action, value) => decision.mutate({ action, value });
-  const open = (action) => onNavigate(destinationFor(action));
+  const open = (action) => {
+    const dest = destinationFor(action);
+    if (dest.startsWith('#')) {
+      const el = document.querySelector(dest);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    onNavigate(dest);
+  };
 
   return <section id="action-centre" className="command-surface command-action-centre" aria-labelledby="action-centre-title">
     <header className="command-section-header"><div><h2 id="action-centre-title">Action Centre</h2><p>One prioritised queue for attendance, approvals, payroll, compliance and onboarding.</p></div><Badge variant={visible.some((row) => row.priority === 'CRITICAL') ? 'danger' : 'default'}>{visible.length} open</Badge></header>

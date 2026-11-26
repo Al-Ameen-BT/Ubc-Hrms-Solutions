@@ -6,6 +6,10 @@ import { useAuth } from '../../auth/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { DashboardError, DashboardSkeleton } from '../dashboard/DashboardPrimitives';
 import { DashboardFilterBar } from '../dashboard/DashboardFilterBar';
+import { DashboardDonuts } from '../dashboard/DashboardDonuts';
+import { DashboardKPIs } from '../dashboard/DashboardKPIs';
+import { ActionCentre } from '../dashboard/ActionCentre';
+import { BranchHealth } from '../dashboard/BranchHealth';
 import { OperationalSummary } from '../dashboard/OperationalSummary';
 import { OrganisationExplorer } from '../dashboard/OrganisationExplorer';
 import { clearCommandCentreFilters, commandCentreParams, updateCommandCentreFilter } from '../dashboard/dashboardModel';
@@ -30,6 +34,8 @@ export function OrgDashboard() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [now, setNow] = useState(new Date());
+  const [actionFilters, setActionFilters] = useState({ tab: 'all', priority: '', owner: '', due: '', branchId: '' });
+
   const urlFilters = useMemo(() => commandCentreParams(searchParams), [searchParams]);
   const filters = { date: indiaDate(), period: '7d', ...urlFilters };
   const deferredSearch = useDeferredValue(filters.search || '');
@@ -52,19 +58,100 @@ export function OrgDashboard() {
 
   if (dashboardQuery.isLoading && !data) return <DashboardSkeleton />;
 
-  return <div className="page dashboard-page command-centre-page">
-    <header className="command-page-header">
-      <div><h1>Overview</h1><p>Your daily command centre for workforce, attendance, payroll and compliance priorities.</p></div>
-      <div className="command-header-context"><div aria-label={`Today ${displayDate(filters.date)}, current time ${currentTime(now)}`}><strong>Today: {displayDate(filters.date)}</strong><span>Current time: {currentTime(now)}</span></div><Button variant="secondary" size="sm" onClick={() => navigate('/account')}>{user?.name || 'My profile'}</Button></div>
-    </header>
-    <DashboardFilterBar filters={filters} options={data?.filterOptions || response?.filterOptions} onFilter={updateFilter} onClear={clearFilters} />
-    {dashboardQuery.isError ? <DashboardError message="The HR command centre could not be loaded. Check your connection and try again." onRetry={() => dashboardQuery.refetch()} /> : null}
-    {!data && !dashboardQuery.isError ? <div className="command-surface command-empty"><strong>Command-centre data is unavailable</strong><span>Refresh the page or contact your HRMS administrator.</span></div> : null}
-    {data ? <>
-      <OrganisationExplorer summary={data.explorer} mode="branch" compact onSelect={(node) => navigate(`/branches/${node.id}`)} onNavigate={navigate} />
-      <OperationalSummary data={data} onNavigate={navigate} />
-    </> : null}
-  </div>;
+  return (
+    <div className="page dashboard-page command-centre-page">
+      <header className="command-page-header">
+        <div>
+          <h1>Overview</h1>
+          <p>Your daily command centre for workforce, attendance, payroll and compliance priorities.</p>
+        </div>
+        <div className="command-header-context">
+          <div aria-label={`Today ${displayDate(filters.date)}, current time ${currentTime(now)}`}>
+            <strong>Today: {displayDate(filters.date)}</strong>
+            <span>Current time: {currentTime(now)}</span>
+          </div>
+          <Button variant="secondary" size="sm" onClick={clearFilters} title="Reset all applied dashboard filters">
+            Reset View
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => navigate('/account')}>
+            {user?.name || 'My profile'}
+          </Button>
+        </div>
+      </header>
+
+      <DashboardFilterBar
+        filters={filters}
+        options={data?.filterOptions || response?.filterOptions}
+        onFilter={updateFilter}
+        onClear={clearFilters}
+      />
+
+      {dashboardQuery.isError ? (
+        <DashboardError
+          message="The HR command centre could not be loaded. Check your connection and try again."
+          onRetry={() => dashboardQuery.refetch()}
+        />
+      ) : null}
+
+      {!data && !dashboardQuery.isError ? (
+        <div className="command-surface command-empty">
+          <strong>Command-centre data is unavailable</strong>
+          <span>Refresh the page or contact your HRMS administrator.</span>
+        </div>
+      ) : null}
+
+      {data ? (
+        <>
+          {/* Top Donut & Pie Charts */}
+          <DashboardDonuts
+            data={data}
+            onNavigate={navigate}
+            onFilter={updateFilter}
+          />
+
+          {/* Interactive KPI Action Metrics */}
+          <DashboardKPIs
+            overview={data.overview}
+            onNavigate={navigate}
+            onScrollToActionCentre={() => {
+              const el = document.getElementById('action-centre');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+          />
+
+          {/* Action Centre */}
+          <ActionCentre
+            actions={data.actions}
+            filters={actionFilters}
+            onFiltersChange={setActionFilters}
+            onNavigate={navigate}
+            branches={data.explorer?.branches}
+          />
+
+          {/* Organisation Explorer */}
+          <OrganisationExplorer
+            summary={data.explorer}
+            mode="branch"
+            compact
+            onSelect={(node) => navigate(`/branches/${node.branchId || node.id}`)}
+            onNavigate={navigate}
+          />
+
+          {/* Branch Operational Health Table */}
+          <BranchHealth
+            data={data.branchHealth}
+            onNavigate={navigate}
+          />
+
+          {/* Movement & Setup Summaries */}
+          <OperationalSummary
+            data={data}
+            onNavigate={navigate}
+          />
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 export default OrgDashboard;

@@ -380,3 +380,211 @@
   .dashboard-skeleton-line, .dashboard-skeleton-summary, .dashboard-skeleton-grid > div { animation: none; }
   * { scroll-behavior: auto !important; }
 }
+
+/* Command Centre Donut Charts */
+.command-donuts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.command-donut-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 230px;
+  padding: var(--space-4);
+}
+
+.command-donut-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.command-donut-header h2 {
+  margin: 0 0 3px;
+  font-size: var(--type-section-title);
+  font-weight: 650;
+}
+
+.command-donut-header p {
+  margin: 0;
+  color: var(--dashboard-text-soft);
+  font-size: var(--type-meta);
+}
+
+.command-donut-select {
+  padding: 3px 8px;
+  border: 1px solid var(--dashboard-line);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--dashboard-panel-muted);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-meta);
+  cursor: pointer;
+}
+
+.command-donut-select:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.command-donut-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 140px;
+}
+
+.command-donut-visual {
+  position: relative;
+  width: 136px;
+  height: 136px;
+  flex-shrink: 0;
+}
+
+.command-donut-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.command-donut-slice {
+  transition: stroke-dasharray 400ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
+  cursor: pointer;
+}
+
+.command-donut-slice:hover {
+  opacity: 0.85;
+}
+
+.command-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+}
+
+.command-donut-center strong {
+  font-size: 1.5rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.command-donut-center span {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dashboard-text-soft);
+  margin-top: 2px;
+}
+
+.command-donut-legend-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.command-donut-legend {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.command-donut-legend-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--type-meta);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm, 4px);
+  transition: background var(--duration-fast, 150ms) ease;
+}
+
+.command-donut-legend-item:hover {
+  background: var(--dashboard-panel-muted);
+}
+
+.command-donut-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.command-donut-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-donut-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.command-donut-value small {
+  color: var(--dashboard-text-soft);
+  font-weight: 500;
+}
+
+.command-pill-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--dashboard-panel-muted);
+  border: 1px solid var(--dashboard-line);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.command-donut-stage-list {
+  display: grid;
+  gap: 5px;
+  font-size: var(--type-meta);
+}
+
+.command-stage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 2px 0;
+  border-bottom: 1px solid var(--dashboard-line);
+}
+
+.command-stage-row span {
+  color: var(--dashboard-text-soft);
+}
+
+.command-stage-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.command-donut-action-btn {
+  margin-top: 8px;
+  padding: 0;
+}
+
+@media (max-width: 1120px) {
+  .command-donuts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
