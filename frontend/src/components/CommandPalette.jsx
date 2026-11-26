@@ -5,30 +5,48 @@ import { canVisitRoute } from '../api/organizationAccess';
 import { useAuth } from '../auth/AuthContext';
 
 const SCREENS = [
-  { label: 'Overview', to: '/' },
-  { label: 'People', to: '/people' },
+  { label: 'Organisation Overview', to: '/' },
+  { label: 'Organisation Explorer', to: '/organisation-explorer' },
+  { label: 'Employee Directory (People)', to: '/people' },
   { label: 'Organisation Structure', to: '/organisation-structure' },
+  { label: 'Posts & Cadres', to: '/posts' },
+  { label: 'Attendance', to: '/employee-services/time' },
+  { label: 'Leave Management', to: '/leave' },
+  { label: 'Holiday Calendar', to: '/employee-services/holidays' },
   { label: 'Payroll', to: '/payroll' },
-  { label: 'Organisations', to: '/organisations' },
-  { label: 'Government Orders', to: '/government-orders' },
-  { label: 'KSR Rules', to: '/ksr-rules' },
   { label: 'Pay Scales', to: '/pay-scales' },
+  { label: 'Pay Revisions', to: '/pay-revisions' },
+  { label: 'Bank Class Adoption', to: '/catalogue-adoption' },
+  { label: 'Allowances', to: '/allowances' },
+  { label: 'Deductions & Slabs', to: '/deductions' },
+  { label: 'Reimbursements', to: '/employee-services/expenses' },
+  { label: 'DA Arrears', to: '/arrears' },
+  { label: 'Year-End', to: '/year-end' },
+  { label: 'Reports & Analytics', to: '/reports' },
+  { label: 'Financial Changes', to: '/financial-changes' },
+  { label: 'Policy Management', to: '/employee-services/policy' },
+  { label: 'DPDP Compliance', to: '/dpdp-compliance' },
+  { label: 'GO Register', to: '/government-orders' },
+  { label: 'KSR Rules', to: '/ksr-rules' },
+  { label: 'Audit Log', to: '/audit' },
+  { label: 'Organisation Settings', to: '/settings' },
+  { label: 'Payroll Settings', to: '/payroll-settings' },
+  { label: 'Mandatory Fields', to: '/mandatory-fields' },
+  { label: 'Roles & Permissions', to: '/roles-permissions' },
+  { label: 'Organisations (Platform)', to: '/organisations' },
   { label: 'Bank Classes & Rules', to: '/bank-rules' },
   { label: 'DPDP Documents', to: '/dpdp-documents' },
-  { label: 'DPDP Compliance', to: '/dpdp-compliance' },
-  { label: 'Posts & Cadres', to: '/posts' },
-  { label: 'Leave', to: '/leave' },
-  { label: 'Audit Log', to: '/audit' },
-  { label: 'Settings', to: '/settings' },
-  { label: 'Roles & Permissions', to: '/roles-permissions' },
-  { label: 'My Account', to: '/account' },
+  { label: 'Platform Settings', to: '/platform-settings' },
+  { label: 'Notifications', to: '/notifications' },
   { label: 'My Payslips', to: '/my/payslips' },
   { label: 'My Leave', to: '/my/leave' },
-  { label: 'Calendar', to: '/my/calendar' },
+  { label: 'My Calendar', to: '/my/calendar' },
   { label: 'Policies', to: '/my/policies' },
-  { label: 'Reimbursements', to: '/my/expenses' },
-  { label: 'Workplace', to: '/my/workplace' },
-  { label: 'Check-in & out', to: '/my/time' },
+  { label: 'My Reimbursements', to: '/my/expenses' },
+  { label: 'My Workplace', to: '/my/workplace' },
+  { label: 'My Attendance', to: '/my/time' },
+  { label: 'Privacy Requests', to: '/my/privacy' },
+  { label: 'My Account & Profile', to: '/account' },
 ];
 
 export function CommandPalette() {
@@ -48,8 +66,13 @@ export function CommandPalette() {
       }
       if (e.key === 'Escape') setOpen(false);
     };
+    const onOpenEvent = () => setOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('ucb:open-command-palette', onOpenEvent);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('ucb:open-command-palette', onOpenEvent);
+    };
   }, []);
 
   useEffect(() => {

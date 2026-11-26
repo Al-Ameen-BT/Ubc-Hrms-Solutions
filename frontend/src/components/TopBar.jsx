@@ -44,6 +44,20 @@ export function TopBar({ theme, onToggleTheme, onToggleSidebar }) {
         </div>
       </div>
       <div className="topbar-right">
+        <button
+          type="button"
+          className="topbar-search-btn"
+          onClick={() => window.dispatchEvent(new Event('ucb:open-command-palette'))}
+          title="Quick search (Ctrl+K)"
+          aria-label="Quick search (Ctrl+K)"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <span className="topbar-search-text">Search</span>
+          <kbd className="topbar-search-kbd">Ctrl K</kbd>
+        </button>
         {!isPlatform && <Link to="/notifications" className="topbar-notification-btn" aria-label={unread ? `${unread} unread notifications` : 'Notifications'} title="Notifications">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
           {unread > 0 && <span>{unread > 99 ? '99+' : unread}</span>}
@@ -71,11 +85,11 @@ export function TopBar({ theme, onToggleTheme, onToggleSidebar }) {
             <span className="theme-switch-thumb" />
           </span>
         </button>
-        <div className="topbar-user">
+        <Link to={isPlatform ? '/platform-settings' : '/account'} className="topbar-user topbar-user-link" title="My Profile & Account">
           <span className="topbar-user-name">{user?.name}</span>
           <span className="topbar-user-role">{user?.role?.replace(/_/g, ' ')}</span>
-        </div>
-        <button className="topbar-logout-btn" onClick={logout} aria-label="Sign out">
+        </Link>
+        <button className="topbar-logout-btn" onClick={logout} aria-label="Sign out" title="Sign out">
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
             <path d="M6 2H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h3M12 12l3-3-3-3M15 9H6" stroke="currentColor" strokeWidth="1.5" />
           </svg>
