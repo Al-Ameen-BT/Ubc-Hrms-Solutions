@@ -148,7 +148,7 @@ function AppRoutes() {
         <Route path="government-orders" element={<GovernmentOrdersPage />} />
         <Route path="ksr-rules" element={<KsrRulesPage />} />
 
-        <Route path="org-profile" element={<OrgProfilePage />} />
+        <Route path="org-profile" element={<Navigate to="/settings?tab=board" replace />} />
         <Route path="organisation-structure" element={<OrganisationStructurePage />} />
         <Route path="organisation-explorer" element={<OrganisationExplorerPage />} />
         <Route path="branches/:branchId" element={<BranchDashboardPage />} />

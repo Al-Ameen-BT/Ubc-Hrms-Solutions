@@ -85,7 +85,6 @@ const NAV = {
     {
       label: 'Administration',
       items: [
-        { to: '/org-profile', label: 'Organisation Profile', icon: 'orgs' },
         { to: '/settings', label: 'Organisation Settings', icon: 'settings' },
         { to: '/payroll-settings', label: 'Payroll Settings', icon: 'payroll' },
         { to: '/mandatory-fields', label: 'Mandatory Fields', icon: 'rules' },

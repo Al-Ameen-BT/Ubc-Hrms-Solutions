@@ -79,6 +79,7 @@ export function OrganisationStructurePage() {
   const queryClient = useQueryClient();
   const initialEmployeeId = params.get('employee') || '';
   const [tab, setTab] = useState(initialEmployeeId ? 'transfers' : 'branches');
+  const [pageError, setPageError] = useState('');
   const toast = useToast();
   const [importModalEntity, setImportModalEntity] = useState(null);
   const [exportingEntity, setExportingEntity] = useState(null);
@@ -328,7 +329,7 @@ export function OrganisationStructurePage() {
     <header className="page-header">
       <div className="org-structure-heading">
         <div><h1>Organisation structure</h1><p>Manage units, reporting positions, employee assignments, and transfers from one authoritative workspace.</p></div>
-        {profileLinks.canView && <Link className="org-profile-link" to="/org-profile">Organisation profile and board records</Link>}
+        {profileLinks.canView && <Link className="org-profile-link" to="/settings?tab=board">Organisation settings &amp; board records</Link>}
       </div>
     </header>
     {pageError && <div className="org-structure-error" role="alert">{pageError}{/deactiv|dependent|capacity/i.test(pageError) && <span> Reassign affected employees or dependent positions and responsibilities, then retry.</span>}</div>}
@@ -727,7 +728,7 @@ export function OrganisationStructurePage() {
       <div className="org-section-heading org-chart-heading"><div><h2 id="org-chart-heading">Organisation chart</h2><p>Current occupants only. Personal, payroll, bank, and statutory details are not shown.</p></div><div className="org-chart-layout" aria-label="Chart view"><button type="button" aria-pressed={chartLayout === 'tree'} className={chartLayout === 'tree' ? 'is-active' : ''} onClick={() => setChartLayout('tree')}>Tree</button><button type="button" aria-pressed={chartLayout === 'list'} className={chartLayout === 'list' ? 'is-active' : ''} onClick={() => setChartLayout('list')}>List</button></div></div>
       <LoadError error={chartQuery.error} recovery="Ask an administrator for chart.view access if this chart should be available." />
       {chartQuery.isLoading ? <p className="org-section-state">Loading organisation chart…</p> : <>
-        {chartLayout === 'tree' ? <WorkplaceTree employees={chartEmployees} leadership={chart.leadership || []} renderPhoto={person => <AuthenticatedPhoto path={person.photoRef} name={person.name} />} resolvePositionName={id => positionById(id)?.name} scopeDescription="Current Head Office and branch structure, grouped by department and reporting position." leadershipAction={profileLinks.canManage && <Link to="/org-profile">Manage profiles</Link>} /> : <Card title="Current employees" noPadding>{chartEmployees.length ? <div className="org-table-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Position</th><th>Department</th><th>Branch</th><th>Reports to</th></tr></thead><tbody>{chartEmployees.map(person => <tr key={person.id}><td><span className="org-chart-list-person"><AuthenticatedPhoto path={person.photoRef} name={person.name} />{person.name}</span></td><td className="mono">{person.empCode}</td><td>{person.position?.name || 'Unassigned position'}</td><td>{person.department?.name || 'Unassigned department'}</td><td>{person.branch.name}</td><td>{positionById(person.position?.reportsToPositionId)?.name || '—'}</td></tr>)}</tbody></table></div> : <EmptyState title="No current occupants in this chart" description="Only active employees with current organisation assignments appear here." />}</Card>}
+        {chartLayout === 'tree' ? <WorkplaceTree employees={chartEmployees} leadership={chart.leadership || []} renderPhoto={person => <AuthenticatedPhoto path={person.photoRef} name={person.name} />} resolvePositionName={id => positionById(id)?.name} scopeDescription="Current Head Office and branch structure, grouped by department and reporting position." leadershipAction={profileLinks.canManage && <Link to="/settings?tab=board">Manage board records</Link>} /> : <Card title="Current employees" noPadding>{chartEmployees.length ? <div className="org-table-scroll"><table className="table"><thead><tr><th>Employee</th><th>Code</th><th>Position</th><th>Department</th><th>Branch</th><th>Reports to</th></tr></thead><tbody>{chartEmployees.map(person => <tr key={person.id}><td><span className="org-chart-list-person"><AuthenticatedPhoto path={person.photoRef} name={person.name} />{person.name}</span></td><td className="mono">{person.empCode}</td><td>{person.position?.name || 'Unassigned position'}</td><td>{person.department?.name || 'Unassigned department'}</td><td>{person.branch.name}</td><td>{positionById(person.position?.reportsToPositionId)?.name || '—'}</td></tr>)}</tbody></table></div> : <EmptyState title="No current occupants in this chart" description="Only active employees with current organisation assignments appear here." />}</Card>}
       </>}
     </section>}
 
