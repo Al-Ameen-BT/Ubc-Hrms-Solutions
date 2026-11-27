@@ -8,19 +8,35 @@ import { version } from '../../../package.json';
 const NAV = {
   platform: {
     command: [
-      { to: '/', label: 'Platform Overview', icon: 'overview' },
-      { to: '/organisations', label: 'Organisations', icon: 'structure' },
+      { to: '/', label: 'Platform Control Centre', icon: 'overview' },
+      { to: '/organisations', label: 'All Organisations', icon: 'structure' },
     ],
     groups: [
       {
-        id: 'platform-ops',
-        label: 'Platform Operations',
-        icon: 'roles',
+        id: 'platform-orgs',
+        label: 'Organisation Management',
+        icon: 'structure',
+        items: [
+          { to: '/organisations/new', label: 'Onboard New Bank', icon: 'allowances' },
+          { to: '/platform-role-control', label: 'Role & Feature Control', icon: 'roles' },
+        ],
+      },
+      {
+        id: 'platform-security',
+        label: 'Security & Access',
+        icon: 'adoption',
         items: [
           { to: '/platform-users', label: 'Platform Users', icon: 'directory' },
-          { to: '/bank-rules', label: 'Bank Classes & Rules', icon: 'scales' },
-          { to: '/dpdp-documents', label: 'DPDP Documents', icon: 'governance' },
           { to: '/audit', label: 'Audit Log', icon: 'history' },
+        ],
+      },
+      {
+        id: 'platform-governance',
+        label: 'Platform Governance',
+        icon: 'governance',
+        items: [
+          { to: '/bank-rules', label: 'Bank Classes & Rules', icon: 'scales' },
+          { to: '/dpdp-documents', label: 'DPDP Documents', icon: 'orders' },
         ],
       },
       {
@@ -28,7 +44,6 @@ const NAV = {
         label: 'Administration',
         icon: 'settings',
         items: [
-          { to: '/platform-role-control', label: 'Role & Feature Control', icon: 'roles' },
           { to: '/platform-settings', label: 'Platform Settings', icon: 'settings' },
         ],
       },

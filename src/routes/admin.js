@@ -87,24 +87,174 @@ async function domainInstructions(org, req) {
 
 router.get('/dashboard', async (req, res) => {
   try {
-    const orgs = await Organization.findAll();
+    const now = Date.now();
+    const oneDayAgo = new Date(now - 86400000);
+    const sevenDaysAgo = new Date(now - 7 * 86400000);
+    const thirtyDaysAgo = new Date(now - 30 * 86400000);
     const today = todayIST();
-    let active = 0; let suspended = 0; let expired = 0; let expiringSoon = 0;
-    for (const o of orgs) {
-      const s = licenseSummary(o).state;
-      if (o.status !== 'ACTIVE') suspended += 1;
-      else if (s === 'ORG_LICENSE_EXPIRED') expired += 1;
-      else {
-        active += 1;
-        if (o.licenseExpiresAt && daysBetween(today, String(o.licenseExpiresAt)) <= 30) expiringSoon += 1;
-      }
+
+    // Real DB connectivity & latency check
+    const dbStart = Date.now();
+    let dbOk = false;
+    try {
+      await sequelize.authenticate();
+      dbOk = true;
+    } catch {
+      dbOk = false;
     }
-    const [orgUsers, platformUsers, failedLogins24h] = await Promise.all([
+    const dbLatencyMs = Date.now() - dbStart;
+
+    const [orgs, orgUsers, platformUsers, platformSmtp, failedLogs30d, recentPlatformAudit] = await Promise.all([
+      Organization.findAll({ order: [['id', 'ASC']] }),
       User.count({ where: { organizationId: { [Op.ne]: null }, status: 'ACTIVE' } }),
       User.count({ where: { role: 'SUPER_ADMIN', status: 'ACTIVE' } }),
-      AuditLog.count({ where: { action: 'auth.login.failed', createdAt: { [Op.gte]: new Date(Date.now() - 86400000) } } }),
+      mailer.getConfigRow(null),
+      AuditLog.findAll({
+        where: { action: 'auth.login.failed', createdAt: { [Op.gte]: thirtyDaysAgo } },
+        order: [['createdAt', 'DESC']],
+        limit: 500,
+      }),
+      AuditLog.findAll({
+        where: { organizationId: null, action: { [Op.ne]: 'auth.login.failed' } },
+        order: [['createdAt', 'DESC']],
+        limit: 8,
+      }),
     ]);
-    res.json({ data: { organisations: { total: orgs.length, active, suspended, expired, expiringSoon }, orgUsers, platformUsers, failedLogins24h } });
+
+    let active = 0; let suspended = 0; let expired = 0; let expiringSoon = 0; let trial = 0; let pendingActivation = 0;
+    const failed24hByOrg = new Map();
+    const ips24h = new Set();
+    let failedLogins24h = 0;
+    let failedLogins7d = 0;
+    let platformAdminFailed24h = 0;
+
+    // 7-day trend buckets (YYYY-MM-DD in IST)
+    const trendMap = new Map();
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date(now - i * 86400000);
+      const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+      trendMap.set(key, 0);
+    }
+
+    for (const log of failedLogs30d) {
+      const ts = new Date(log.createdAt);
+      if (ts >= sevenDaysAgo) {
+        failedLogins7d += 1;
+        const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(ts);
+        if (trendMap.has(dayKey)) trendMap.set(dayKey, trendMap.get(dayKey) + 1);
+      }
+      if (ts >= oneDayAgo) {
+        failedLogins24h += 1;
+        if (log.ip) ips24h.add(log.ip);
+        if (log.organizationId == null) {
+          platformAdminFailed24h += 1;
+        } else {
+          const oid = Number(log.organizationId);
+          failed24hByOrg.set(oid, (failed24hByOrg.get(oid) || 0) + 1);
+        }
+      }
+    }
+
+    const orgMatrix = await Promise.all(orgs.map(async (o) => {
+      const [usage, smtpRow, lastLog] = await Promise.all([
+        license.usage(o.id),
+        mailer.getConfigRow(o.id),
+        AuditLog.findOne({ where: { organizationId: o.id }, order: [['createdAt', 'DESC']], attributes: ['createdAt'] }),
+      ]);
+      const lic = licenseSummary(o);
+      const daysLeft = o.licenseExpiresAt ? daysBetween(today, String(o.licenseExpiresAt)) : null;
+
+      if (o.status !== 'ACTIVE') suspended += 1;
+      else if (lic.state === 'ORG_LICENSE_EXPIRED') expired += 1;
+      else {
+        active += 1;
+        if (o.licensePlan === 'TRIAL') trial += 1;
+        if ((usage?.users || 0) === 0) pendingActivation += 1;
+        if (daysLeft != null && daysLeft <= 30) expiringSoon += 1;
+      }
+
+      const smtpConfigured = !!(smtpRow && smtpRow.enabled && smtpRow.host);
+      const smtpStatus = !smtpConfigured ? 'NOT_CONFIGURED' : (smtpRow.lastTestOk === false ? 'DEGRADED' : 'HEALTHY');
+
+      return {
+        id: o.id,
+        name: o.name,
+        code: o.code,
+        bankClass: o.bankClass,
+        bankClassLabel: payScaleLibrary.BANK_CLASS_LABELS[o.bankClass] || o.bankClass || null,
+        status: o.status,
+        licenseState: lic.state,
+        licensePlan: o.licensePlan || null,
+        licenseExpiresAt: o.licenseExpiresAt || null,
+        daysLeft,
+        usersCount: usage?.users ?? 0,
+        maxUsers: o.maxUsers ?? null,
+        employeesCount: usage?.employees ?? 0,
+        maxEmployees: o.maxEmployees ?? null,
+        smtpStatus,
+        customDomain: o.customDomain || null,
+        customDomainVerified: Boolean(o.customDomainVerifiedAt),
+        failedLogins24h: failed24hByOrg.get(Number(o.id)) || 0,
+        lastActivityAt: lastLog?.createdAt || null,
+      };
+    }));
+
+    const orgLookup = new Map(orgs.map((o) => [Number(o.id), o]));
+    const affectedOrganizations = Array.from(failed24hByOrg.entries()).map(([orgId, count]) => {
+      const o = orgLookup.get(orgId);
+      return { organizationId: orgId, name: o?.name || `Org #${orgId}`, code: o?.code || '—', count };
+    }).sort((a, b) => b.count - a.count);
+
+    const recentFailures = failedLogs30d.slice(0, 10).map((log) => {
+      const o = log.organizationId ? orgLookup.get(Number(log.organizationId)) : null;
+      return {
+        id: log.id,
+        organizationId: log.organizationId,
+        organizationName: o?.name || (log.organizationId == null ? 'Platform Admin' : `Org #${log.organizationId}`),
+        actorEmail: log.actorEmail || log.details?.email || 'Unknown',
+        ip: log.ip || '—',
+        createdAt: log.createdAt,
+      };
+    });
+
+    const platformSmtpConfigured = !!(platformSmtp && platformSmtp.enabled && platformSmtp.host && platformSmtp.fromEmail);
+
+    res.json({
+      data: {
+        checkedAt: new Date().toISOString(),
+        organisations: { total: orgs.length, active, suspended, expired, expiringSoon, trial, pendingActivation },
+        orgUsers,
+        platformUsers,
+        failedLogins24h,
+        security: {
+          failed24h: failedLogins24h,
+          failed7d: failedLogins7d,
+          failed30d: failedLogs30d.length,
+          platformAdminFailed24h,
+          distinctIps24h: ips24h.size,
+          affectedOrganizations,
+          trend7d: Array.from(trendMap.entries()).map(([date, count]) => ({ date, count })),
+          recentFailures,
+        },
+        systemHealth: {
+          backend: { status: 'HEALTHY', uptimeSeconds: Math.floor(process.uptime()) },
+          database: { status: dbOk ? 'HEALTHY' : 'CRITICAL', latencyMs: dbLatencyMs },
+          platformSmtp: { status: platformSmtpConfigured ? (platformSmtp.lastTestOk === false ? 'DEGRADED' : 'HEALTHY') : 'UNKNOWN' },
+          backgroundWorkers: { status: 'UNKNOWN', note: 'Telemetry not verified' },
+          backups: { status: 'UNKNOWN', note: 'Telemetry not verified' },
+          storage: { status: 'UNKNOWN', note: 'Telemetry not verified' },
+        },
+        orgMatrix,
+        recentActivity: recentPlatformAudit.map((a) => ({
+          id: a.id,
+          action: a.action,
+          actorEmail: a.actorEmail || 'System',
+          targetType: a.targetType,
+          targetId: a.targetId,
+          createdAt: a.createdAt,
+        })),
+      },
+    });
   } catch (err) { sendError(res, err); }
 });
 
